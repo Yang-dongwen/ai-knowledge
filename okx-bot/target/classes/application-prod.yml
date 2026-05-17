@@ -1,0 +1,9 @@
+# 实盘环境配置 - 默认不启用
+okx:
+  base-url: https://www.okx.com
+  simulated: false
+  timeout-seconds: 10
+
+trading:
+  system-status: STOPPED
+  live-enabled: false

@@ -1,0 +1,16 @@
+{
+  "traded_markets": {
+    "2277335": {
+      "question": "Bitcoin Up or Down - May 17, 9:55AM-10:00AM ET",
+      "side": "UP",
+      "amount_usdc": 1.0,
+      "traded_at": "2026-05-17T13:57:40.886734+00:00"
+    },
+    "2277361": {
+      "question": "Bitcoin Up or Down - May 17, 10:00AM-10:05AM ET",
+      "side": "UP",
+      "amount_usdc": 1.0,
+      "traded_at": "2026-05-17T13:57:46.202924+00:00"
+    }
+  }
+}

@@ -1,0 +1,116 @@
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+:root {
+  --primary-color: #{$primary-color};
+  --success-color: #{$success-color};
+  --danger-color: #{$danger-color};
+  --warning-color: #{$warning-color};
+  --page-bg: #{$page-bg};
+  --card-bg: #{$card-bg};
+  --text-primary: #{$text-primary};
+  --text-secondary: #{$text-secondary};
+  --text-muted: #{$text-muted};
+  --border-color: #{$border-color};
+  --sidebar-width: #{$sidebar-width};
+  --header-height: #{$header-height};
+  --content-padding: #{$content-padding};
+  --card-radius: #{$card-radius};
+}
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'PingFang SC', 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+  background-color: var(--page-bg);
+  color: var(--text-primary);
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+#app {
+  min-height: 100vh;
+}
+
+// 卡片通用样式
+.page-card {
+  background: var(--card-bg);
+  border-radius: var(--card-radius);
+  box-shadow: var(--card-shadow);
+  border: 1px solid var(--border-color);
+  padding: 20px 24px;
+  margin-bottom: 16px;
+}
+
+// 页面标题
+.page-title {
+  font-size: 20px;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin-bottom: 2px;
+}
+
+.page-subtitle {
+  font-size: 13px;
+  color: var(--text-secondary);
+}
+
+// 盈亏颜色
+.profit {
+  color: var(--success-color);
+  font-weight: 500;
+}
+
+.loss {
+  color: var(--danger-color);
+  font-weight: 500;
+}
+
+// 滚动条
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #d1d5db;
+  border-radius: 3px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+// Ant Design 覆盖
+.ant-table {
+  .ant-table-thead > tr > th {
+    background: #FAFBFC !important;
+    font-weight: 500;
+    color: var(--text-secondary);
+    font-size: 13px;
+    border-bottom: 1px solid var(--border-color);
+  }
+
+  .ant-table-tbody > tr > td {
+    border-bottom: 1px solid #F3F4F6;
+    font-size: 13px;
+  }
+
+  .ant-table-tbody > tr:hover > td {
+    background: #F9FAFB !important;
+  }
+}
+
+.ant-tag {
+  border-radius: 4px;
+  font-size: 12px;
+}
+
+// 页脚
+.page-footer {
+  text-align: center;
+  padding: 24px 0 16px;
+  color: var(--text-muted);
+  font-size: 12px;
+}
