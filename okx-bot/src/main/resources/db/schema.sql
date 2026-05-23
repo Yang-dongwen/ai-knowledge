@@ -165,3 +165,27 @@ CREATE TABLE IF NOT EXISTS trade_fill (
     INDEX idx_trade_time (trade_time),
     UNIQUE KEY uk_okx_trade_id (okx_trade_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='成交记录表';
+
+-- 9. AI 对话会话表
+CREATE TABLE IF NOT EXISTS chat_conversation (
+    id BIGINT NOT NULL COMMENT '主键',
+    title VARCHAR(255) NOT NULL DEFAULT '新对话' COMMENT '会话标题',
+    provider VARCHAR(64) COMMENT '供应商标识',
+    model VARCHAR(128) COMMENT '模型ID',
+    created_at DATETIME(3) NOT NULL COMMENT '创建时间',
+    updated_at DATETIME(3) NOT NULL COMMENT '更新时间',
+    PRIMARY KEY (id),
+    INDEX idx_updated_at (updated_at)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='AI对话会话表';
+
+-- 10. AI 对话消息表
+CREATE TABLE IF NOT EXISTS chat_message (
+    id BIGINT NOT NULL COMMENT '主键',
+    conversation_id BIGINT NOT NULL COMMENT '会话ID',
+    role VARCHAR(16) NOT NULL COMMENT '角色 user/assistant',
+    content TEXT NOT NULL COMMENT '消息内容',
+    created_at DATETIME(3) NOT NULL COMMENT '创建时间',
+    PRIMARY KEY (id),
+    INDEX idx_conversation_id (conversation_id),
+    INDEX idx_created_at (created_at)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='AI对话消息表';
