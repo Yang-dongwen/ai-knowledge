@@ -121,4 +121,23 @@ public class MarketCandleService {
                         .last("LIMIT " + limit)
         );
     }
+
+    /**
+     * 查询指定时间区间内的已完成 K 线，按时间升序返回（供回测使用）。
+     *
+     * @param startTime 起始K线时间戳(毫秒)，为空表示不限下界
+     * @param endTime   结束K线时间戳(毫秒)，为空表示不限上界
+     */
+    public List<MarketCandleEntity> getConfirmedCandlesInRange(String symbol, String timeframe,
+                                                               Long startTime, Long endTime) {
+        return marketCandleMapper.selectList(
+                new LambdaQueryWrapper<MarketCandleEntity>()
+                        .eq(MarketCandleEntity::getSymbol, symbol)
+                        .eq(MarketCandleEntity::getTimeframe, timeframe)
+                        .eq(MarketCandleEntity::getConfirmed, 1)
+                        .ge(startTime != null, MarketCandleEntity::getCandleTime, startTime)
+                        .le(endTime != null, MarketCandleEntity::getCandleTime, endTime)
+                        .orderByAsc(MarketCandleEntity::getCandleTime)
+        );
+    }
 }

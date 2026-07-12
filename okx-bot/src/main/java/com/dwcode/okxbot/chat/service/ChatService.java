@@ -24,7 +24,10 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import okhttp3.*;
 import org.springframework.stereotype.Service;
+import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
+import java.io.BufferedReader;
+import java.io.InputStreamReader;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.LocalDateTime;
@@ -32,6 +35,8 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 import java.util.stream.Collectors;
 
 /**
@@ -64,6 +69,8 @@ public class ChatService {
             .build();
 
     private final ObjectMapper objectMapper = new ObjectMapper();
+
+    private final ExecutorService streamExecutor = Executors.newCachedThreadPool();
 
     // ==================== 模型列表 ====================
 
@@ -232,6 +239,109 @@ public class ChatService {
         return result;
     }
 
+    /**
+     * 发送消息并通过 SSE 流式返回 AI 回复。
+     *
+     * SSE 事件：
+     * - meta: 会话元信息 {"conversationId":"xxx"}
+     * - delta: AI 回复增量 {"content":"xxx"}
+     * - done: 流式结束 {"messageId":"xxx"}
+     * - error: 错误信息 {"message":"xxx"}
+     */
+    public void sendMessageStream(ChatRequest request, SseEmitter emitter) {
+        streamExecutor.execute(() -> {
+            try {
+                Long conversationId = request.getConversationId();
+
+                // 解析供应商和模型
+                ProviderConfig providerConfig = resolveProvider(request.getProvider());
+                String modelId = resolveModelId(providerConfig, request.getModel());
+
+                // 新建会话
+                if (conversationId == null) {
+                    String providerKey = request.getProvider();
+                    if (providerKey == null || providerKey.isEmpty()) {
+                        List<Map.Entry<String, ProviderConfig>> available = aiProperties.getAllAvailableProviders();
+                        if (!available.isEmpty()) {
+                            providerKey = available.get(0).getKey();
+                        }
+                    }
+                    ChatConversationEntity conv = createConversation(
+                            request.getMessage().length() > 20 ? request.getMessage().substring(0, 20) : request.getMessage(),
+                            providerKey, modelId);
+                    conversationId = conv.getId();
+                } else {
+                    // 已有会话：如果前端指定了新的 provider/model，更新会话
+                    if (request.getProvider() != null || request.getModel() != null) {
+                        ChatConversationEntity conv = conversationMapper.selectById(conversationId);
+                        if (conv != null) {
+                            if (request.getProvider() != null) {
+                                conv.setProvider(request.getProvider());
+                            }
+                            if (request.getModel() != null) {
+                                conv.setModel(request.getModel());
+                            }
+                            conv.setUpdatedAt(LocalDateTime.now());
+                            conversationMapper.updateById(conv);
+                        }
+                    }
+                }
+
+                // 保存用户消息
+                ChatMessageEntity userMsg = new ChatMessageEntity();
+                userMsg.setConversationId(conversationId);
+                userMsg.setRole("user");
+                userMsg.setContent(request.getMessage());
+                userMsg.setCreatedAt(LocalDateTime.now());
+                messageMapper.insert(userMsg);
+
+                // 发送 meta 事件（会话ID）
+                Map<String, Object> meta = new HashMap<>();
+                meta.put("conversationId", String.valueOf(conversationId));
+                emitter.send(SseEmitter.event().name("meta").data(objectMapper.writeValueAsString(meta)));
+
+                // 流式调用 AI
+                String aiReply = callAiApiStream(conversationId, providerConfig, modelId, emitter);
+
+                // 保存 AI 回复
+                ChatMessageEntity assistantMsg = new ChatMessageEntity();
+                assistantMsg.setConversationId(conversationId);
+                assistantMsg.setRole("assistant");
+                assistantMsg.setContent(aiReply);
+                assistantMsg.setCreatedAt(LocalDateTime.now());
+                messageMapper.insert(assistantMsg);
+
+                // 更新会话标题和时间
+                ChatConversationEntity conv = conversationMapper.selectById(conversationId);
+                if (conv != null && "新对话".equals(conv.getTitle())) {
+                    conv.setTitle(request.getMessage().length() > 20
+                            ? request.getMessage().substring(0, 20) : request.getMessage());
+                }
+                if (conv != null) {
+                    conv.setUpdatedAt(LocalDateTime.now());
+                    conversationMapper.updateById(conv);
+                }
+
+                // 发送 done 事件
+                Map<String, Object> done = new HashMap<>();
+                done.put("messageId", String.valueOf(assistantMsg.getId()));
+                emitter.send(SseEmitter.event().name("done").data(objectMapper.writeValueAsString(done)));
+                emitter.complete();
+
+            } catch (Exception e) {
+                log.error("SSE 流式响应异常", e);
+                try {
+                    Map<String, Object> error = new HashMap<>();
+                    error.put("message", "AI 服务出现异常，请稍后重试。");
+                    emitter.send(SseEmitter.event().name("error").data(objectMapper.writeValueAsString(error)));
+                    emitter.complete();
+                } catch (Exception ex) {
+                    emitter.completeWithError(ex);
+                }
+            }
+        });
+    }
+
     // ==================== 供应商/模型解析 ====================
 
     /**
@@ -357,6 +467,155 @@ public class ChatService {
         } catch (Exception e) {
             log.error("AI API 调用异常: provider={}, model={}", provider.getName(), modelId, e);
             return "抱歉，AI 服务出现异常，请稍后重试。";
+        }
+    }
+
+    /**
+     * 流式调用 AI API，逐步将增量内容通过 SSE 推送给前端。
+     * 返回完整的 AI 回复内容（用于持久化）。
+     */
+    private String callAiApiStream(Long conversationId, ProviderConfig provider, String modelId, SseEmitter emitter) {
+        // 检查供应商配置
+        if (provider == null || provider.getApiKey() == null || provider.getApiKey().isEmpty()) {
+            String offlineReply = buildOfflineReply();
+            try {
+                Map<String, Object> delta = new HashMap<>();
+                delta.put("content", offlineReply);
+                emitter.send(SseEmitter.event().name("delta").data(objectMapper.writeValueAsString(delta)));
+            } catch (Exception ignored) {}
+            return offlineReply;
+        }
+
+        try {
+            // 构建上下文
+            String systemPrompt = buildSystemPrompt();
+
+            // 获取历史消息
+            List<ChatMessageEntity> historyMessages = messageMapper.selectList(
+                    new LambdaQueryWrapper<ChatMessageEntity>()
+                            .eq(ChatMessageEntity::getConversationId, conversationId)
+                            .orderByDesc(ChatMessageEntity::getCreatedAt)
+                            .last("LIMIT " + aiProperties.getMaxContextMessages())
+            );
+            historyMessages.sort((a, b) -> a.getCreatedAt().compareTo(b.getCreatedAt()));
+
+            // 构建请求消息
+            List<Map<String, String>> messages = new ArrayList<>();
+            Map<String, String> sysMsg = new HashMap<>();
+            sysMsg.put("role", "system");
+            sysMsg.put("content", systemPrompt);
+            messages.add(sysMsg);
+
+            for (ChatMessageEntity msg : historyMessages) {
+                Map<String, String> m = new HashMap<>();
+                m.put("role", msg.getRole());
+                m.put("content", msg.getContent());
+                messages.add(m);
+            }
+
+            // 构建请求体（启用 stream）
+            Map<String, Object> requestBody = new HashMap<>();
+            requestBody.put("model", modelId);
+            requestBody.put("messages", messages);
+            requestBody.put("temperature", 0.7);
+            requestBody.put("max_tokens", 2000);
+            requestBody.put("stream", true);
+
+            String jsonBody = objectMapper.writeValueAsString(requestBody);
+
+            // 拼接 API URL
+            String chatUrl = buildChatUrl(provider.getBaseUrl());
+
+            log.info("流式调用 AI API: provider={}, model={}, url={}", provider.getName(), modelId, chatUrl);
+
+            Request httpRequest = new Request.Builder()
+                    .url(chatUrl)
+                    .addHeader("Authorization", "Bearer " + provider.getApiKey())
+                    .addHeader("Content-Type", "application/json")
+                    .post(RequestBody.create(jsonBody, MediaType.parse("application/json")))
+                    .build();
+
+            try (Response response = httpClient.newCall(httpRequest).execute()) {
+                if (!response.isSuccessful()) {
+                    String errBody = response.body() != null ? response.body().string() : "";
+                    log.error("AI API 流式请求失败: provider={}, model={}, status={}, body={}",
+                            provider.getName(), modelId, response.code(), errBody);
+                    String errorMsg = "抱歉，AI 服务暂时不可用，请稍后重试。";
+                    Map<String, Object> delta = new HashMap<>();
+                    delta.put("content", errorMsg);
+                    emitter.send(SseEmitter.event().name("delta").data(objectMapper.writeValueAsString(delta)));
+                    return errorMsg;
+                }
+
+                // 逐行读取 SSE 流
+                StringBuilder fullContent = new StringBuilder();
+                try (BufferedReader reader = new BufferedReader(
+                        new InputStreamReader(response.body().byteStream(), "UTF-8"))) {
+                    String line;
+                    while ((line = reader.readLine()) != null) {
+                        if (line.isEmpty()) continue;
+                        if (!line.startsWith("data: ")) continue;
+
+                        String data = line.substring(6).trim();
+                        if ("[DONE]".equals(data)) break;
+
+                        try {
+                            JsonNode chunk = objectMapper.readTree(data);
+                            JsonNode choices = chunk.path("choices");
+                            if (choices.isArray() && !choices.isEmpty()) {
+                                JsonNode delta2 = choices.get(0).path("delta");
+                                String content = delta2.path("content").asText("");
+                                if (!content.isEmpty()) {
+                                    fullContent.append(content);
+                                    // 推送增量内容给前端
+                                    Map<String, Object> deltaEvent = new HashMap<>();
+                                    deltaEvent.put("content", content);
+                                    emitter.send(SseEmitter.event().name("delta")
+                                            .data(objectMapper.writeValueAsString(deltaEvent)));
+                                }
+                            }
+                        } catch (Exception parseEx) {
+                            log.debug("解析流式数据行失败: {}", data, parseEx);
+                        }
+                    }
+                }
+
+                if (fullContent.isEmpty()) {
+                    String fallback = "抱歉，AI 未返回有效回复。";
+                    Map<String, Object> delta = new HashMap<>();
+                    delta.put("content", fallback);
+                    emitter.send(SseEmitter.event().name("delta").data(objectMapper.writeValueAsString(delta)));
+                    return fallback;
+                }
+
+                return fullContent.toString();
+            }
+        } catch (Exception e) {
+            log.error("AI API 流式调用异常: provider={}, model={}", provider.getName(), modelId, e);
+            String errorMsg = "抱歉，AI 服务出现异常，请稍后重试。";
+            try {
+                Map<String, Object> delta = new HashMap<>();
+                delta.put("content", errorMsg);
+                emitter.send(SseEmitter.event().name("delta").data(objectMapper.writeValueAsString(delta)));
+            } catch (Exception ignored) {}
+            return errorMsg;
+        }
+    }
+
+    /**
+     * 构建 AI API 的 chat/completions URL。
+     */
+    private String buildChatUrl(String baseUrl) {
+        String apiUrl = baseUrl;
+        if (!apiUrl.endsWith("/")) {
+            apiUrl += "/";
+        }
+        if (apiUrl.endsWith("/v1/")) {
+            return apiUrl + "chat/completions";
+        } else if (apiUrl.contains("/v1")) {
+            return apiUrl + (apiUrl.endsWith("/") ? "" : "/") + "chat/completions";
+        } else {
+            return apiUrl + "v1/chat/completions";
         }
     }
 

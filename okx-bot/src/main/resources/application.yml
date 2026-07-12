@@ -31,7 +31,7 @@ okx:
 
 # AI 聊天配置（多供应商）
 ai:
-  default-provider: deepseek
+  default-provider: nvidia
   max-context-messages: 20
   providers:
     openai:
@@ -55,10 +55,39 @@ ai:
     nvidia:
       name: NVIDIA
       base-url: https://integrate.api.nvidia.com/v1
-      api-key: ""
+      api-key: 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
       models:
-        - id: meta/llama-3.1-405b-instruct
-          name: Llama 3.1 405B
+        - id: deepseek-ai/deepseek-v4-flash
+          name: deepseek-ai
+
+# 视频核心内容提取（VideoCoreExtractor v2 持久化）
+video:
+  # 按 taskId 分目录：video/audio/transcription.json/summary.json
+  work-dir: ./data/video
+  # IDE 启动的 Java 进程可能读不到 winget 更新后的 PATH，建议写绝对路径
+  yt-dlp-path: C:/Users/22809/AppData/Local/Microsoft/WinGet/Packages/yt-dlp.yt-dlp_Microsoft.Winget.Source_8wekyb3d8bbwe/yt-dlp.exe
+  ffmpeg-path: C:/Users/22809/AppData/Local/Microsoft/WinGet/Packages/Gyan.FFmpeg_Microsoft.Winget.Source_8wekyb3d8bbwe/ffmpeg-8.1.2-full_build/bin/ffmpeg.exe
+  # v2 默认保留媒体与转录文件，便于前端查看/下载；磁盘紧张时可改 true
+  cleanup-media: false
+  whisper:
+    base-url: http://127.0.0.1:8000
+    model: medium
+    timeout-seconds: 600
+    language: zh
+  llm:
+    # 复用上方 ai.providers；为空则用 ai.default-provider
+    provider: nvidia
+    model:
+    temperature: 0.3
+    max-tokens: 4096
+    # NVIDIA 免费档常 503 All workers are busy，自动退避重试
+    max-retries: 5
+    retry-backoff-ms: 3000
+    retry-max-backoff-ms: 60000
+  download:
+    max-duration-seconds: 7200
+    audio-format: mp3
+    timeout-seconds: 600
 
 logging:
   level:

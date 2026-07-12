@@ -189,3 +189,121 @@ CREATE TABLE IF NOT EXISTS chat_message (
     INDEX idx_conversation_id (conversation_id),
     INDEX idx_created_at (created_at)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='AI对话消息表';
+
+-- ============================================================
+-- 回测模块表（可信回测引擎）
+-- 设计原则：
+--   1. 只使用已完成K线(confirmed=1)做回测
+--   2. 强制计入手续费与滑点
+--   3. 保存每笔交易明细与资金曲线，结果可复现
+-- ============================================================
+
+-- 11. 回测任务表
+CREATE TABLE IF NOT EXISTS backtest_task (
+    id BIGINT NOT NULL COMMENT '主键',
+    strategy_id BIGINT NOT NULL COMMENT '策略ID',
+    symbol VARCHAR(64) NOT NULL COMMENT '交易对',
+    timeframe VARCHAR(16) NOT NULL COMMENT 'K线周期',
+    start_time BIGINT COMMENT '回测开始K线时间戳(毫秒)，空表示从最早数据开始',
+    end_time BIGINT COMMENT '回测结束K线时间戳(毫秒)，空表示到最新数据',
+    initial_capital DECIMAL(36,18) NOT NULL COMMENT '初始资金(USDT)',
+    fee_rate DECIMAL(18,10) NOT NULL COMMENT '手续费率',
+    slippage_rate DECIMAL(18,10) NOT NULL COMMENT '滑点率',
+    status VARCHAR(32) NOT NULL DEFAULT 'PENDING' COMMENT '状态 PENDING/RUNNING/SUCCESS/FAILED',
+    final_equity DECIMAL(36,18) COMMENT '期末权益',
+    total_return DECIMAL(18,10) COMMENT '总收益率',
+    annual_return DECIMAL(18,10) COMMENT '年化收益率',
+    max_drawdown DECIMAL(18,10) COMMENT '最大回撤',
+    sharpe_ratio DECIMAL(18,10) COMMENT '夏普比率',
+    win_rate DECIMAL(18,10) COMMENT '胜率',
+    profit_factor DECIMAL(18,10) COMMENT '盈亏比(Profit Factor)',
+    trade_count INT COMMENT '交易次数(完整买卖回合)',
+    max_consecutive_losses INT COMMENT '最大连续亏损次数',
+    total_fee DECIMAL(36,18) COMMENT '手续费总额',
+    total_slippage_cost DECIMAL(36,18) COMMENT '滑点成本总额',
+    bar_count INT COMMENT '参与回测的K线数量',
+    result_summary JSON COMMENT '结果摘要',
+    error_message TEXT COMMENT '错误信息',
+    started_at DATETIME(3) COMMENT '开始时间',
+    finished_at DATETIME(3) COMMENT '完成时间',
+    created_at DATETIME(3) NOT NULL COMMENT '创建时间',
+    updated_at DATETIME(3) NOT NULL COMMENT '更新时间',
+    PRIMARY KEY (id),
+    INDEX idx_strategy_id (strategy_id),
+    INDEX idx_status (status),
+    INDEX idx_created_at (created_at)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='回测任务表';
+
+-- 12. 回测交易明细表
+CREATE TABLE IF NOT EXISTS backtest_trade (
+    id BIGINT NOT NULL COMMENT '主键',
+    backtest_task_id BIGINT NOT NULL COMMENT '回测任务ID',
+    strategy_id BIGINT NOT NULL COMMENT '策略ID',
+    symbol VARCHAR(64) NOT NULL COMMENT '交易对',
+    side VARCHAR(16) NOT NULL COMMENT '方向 BUY(现货做多回合)',
+    entry_time BIGINT NOT NULL COMMENT '入场K线时间戳(毫秒)',
+    exit_time BIGINT NOT NULL COMMENT '出场K线时间戳(毫秒)',
+    entry_price DECIMAL(36,18) NOT NULL COMMENT '入场成交价(含滑点)',
+    exit_price DECIMAL(36,18) NOT NULL COMMENT '出场成交价(含滑点)',
+    quantity DECIMAL(36,18) NOT NULL COMMENT '成交数量',
+    fee DECIMAL(36,18) NOT NULL COMMENT '本回合手续费(买入+卖出)',
+    slippage_cost DECIMAL(36,18) NOT NULL COMMENT '本回合滑点成本',
+    pnl DECIMAL(36,18) NOT NULL COMMENT '盈亏(已扣手续费和滑点)',
+    pnl_pct DECIMAL(18,10) NOT NULL COMMENT '盈亏比例',
+    holding_bars INT NOT NULL COMMENT '持有K线数量',
+    entry_reason VARCHAR(512) COMMENT '入场原因',
+    exit_reason VARCHAR(512) COMMENT '出场原因',
+    created_at DATETIME(3) NOT NULL COMMENT '创建时间',
+    PRIMARY KEY (id),
+    INDEX idx_task_id (backtest_task_id),
+    INDEX idx_strategy_id (strategy_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='回测交易明细表';
+
+-- 13. 回测资金曲线表
+CREATE TABLE IF NOT EXISTS backtest_equity_curve (
+    id BIGINT NOT NULL COMMENT '主键',
+    backtest_task_id BIGINT NOT NULL COMMENT '回测任务ID',
+    candle_time BIGINT NOT NULL COMMENT 'K线时间戳(毫秒)',
+    equity DECIMAL(36,18) NOT NULL COMMENT '当前权益(现金+持仓市值)',
+    cash DECIMAL(36,18) NOT NULL COMMENT '现金',
+    position_value DECIMAL(36,18) NOT NULL COMMENT '持仓市值',
+    drawdown DECIMAL(18,10) NOT NULL COMMENT '当前回撤',
+    created_at DATETIME(3) NOT NULL COMMENT '创建时间',
+    PRIMARY KEY (id),
+    INDEX idx_task_candle (backtest_task_id, candle_time)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='回测资金曲线表';
+
+-- ============================================================
+-- 视频核心内容提取模块（VideoCoreExtractor）
+-- 流程：下载(yt-dlp) → 音频提取(FFmpeg) → 转录(Whisper) → 总结(LLM)
+-- ============================================================
+
+-- 14. 视频处理任务表（v2 持久化：视频/转录/核心内容）
+CREATE TABLE IF NOT EXISTS video_task (
+    id BIGINT NOT NULL COMMENT '主键',
+    source_url VARCHAR(1024) NOT NULL COMMENT '源视频URL',
+    title VARCHAR(512) COMMENT '视频标题',
+    platform VARCHAR(32) COMMENT '平台 douyin/bilibili/youtube/xiaohongshu/other',
+    status VARCHAR(32) NOT NULL DEFAULT 'PENDING' COMMENT '状态 PENDING/DOWNLOADING/TRANSCRIBING/SUMMARIZING/SUCCESS/FAILED',
+    current_step VARCHAR(128) COMMENT '当前步骤说明',
+    language VARCHAR(16) DEFAULT 'zh' COMMENT '语言',
+    extract_mind_map TINYINT NOT NULL DEFAULT 1 COMMENT '是否提取思维导图 1是 0否',
+    generate_repurpose_script TINYINT NOT NULL DEFAULT 1 COMMENT '是否生成repurpose脚本 1是 0否',
+    duration_seconds DOUBLE COMMENT '视频时长(秒)',
+    video_path VARCHAR(1024) COMMENT '本地视频路径',
+    audio_path VARCHAR(1024) COMMENT '本地音频路径',
+    transcription_path VARCHAR(1024) COMMENT '转录JSON文件路径',
+    summary_path VARCHAR(1024) COMMENT '摘要JSON文件路径',
+    transcription_json LONGTEXT COMMENT '转录结果JSON(带时间戳)',
+    summary_json LONGTEXT COMMENT 'AI核心内容JSON',
+    result_json LONGTEXT COMMENT '完整结构化结果JSON',
+    error_message TEXT COMMENT '错误信息',
+    started_at DATETIME(3) COMMENT '开始处理时间',
+    finished_at DATETIME(3) COMMENT '完成时间',
+    created_at DATETIME(3) NOT NULL COMMENT '创建时间',
+    updated_at DATETIME(3) NOT NULL COMMENT '更新时间',
+    PRIMARY KEY (id),
+    INDEX idx_status (status),
+    INDEX idx_platform (platform),
+    INDEX idx_created_at (created_at)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='视频处理任务表';

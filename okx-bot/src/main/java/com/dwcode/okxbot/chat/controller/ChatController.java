@@ -6,7 +6,10 @@ import com.dwcode.okxbot.chat.service.ChatService;
 import com.dwcode.okxbot.common.response.ApiResult;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.http.MediaType;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 import java.util.List;
 import java.util.Map;
@@ -14,6 +17,7 @@ import java.util.Map;
 /**
  * AI 聊天接口。
  */
+@Slf4j
 @RestController
 @RequestMapping("/api/chat")
 @RequiredArgsConstructor
@@ -46,11 +50,27 @@ public class ChatController {
     }
 
     /**
-     * 发送消息。
+     * 发送消息（SSE 流式响应）。
+     *
+     * SSE 事件格式：
+     * - event: meta, data: {"conversationId":"xxx"} — 会话元信息
+     * - event: delta, data: {"content":"xxx"} — AI 回复增量内容
+     * - event: done, data: {"messageId":"xxx"} — 流式结束
+     * - event: error, data: {"message":"xxx"} — 错误信息
      */
-    @PostMapping("/send")
-    public ApiResult<Map<String, Object>> sendMessage(@Valid @RequestBody ChatRequest request) {
-        return ApiResult.ok(chatService.sendMessage(request));
+    @PostMapping(value = "/send", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
+    public SseEmitter sendMessage(@Valid @RequestBody ChatRequest request) {
+        // 超时设置为 3 分钟
+        SseEmitter emitter = new SseEmitter(180_000L);
+
+        emitter.onCompletion(() -> log.debug("SSE 连接完成"));
+        emitter.onTimeout(() -> log.warn("SSE 连接超时"));
+        emitter.onError(e -> log.error("SSE 连接异常", e));
+
+        // 异步执行流式调用
+        chatService.sendMessageStream(request, emitter);
+
+        return emitter;
     }
 
     /**

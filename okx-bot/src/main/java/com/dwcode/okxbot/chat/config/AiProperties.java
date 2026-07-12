@@ -54,7 +54,10 @@ public class AiProperties {
             return providers.get(defaultProvider);
         }
         // 兜底：返回第一个有 apiKey 的供应商
-        return getAllAvailableProviders().stream().findFirst().orElse(null);
+        return getAllAvailableProviders().stream()
+                .map(Map.Entry::getValue)
+                .findFirst()
+                .orElse(null);
     }
 
     /**
