@@ -187,4 +187,5 @@ async def transcribe(
 if __name__ == "__main__":
     import uvicorn
 
-    uvicorn.run(app, host="0.0.0.0", port="8000")
+    # port 必须是 int；传字符串会导致 uvicorn 启动日志 TypeError，看起来像“跑不起来”
+    uvicorn.run(app, host="0.0.0.0", port=8000)

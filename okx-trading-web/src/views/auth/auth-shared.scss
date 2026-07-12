@@ -1,0 +1,93 @@
+.auth-page {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background:
+    radial-gradient(circle at 20% 20%, rgba(99, 102, 241, 0.12), transparent 40%),
+    radial-gradient(circle at 80% 0%, rgba(168, 85, 247, 0.1), transparent 35%),
+    #f5f7fa;
+}
+
+.auth-card {
+  width: 100%;
+  max-width: 420px;
+  background: #fff;
+  border-radius: 16px;
+  border: 1px solid #e5e7eb;
+  box-shadow: 0 12px 40px rgba(15, 23, 42, 0.08);
+  padding: 32px 28px 24px;
+}
+
+.brand {
+  text-align: center;
+  margin-bottom: 24px;
+
+  h1 {
+    margin: 12px 0 6px;
+    font-size: 22px;
+    font-weight: 700;
+    color: #111827;
+  }
+
+  p {
+    margin: 0;
+    font-size: 13px;
+    color: #6b7280;
+  }
+}
+
+.brand-mark {
+  width: 48px;
+  height: 48px;
+  margin: 0 auto;
+  border-radius: 12px;
+  background: linear-gradient(135deg, #6366f1, #a855f7);
+  color: #fff;
+  font-weight: 800;
+  font-size: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 8px 20px rgba(99, 102, 241, 0.35);
+}
+
+.form-extra {
+  display: flex;
+  justify-content: flex-end;
+  margin: -8px 0 16px;
+
+  a {
+    font-size: 13px;
+    color: #4f46e5;
+  }
+}
+
+.code-row {
+  display: flex;
+  gap: 10px;
+
+  :deep(.ant-input) {
+    flex: 1;
+  }
+}
+
+.auth-footer {
+  margin-top: 20px;
+  text-align: center;
+  font-size: 13px;
+  color: #6b7280;
+
+  a {
+    color: #4f46e5;
+    font-weight: 500;
+  }
+}
+
+.dev-tip {
+  margin-top: 12px;
+  text-align: center;
+  font-size: 11px;
+  color: #9ca3af;
+}

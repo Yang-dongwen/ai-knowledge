@@ -20,6 +20,9 @@ public class VideoTaskEntity {
     @TableId(type = IdType.ASSIGN_ID)
     private Long id;
 
+    /** 所属用户 ID */
+    private Long userId;
+
     /** 源视频 URL */
     private String sourceUrl;
 

@@ -10,6 +10,8 @@ export interface ApiResponse<T = any> {
   timestamp: string
 }
 
+const TOKEN_KEY = 'okx_auth_token'
+
 const request: AxiosInstance = axios.create({
   baseURL: '/api',
   timeout: 15000,
@@ -18,14 +20,17 @@ const request: AxiosInstance = axios.create({
   }
 })
 
-// 请求拦截
+// 请求拦截：附加 JWT
 request.interceptors.request.use(
   (config) => {
+    const token = localStorage.getItem(TOKEN_KEY)
+    if (token) {
+      config.headers = config.headers || {}
+      config.headers.Authorization = `Bearer ${token}`
+    }
     return config
   },
-  (error) => {
-    return Promise.reject(error)
-  }
+  (error) => Promise.reject(error)
 )
 
 // 响应拦截
@@ -35,26 +40,36 @@ request.interceptors.response.use(
     if (res.success) {
       return res as any
     }
-    // 业务错误
     message.error(res.message || '请求失败')
     return Promise.reject(new Error(res.message || '请求失败'))
   },
   (error) => {
     if (error.response) {
       const status = error.response.status
+      const msg = error.response.data?.message
       switch (status) {
         case 401:
-          message.error('未登录或登录已过期')
+          localStorage.removeItem(TOKEN_KEY)
+          localStorage.removeItem('okx_auth_user')
+          message.error(msg || '未登录或登录已过期')
+          if (!location.pathname.startsWith('/login')
+            && !location.pathname.startsWith('/register')
+            && !location.pathname.startsWith('/forgot-password')) {
+            const redirect = encodeURIComponent(location.pathname + location.search)
+            location.href = `/login?redirect=${redirect}`
+          }
           break
         case 403:
-          message.error('无权限')
+          message.error(msg || '无权限')
           break
         case 500:
-          message.error('服务器内部错误')
+          message.error(msg || '服务器内部错误')
           break
         default:
-          message.error(error.response.data?.message || '请求失败')
+          message.error(msg || '请求失败')
       }
+    } else if (error.code === 'ECONNABORTED') {
+      message.error('请求超时')
     } else {
       message.error('网络连接异常，请检查网络')
     }

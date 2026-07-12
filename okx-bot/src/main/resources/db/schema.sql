@@ -281,6 +281,7 @@ CREATE TABLE IF NOT EXISTS backtest_equity_curve (
 -- 14. 视频处理任务表（v2 持久化：视频/转录/核心内容）
 CREATE TABLE IF NOT EXISTS video_task (
     id BIGINT NOT NULL COMMENT '主键',
+    user_id BIGINT COMMENT '所属用户ID',
     source_url VARCHAR(1024) NOT NULL COMMENT '源视频URL',
     title VARCHAR(512) COMMENT '视频标题',
     platform VARCHAR(32) COMMENT '平台 douyin/bilibili/youtube/xiaohongshu/other',
@@ -311,10 +312,42 @@ CREATE TABLE IF NOT EXISTS video_task (
     PRIMARY KEY (id),
     INDEX idx_status (status),
     INDEX idx_platform (platform),
+    INDEX idx_user_id (user_id),
     INDEX idx_created_at (created_at)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='视频处理任务表';
 
--- 15. 可配置 LLM 模型表（替代 yml 中 providers.*.models）
+-- 15. 系统用户表（邮箱即登录名）
+CREATE TABLE IF NOT EXISTS sys_user (
+    id BIGINT NOT NULL COMMENT '主键',
+    email VARCHAR(128) NOT NULL COMMENT '邮箱/用户名',
+    password_hash VARCHAR(100) NOT NULL COMMENT 'BCrypt密码哈希',
+    nickname VARCHAR(64) COMMENT '昵称',
+    role VARCHAR(32) NOT NULL DEFAULT 'USER' COMMENT 'USER普通/MEMBER会员/SUPER_ADMIN超管',
+    status TINYINT NOT NULL DEFAULT 1 COMMENT '1正常 0禁用',
+    email_verified TINYINT NOT NULL DEFAULT 0 COMMENT '1已验证',
+    last_login_at DATETIME(3) COMMENT '最后登录时间',
+    created_at DATETIME(3) NOT NULL COMMENT '创建时间',
+    updated_at DATETIME(3) NOT NULL COMMENT '更新时间',
+    PRIMARY KEY (id),
+    UNIQUE KEY uk_email (email),
+    INDEX idx_role (role)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='系统用户表';
+
+-- 16. 邮箱验证码表
+CREATE TABLE IF NOT EXISTS email_code (
+    id BIGINT NOT NULL COMMENT '主键',
+    email VARCHAR(128) NOT NULL COMMENT '邮箱',
+    code VARCHAR(16) NOT NULL COMMENT '验证码',
+    purpose VARCHAR(32) NOT NULL COMMENT 'REGISTER/RESET_PASSWORD',
+    expires_at DATETIME(3) NOT NULL COMMENT '过期时间',
+    used TINYINT NOT NULL DEFAULT 0 COMMENT '0未使用 1已使用',
+    created_at DATETIME(3) NOT NULL COMMENT '创建时间',
+    PRIMARY KEY (id),
+    INDEX idx_email_purpose (email, purpose),
+    INDEX idx_created_at (created_at)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='邮箱验证码表';
+
+-- 17. 可配置 LLM 模型表（替代 yml 中 providers.*.models）
 CREATE TABLE IF NOT EXISTS ai_model_config (
     id BIGINT NOT NULL COMMENT '主键',
     provider VARCHAR(64) NOT NULL COMMENT '供应商标识，对应 ai.providers 的 key',

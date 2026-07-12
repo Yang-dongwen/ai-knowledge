@@ -2,6 +2,7 @@ package com.dwcode.okxbot.video.service;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
+import com.dwcode.okxbot.auth.security.SecurityUtils;
 import com.dwcode.okxbot.common.exception.BusinessException;
 import com.dwcode.okxbot.chat.config.AiProperties;
 import com.dwcode.okxbot.chat.config.AiProperties.ProviderConfig;
@@ -90,6 +91,7 @@ public class VideoProcessService {
         }
 
         VideoTaskEntity entity = new VideoTaskEntity();
+        entity.setUserId(SecurityUtils.requireCurrentUserId());
         entity.setSourceUrl(request.getUrl().trim());
         entity.setPlatform(storageService.detectPlatform(entity.getSourceUrl()));
         entity.setStatus(VideoTaskStatus.PENDING.name());
@@ -122,7 +124,7 @@ public class VideoProcessService {
      * 暂停进行中的任务：协作式中断当前流水线，并调度排队中的 PENDING 任务。
      */
     public VideoTaskResponse pauseTask(Long taskId) {
-        VideoTaskEntity entity = requireTask(taskId);
+        VideoTaskEntity entity = requireOwnedTask(taskId);
         String status = entity.getStatus();
         if (!VideoTaskStatus.DOWNLOADING.name().equals(status)
                 && !VideoTaskStatus.TRANSCRIBING.name().equals(status)
@@ -159,7 +161,7 @@ public class VideoProcessService {
      * 失败/暂停任务重试：可重新指定 LLM，重置后重新排队调度。
      */
     public VideoTaskResponse retryTask(Long taskId, VideoRetryRequest request) {
-        VideoTaskEntity entity = requireTask(taskId);
+        VideoTaskEntity entity = requireOwnedTask(taskId);
         String status = entity.getStatus();
         if (!VideoTaskStatus.FAILED.name().equals(status)
                 && !VideoTaskStatus.PAUSED.name().equals(status)) {
@@ -253,7 +255,7 @@ public class VideoProcessService {
      * 查询任务状态与完整结果。
      */
     public VideoTaskResponse getStatus(Long taskId) {
-        return toResponse(requireTask(taskId), true);
+        return toResponse(requireOwnedTask(taskId), true);
     }
 
     /**
@@ -262,11 +264,13 @@ public class VideoProcessService {
     public VideoTaskPageResponse listTasks(int page, int size) {
         int safePage = Math.max(page, 0);
         int safeSize = Math.min(Math.max(size, 1), 100);
+        Long userId = SecurityUtils.requireCurrentUserId();
 
         Page<VideoTaskEntity> mpPage = new Page<>(safePage + 1L, safeSize);
         Page<VideoTaskEntity> result = videoTaskMapper.selectPage(
                 mpPage,
                 new LambdaQueryWrapper<VideoTaskEntity>()
+                        .eq(VideoTaskEntity::getUserId, userId)
                         .orderByDesc(VideoTaskEntity::getCreatedAt)
         );
 
@@ -287,8 +291,10 @@ public class VideoProcessService {
      */
     public List<VideoTaskResponse> listRecent(int limit) {
         int safeLimit = Math.min(Math.max(limit, 1), 100);
+        Long userId = SecurityUtils.requireCurrentUserId();
         List<VideoTaskEntity> list = videoTaskMapper.selectList(
                 new LambdaQueryWrapper<VideoTaskEntity>()
+                        .eq(VideoTaskEntity::getUserId, userId)
                         .orderByDesc(VideoTaskEntity::getCreatedAt)
                         .last("LIMIT " + safeLimit)
         );
@@ -299,7 +305,7 @@ public class VideoProcessService {
      * 获取带时间戳的转录文字。
      */
     public TranscriptionResult getTranscription(Long taskId) {
-        VideoTaskEntity entity = requireTask(taskId);
+        VideoTaskEntity entity = requireOwnedTask(taskId);
         if (entity.getTranscriptionJson() == null || entity.getTranscriptionJson().isBlank()) {
             throw new BusinessException(404, "转录结果尚未生成: " + taskId);
         }
@@ -314,7 +320,7 @@ public class VideoProcessService {
      * 获取 AI 核心内容（要点 / 章节 / 思维导图 / repurpose）。
      */
     public VideoSummaryPart getSummary(Long taskId) {
-        VideoTaskEntity entity = requireTask(taskId);
+        VideoTaskEntity entity = requireOwnedTask(taskId);
 
         if (entity.getSummaryJson() != null && !entity.getSummaryJson().isBlank()) {
             try {
@@ -342,7 +348,7 @@ public class VideoProcessService {
      * 下载原始视频文件流。
      */
     public ResponseEntity<Resource> downloadVideo(Long taskId) {
-        VideoTaskEntity entity = requireTask(taskId);
+        VideoTaskEntity entity = requireOwnedTask(taskId);
         Path path = storageService.requireExistingFile(entity.getVideoPath(), "视频文件");
         Resource resource = new FileSystemResource(path);
         String contentType = storageService.guessMediaType(path);
@@ -358,7 +364,7 @@ public class VideoProcessService {
      * 删除视频任务：数据库记录 + 任务目录下视频/音频/转录/摘要等文件。
      */
     public void deleteTask(Long taskId) {
-        VideoTaskEntity entity = requireTask(taskId);
+        VideoTaskEntity entity = requireOwnedTask(taskId);
         String taskIdStr = String.valueOf(taskId);
 
         int filesRemoved = storageService.deleteTaskDir(taskIdStr);
@@ -389,10 +395,21 @@ public class VideoProcessService {
         }
     }
 
-    private VideoTaskEntity requireTask(Long taskId) {
+    private VideoTaskEntity requireOwnedTask(Long taskId) {
         VideoTaskEntity entity = videoTaskMapper.selectById(taskId);
         if (entity == null) {
             throw new BusinessException(404, "任务不存在: " + taskId);
+        }
+        Long userId = SecurityUtils.requireCurrentUserId();
+        // 兼容历史数据 user_id 为空：仅允许本人或未绑定数据在登录后不可见他人
+        if (entity.getUserId() != null && !entity.getUserId().equals(userId)) {
+            throw new BusinessException(403, "无权访问该任务");
+        }
+        if (entity.getUserId() == null) {
+            // 旧数据首次访问归属当前用户
+            entity.setUserId(userId);
+            entity.setUpdatedAt(LocalDateTime.now());
+            videoTaskMapper.updateById(entity);
         }
         return entity;
     }

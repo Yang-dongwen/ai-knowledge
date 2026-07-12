@@ -39,9 +39,15 @@ export const chatApi = {
     const baseURL = request.defaults.baseURL || '/api'
     const url = `${baseURL}/chat/send`
 
+    const token = localStorage.getItem('okx_auth_token')
+    const headers: Record<string, string> = { 'Content-Type': 'application/json' }
+    if (token) {
+      headers.Authorization = `Bearer ${token}`
+    }
+
     fetch(url, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers,
       body: JSON.stringify(data),
       signal: controller.signal
     })

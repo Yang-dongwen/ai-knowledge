@@ -60,7 +60,12 @@
             <template #icon><ExperimentOutlined /></template>
             测试可用性
           </a-button>
-          <a-button size="large" class="manage-btn" @click="modelManageOpen = true">
+          <a-button
+            v-if="auth.isSuperAdmin"
+            size="large"
+            class="manage-btn"
+            @click="modelManageOpen = true"
+          >
             <template #icon><SettingOutlined /></template>
             模型管理
           </a-button>
@@ -71,17 +76,25 @@
             ✓ 可用{{ lastTestLatency != null ? ` · ${lastTestLatency}ms` : '' }}
           </a-tag>
           <a-tag v-else-if="currentModelTestStatus === 'fail'" color="error">不可用</a-tag>
-          <a-tag v-else color="default">未测试 — 请先测试再创建任务</a-tag>
+          <a-tag v-else color="default">未测试（可选，可直接创建）</a-tag>
           <span v-if="testErrorMsg && currentModelTestStatus === 'fail'" class="test-err" :title="testErrorMsg">
             {{ testErrorMsg }}
           </span>
         </div>
         <div class="model-status muted" v-else-if="!modelsLoading && availableProviders.length === 0">
-          <a-tag color="warning">暂无可用模型 — 请打开「模型管理」添加，并确认 yml 中配置了 api-key</a-tag>
+          <a-tag color="warning">
+            暂无可用模型
+            <template v-if="auth.isSuperAdmin"> — 请打开「模型管理」添加，并确认 yml 中配置了 api-key</template>
+            <template v-else> — 请联系超级管理员配置模型</template>
+          </a-tag>
         </div>
       </div>
 
-      <ModelManageModal v-model:open="modelManageOpen" @changed="onModelsChanged" />
+      <ModelManageModal
+        v-if="auth.isSuperAdmin"
+        v-model:open="modelManageOpen"
+        @changed="onModelsChanged"
+      />
 
       <div class="options-row">
         <a-space wrap :size="16">
@@ -123,22 +136,23 @@
             @click="selectTask(task.taskId)"
           >
             <div class="task-item-top">
-              <a-tag :color="statusMeta(task.status).color" class="status-tag">
-                {{ statusMeta(task.status).label }}
+              <a-tag :color="statusMeta(task.status, task).color" class="status-tag">
+                {{ statusMeta(task.status, task).label }}
               </a-tag>
               <div class="task-item-actions">
                 <span class="task-time">{{ shortTime(task.createdAt) }}</span>
-                <a-button
-                  v-if="isRunning(task.status) || task.status === 'PENDING'"
-                  type="text"
-                  size="small"
-                  class="task-pause-btn"
-                  :loading="pausingId === task.taskId"
-                  title="暂停"
-                  @click.stop="handlePause(task)"
-                >
-                  <template #icon><PauseCircleOutlined /></template>
-                </a-button>
+                <a-tooltip :title="pauseButtonTip(task)">
+                  <a-button
+                    v-if="canPause(task)"
+                    type="text"
+                    size="small"
+                    class="task-pause-btn"
+                    :loading="pausingId === task.taskId"
+                    @click.stop="handlePause(task)"
+                  >
+                    <template #icon><PauseCircleOutlined /></template>
+                  </a-button>
+                </a-tooltip>
                 <a-button
                   v-if="task.status === 'FAILED' || task.status === 'PAUSED'"
                   type="text"
@@ -170,7 +184,9 @@
               <span class="platform-badge llm-badge" v-if="task.llmModel" :title="task.llmModel">
                 {{ shortModelName(task.llmModel) }}
               </span>
-              <span class="task-step" v-if="isRunning(task.status)">{{ task.currentStep }}</span>
+              <span class="task-step" v-if="isRunning(task.status) || isPauseDraining(task)">
+                {{ task.currentStep }}
+              </span>
               <span class="task-cost" v-else-if="task.totalDurationMs != null" :title="timingTooltip(task)">
                 耗时 {{ formatMs(task.totalDurationMs) }}
               </span>
@@ -213,7 +229,9 @@
           <!-- 标题栏 -->
           <div class="detail-header">
             <div class="detail-header-main">
-              <a-tag :color="statusMeta(detail.status).color">{{ statusMeta(detail.status).label }}</a-tag>
+              <a-tag :color="statusMeta(detail.status, detail).color">
+                {{ statusMeta(detail.status, detail).label }}
+              </a-tag>
               <h3 class="detail-title">{{ detail.title || '未命名视频' }}</h3>
               <div class="detail-sub">
                 <span v-if="detail.platform" class="platform-badge">{{ platformLabel(detail.platform) }}</span>
@@ -231,14 +249,12 @@
               <a-button type="text" :loading="detailLoading" @click="refreshDetail">
                 <template #icon><ReloadOutlined /></template>
               </a-button>
-              <a-button
-                v-if="isRunning(detail.status) || detail.status === 'PENDING'"
-                :loading="pausingId === detail.taskId"
-                @click="handlePause(detail)"
-              >
-                <template #icon><PauseCircleOutlined /></template>
-                暂停
-              </a-button>
+              <a-tooltip v-if="canPause(detail)" :title="pauseButtonTip(detail)">
+                <a-button :loading="pausingId === detail.taskId" @click="handlePause(detail)">
+                  <template #icon><PauseCircleOutlined /></template>
+                  暂停
+                </a-button>
+              </a-tooltip>
               <a-button
                 v-if="detail.status === 'FAILED' || detail.status === 'PAUSED'"
                 type="primary"
@@ -272,6 +288,13 @@
               <a-spin size="small" />
               <span>{{ detail.currentStep || '处理中…' }} · 下载与转录可能需要几分钟，请稍候</span>
             </div>
+            <a-alert
+              type="info"
+              show-icon
+              class="pause-policy-hint"
+              message="暂停说明"
+              description="暂停仅在步骤边界生效（下载 / 转录 / 总结之间）。当前步骤会跑完后再中断，不会立即强杀进行中的下载或模型调用。"
+            />
             <div class="timing-strip" v-if="hasAnyStepTiming(detail)">
               <span class="timing-chip" v-if="detail.downloadDurationMs != null">
                 下载 <b>{{ formatMs(detail.downloadDurationMs) }}</b>
@@ -282,6 +305,21 @@
               <span class="timing-chip" v-if="detail.summarizeDurationMs != null">
                 总结 <b>{{ formatMs(detail.summarizeDurationMs) }}</b>
               </span>
+            </div>
+          </div>
+
+          <!-- 已点暂停、等待当前步骤跑完 -->
+          <div class="progress-block pause-draining" v-else-if="isPauseDraining(detail)">
+            <a-alert
+              type="warning"
+              show-icon
+              class="pause-policy-hint"
+              message="已请求暂停 · 等待当前步骤结束"
+              :description="pauseDrainingDesc(detail)"
+            />
+            <div class="progress-hint">
+              <a-spin size="small" />
+              <span>{{ detail.currentStep || '暂停中，等待当前步骤结束…' }}</span>
             </div>
           </div>
 
@@ -321,9 +359,9 @@
             </div>
           </div>
 
-          <!-- 暂停提示 -->
+          <!-- 暂停完成提示（非「等待步骤结束」中） -->
           <a-alert
-            v-if="detail.status === 'PAUSED'"
+            v-if="detail.status === 'PAUSED' && !isPauseDraining(detail)"
             type="warning"
             show-icon
             class="fail-alert"
@@ -331,7 +369,10 @@
           >
             <template #description>
               <div class="fail-desc">
-                <span>当前步骤结束后中断。可重新选择模型后「重试」，或等待其它排队任务执行。</span>
+                <span>
+                  已在步骤边界中断（暂停不会强制中断进行中的下载 / 转录 / 总结）。
+                  可「重试」从流水线重新排队，或先处理其它任务。
+                </span>
                 <a-button
                   type="primary"
                   size="small"
@@ -596,6 +637,9 @@ import MarkdownIt from 'markdown-it'
 import { videoApi } from '@/api/video.api'
 import type { VideoTaskItem, TranscriptionSegment, AiProvider } from '@/types/api'
 import ModelManageModal from './ModelManageModal.vue'
+import { useAuthStore } from '@/stores/auth.store'
+
+const auth = useAuthStore()
 
 const md = new MarkdownIt({ html: false, linkify: true, breaks: true })
 
@@ -661,11 +705,7 @@ const currentModelTestStatus = computed<'ok' | 'fail' | 'none'>(() => {
 })
 
 const canSubmit = computed(
-  () =>
-    !!urlInput.value.trim() &&
-    !!selectedModelKey.value &&
-    currentModelTestStatus.value === 'ok' &&
-    !submitting.value
+  () => !!urlInput.value.trim() && !!selectedModelKey.value && !submitting.value
 )
 
 function parseModelKey(key: string): { provider: string; model: string } | null {
@@ -792,12 +832,52 @@ const STATUS_MAP: Record<string, { label: string; color: string }> = {
   PAUSED: { label: '已暂停', color: 'warning' }
 }
 
-function statusMeta(status?: string) {
+/** 暂停仅在下载/转录/总结步骤边界生效 */
+const PAUSE_STEP_BOUNDARY_TIP =
+  '暂停仅在步骤边界生效：当前「下载 / 转录 / 总结」会先跑完，再中断并释放并发槽，不会立即强制停止。'
+
+function statusMeta(status?: string, task?: VideoTaskItem | null) {
+  if (task && isPauseDraining(task)) {
+    return { label: '暂停中', color: 'warning' }
+  }
   return STATUS_MAP[status || ''] || { label: status || '未知', color: 'default' }
 }
 
 function isRunning(status?: string) {
   return ['PENDING', 'DOWNLOADING', 'TRANSCRIBING', 'SUMMARIZING'].includes(status || '')
+}
+
+/** 已点暂停，但当前步骤可能仍在跑（等待边界生效） */
+function isPauseDraining(task?: VideoTaskItem | null) {
+  if (!task || task.status !== 'PAUSED') return false
+  const step = task.currentStep || ''
+  return step.includes('暂停中') || step.includes('等待当前步骤')
+}
+
+function canPause(task?: VideoTaskItem | null) {
+  if (!task) return false
+  return isRunning(task.status)
+}
+
+function pauseButtonTip(task?: VideoTaskItem | null) {
+  if (!task) return PAUSE_STEP_BOUNDARY_TIP
+  if (task.status === 'PENDING') {
+    return '排队中暂停：立即取消排队，不会开始执行'
+  }
+  return PAUSE_STEP_BOUNDARY_TIP
+}
+
+function pauseDrainingDesc(task?: VideoTaskItem | null) {
+  return (
+    (task?.currentStep ? `${task.currentStep}。` : '') +
+    '暂停只在步骤边界生效，请稍候；完成后可「重试」继续。其它排队任务可先被调度。'
+  )
+}
+
+/** 列表/详情需要继续轮询的任务（含暂停等待收尾） */
+function needsPoll(task?: VideoTaskItem | null) {
+  if (!task) return false
+  return isRunning(task.status) || isPauseDraining(task)
 }
 
 function statusStepIndex(status?: string) {
@@ -992,10 +1072,6 @@ async function handleSubmit() {
     message.warning('请选择 LLM 模型')
     return
   }
-  if (currentModelTestStatus.value !== 'ok') {
-    message.warning('请先点击「测试可用性」，确认模型可用后再创建任务')
-    return
-  }
   submitting.value = true
   try {
     const res = await videoApi.process({
@@ -1057,14 +1133,32 @@ async function selectTask(taskId: string) {
 
 /** 暂停进行中/排队中任务 */
 async function handlePause(task: VideoTaskItem) {
-  if (!isRunning(task.status) && task.status !== 'PENDING') {
+  if (!canPause(task)) {
     message.warning('仅排队中或进行中的任务可暂停')
     return
   }
+
+  const isPending = task.status === 'PENDING'
+  Modal.confirm({
+    title: isPending ? '暂停排队任务' : '暂停进行中的任务',
+    content: isPending
+      ? '任务尚未开始执行，将立即取消排队并标记为已暂停。'
+      : PAUSE_STEP_BOUNDARY_TIP + '是否继续？',
+    okText: isPending ? '立即暂停' : '请求暂停',
+    cancelText: '取消',
+    onOk: () => doPause(task)
+  })
+}
+
+async function doPause(task: VideoTaskItem) {
   pausingId.value = task.taskId
   try {
     const res = await videoApi.pauseTask(task.taskId)
-    message.success('已请求暂停，当前步骤结束后中断，并调度排队任务')
+    message.success(
+      task.status === 'PENDING'
+        ? '已暂停排队任务'
+        : '已请求暂停：当前步骤结束后中断，并调度其它排队任务'
+    )
     const idx = tasks.value.findIndex((t) => t.taskId === task.taskId)
     if (idx >= 0 && res.data) {
       tasks.value[idx] = { ...tasks.value[idx], ...res.data }
@@ -1072,7 +1166,6 @@ async function handlePause(task: VideoTaskItem) {
     if (selectedId.value === task.taskId) {
       await refreshDetail()
     }
-    // 刷新列表以看到其它排队任务启动
     await loadTasks(true)
   } catch {
     // ignore
@@ -1263,8 +1356,8 @@ async function refreshDetail() {
 function startPolling() {
   stopPolling()
   pollTimer = setInterval(async () => {
-    const hasRunning = tasks.value.some((t) => isRunning(t.status))
-    if (!hasRunning && !(detail.value && isRunning(detail.value.status))) return
+    const hasRunning = tasks.value.some((t) => needsPoll(t))
+    if (!hasRunning && !(detail.value && needsPoll(detail.value))) return
     // 轻量刷新列表
     try {
       const res = await videoApi.listTasks(0, 20)
@@ -1278,7 +1371,7 @@ function startPolling() {
       }
     } catch { /* ignore */ }
 
-    if (detail.value && isRunning(detail.value.status)) {
+    if (detail.value && needsPoll(detail.value)) {
       await refreshDetail()
     }
   }, 3000)
@@ -1698,6 +1791,17 @@ onUnmounted(() => {
     .source-link {
       color: var(--primary-color);
     }
+  }
+}
+
+.pause-policy-hint {
+  margin-top: 12px;
+  border-radius: 10px;
+}
+
+.progress-block.pause-draining {
+  .progress-hint {
+    margin-top: 10px;
   }
 }
 

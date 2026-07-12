@@ -118,13 +118,27 @@
         </a-tooltip>
 
         <div class="user-card">
-          <a-avatar :size="32" class="user-avatar">A</a-avatar>
-          <div class="user-meta">
-            <span class="user-name">admin</span>
-            <span class="user-role">管理员</span>
+          <div class="user-main" title="查看个人资料" @click="openProfileCard">
+            <a-avatar :size="32" class="user-avatar">{{ avatarLetter }}</a-avatar>
+            <div class="user-meta">
+              <span class="user-name">{{ displayName }}</span>
+              <span class="user-role">{{ headerRoleText }}</span>
+            </div>
           </div>
-          <DownOutlined class="user-caret" />
+          <a-dropdown placement="bottomRight">
+            <span class="user-caret-wrap" @click.stop>
+              <DownOutlined class="user-caret" />
+            </span>
+            <template #overlay>
+              <a-menu @click="onUserMenu">
+                <a-menu-item key="profile">个人资料</a-menu-item>
+                <a-menu-item key="logout">退出登录</a-menu-item>
+              </a-menu>
+            </template>
+          </a-dropdown>
         </div>
+
+        <ProfileCardModal v-model:open="profileOpen" />
       </div>
     </div>
   </header>
@@ -133,7 +147,8 @@
 <script setup lang="ts">
 import { ref, computed, watch, markRaw, onMounted, onUnmounted, type Component } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
-import { Modal } from 'ant-design-vue'
+import { Modal, message } from 'ant-design-vue'
+import { useAuthStore } from '@/stores/auth.store'
 import {
   HomeOutlined,
   SettingOutlined,
@@ -149,9 +164,12 @@ import {
   ToolOutlined,
   SyncOutlined,
   BellOutlined,
-  DownOutlined
+  DownOutlined,
+  TeamOutlined
 } from '@ant-design/icons-vue'
 import { useSystemStore } from '@/stores/system.store'
+import ProfileCardModal from '@/components/ProfileCardModal.vue'
+import { roleLabel } from '@/api/auth.api'
 
 interface MenuItem {
   key: string
@@ -187,7 +205,13 @@ const TRADING_KEYS = new Set([
 
 const TOOLS_KEYS = new Set(['video-extract'])
 
-const menuGroups: MenuGroup[] = [
+/** 系统管理（仅超级管理员） */
+const ADMIN_KEYS = new Set(['user-manage'])
+
+/** 仅超管可见的大菜单 key */
+const SUPER_ADMIN_ONLY_GROUPS = new Set(['trading', 'admin'])
+
+const ALL_MENU_GROUPS: MenuGroup[] = [
   {
     key: 'tools',
     title: '工具使用',
@@ -289,14 +313,54 @@ const menuGroups: MenuGroup[] = [
         iconColor: '#7C3AED'
       }
     ]
+  },
+  {
+    key: 'admin',
+    title: '系统管理',
+    description: '用户与权限等管理功能',
+    icon: markRaw(TeamOutlined),
+    accent: '#DB2777',
+    accentSoft: '#FCE7F3',
+    cols: 1,
+    children: [
+      {
+        key: 'user-manage',
+        title: '用户管理',
+        description: '查询用户并启用/禁用账号',
+        icon: markRaw(TeamOutlined),
+        iconBg: '#FCE7F3',
+        iconColor: '#DB2777'
+      }
+    ]
   }
 ]
 
 const router = useRouter()
 const route = useRoute()
 const systemStore = useSystemStore()
+const auth = useAuthStore()
 
 const openGroup = ref<string | null>(null)
+const profileOpen = ref(false)
+
+/** 交易管理、系统管理仅超管可见；普通用户/会员只看工具 */
+const menuGroups = computed(() =>
+  ALL_MENU_GROUPS.filter((g) => !SUPER_ADMIN_ONLY_GROUPS.has(g.key) || auth.isSuperAdmin)
+)
+
+const displayName = computed(() => auth.user?.nickname || auth.user?.email || '用户')
+const avatarLetter = computed(() => {
+  const n = displayName.value
+  return n ? n.charAt(0).toUpperCase() : 'U'
+})
+const headerRoleText = computed(() => {
+  if (!auth.user) return '未登录'
+  return roleLabel(auth.user.role, auth.user.roleLabel)
+})
+
+function openProfileCard() {
+  profileOpen.value = true
+}
 
 const systemStatus = computed(() => systemStore.systemStatus)
 const runMode = computed(() => systemStore.runMode)
@@ -306,11 +370,12 @@ const isTradingRoute = computed(() => TRADING_KEYS.has(currentRouteKey.value))
 const activeGroupKey = computed(() => {
   if (TOOLS_KEYS.has(currentRouteKey.value)) return 'tools'
   if (TRADING_KEYS.has(currentRouteKey.value)) return 'trading'
+  if (ADMIN_KEYS.has(currentRouteKey.value)) return 'admin'
   return ''
 })
 
 const currentPageTitle = computed(() => {
-  for (const group of menuGroups) {
+  for (const group of menuGroups.value) {
     const item = group.children.find((c) => c.key === currentRouteKey.value)
     if (item) return item.title
   }
@@ -333,6 +398,10 @@ function onDocumentClick(e: MouseEvent) {
 
 onMounted(() => {
   document.addEventListener('click', onDocumentClick)
+  // 登录后刷新角色，避免 localStorage 旧缓存导致菜单权限不准
+  if (auth.isLoggedIn) {
+    auth.fetchMe().catch(() => undefined)
+  }
 })
 
 onUnmounted(() => {
@@ -350,6 +419,18 @@ function goTo(key: string) {
 
 function handleRefresh() {
   window.location.reload()
+}
+
+async function onUserMenu({ key }: { key: string }) {
+  if (key === 'profile') {
+    openProfileCard()
+    return
+  }
+  if (key === 'logout') {
+    await auth.logout()
+    message.success('已退出登录')
+    router.replace('/login')
+  }
 }
 
 function handleEmergencyStop() {
@@ -798,19 +879,27 @@ function handleEmergencyStop() {
 .user-card {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 4px 10px 4px 4px;
+  gap: 4px;
+  padding: 4px 6px 4px 4px;
   margin-left: 2px;
   border-radius: 999px;
   border: 1px solid #E5E7EB;
   background: #fff;
-  cursor: pointer;
   transition: all 0.16s ease;
 
   &:hover {
     border-color: #D1D5DB;
     box-shadow: 0 2px 8px rgba(15, 23, 42, 0.06);
   }
+}
+
+.user-main {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  border-radius: 999px;
+  padding-right: 2px;
 }
 
 .user-avatar {
@@ -836,9 +925,24 @@ function handleEmergencyStop() {
   color: #9CA3AF;
 }
 
+.user-caret-wrap {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 999px;
+  cursor: pointer;
+  color: #9CA3AF;
+
+  &:hover {
+    background: #F3F4F6;
+    color: #6B7280;
+  }
+}
+
 .user-caret {
   font-size: 10px;
-  color: #9CA3AF;
 }
 
 .dropdown-fade-enter-active,
