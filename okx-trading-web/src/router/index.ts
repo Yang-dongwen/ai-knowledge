@@ -55,6 +55,18 @@ const routes: RouteRecordRaw[] = [
         name: 'SystemSettings',
         component: () => import('@/views/system-settings/index.vue'),
         meta: { title: '系统设置' }
+      },
+      {
+        path: 'ai-chat',
+        name: 'AiChat',
+        component: () => import('@/views/ai-chat/index.vue'),
+        meta: { title: 'AI 助手' }
+      },
+      {
+        path: 'video-extract',
+        name: 'VideoExtract',
+        component: () => import('@/views/video-extract/index.vue'),
+        meta: { title: '视频提取' }
       }
     ]
   }

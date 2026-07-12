@@ -27,13 +27,61 @@
           size="large"
           class="submit-btn"
           :loading="submitting"
-          :disabled="!urlInput.trim()"
+          :disabled="!canSubmit"
           @click="handleSubmit"
         >
           <template #icon><ThunderboltOutlined /></template>
           开始提取
         </a-button>
       </div>
+
+      <!-- LLM 模型选择 + 连通性测试 -->
+      <div class="model-row">
+        <div class="model-pick">
+          <span class="opt-label">LLM 模型</span>
+          <a-select
+            v-model:value="selectedModelKey"
+            class="model-select"
+            size="large"
+            show-search
+            :options="modelSelectOptions"
+            :filter-option="filterModelOption"
+            placeholder="选择用于总结的模型（数据库配置）"
+            :loading="modelsLoading"
+            @change="onModelChange"
+          />
+          <a-button
+            size="large"
+            class="test-btn"
+            :loading="testingModel"
+            :disabled="!selectedModelKey"
+            @click="handleTestModel"
+          >
+            <template #icon><ExperimentOutlined /></template>
+            测试可用性
+          </a-button>
+          <a-button size="large" class="manage-btn" @click="modelManageOpen = true">
+            <template #icon><SettingOutlined /></template>
+            模型管理
+          </a-button>
+        </div>
+        <div class="model-status" v-if="selectedModelKey">
+          <a-tag v-if="testingModel" color="processing">测试中…</a-tag>
+          <a-tag v-else-if="currentModelTestStatus === 'ok'" color="success">
+            ✓ 可用{{ lastTestLatency != null ? ` · ${lastTestLatency}ms` : '' }}
+          </a-tag>
+          <a-tag v-else-if="currentModelTestStatus === 'fail'" color="error">不可用</a-tag>
+          <a-tag v-else color="default">未测试 — 请先测试再创建任务</a-tag>
+          <span v-if="testErrorMsg && currentModelTestStatus === 'fail'" class="test-err" :title="testErrorMsg">
+            {{ testErrorMsg }}
+          </span>
+        </div>
+        <div class="model-status muted" v-else-if="!modelsLoading && availableProviders.length === 0">
+          <a-tag color="warning">暂无可用模型 — 请打开「模型管理」添加，并确认 yml 中配置了 api-key</a-tag>
+        </div>
+      </div>
+
+      <ModelManageModal v-model:open="modelManageOpen" @changed="onModelsChanged" />
 
       <div class="options-row">
         <a-space wrap :size="16">
@@ -97,6 +145,9 @@
             </div>
             <div class="task-meta">
               <span class="platform-badge" v-if="task.platform">{{ platformLabel(task.platform) }}</span>
+              <span class="platform-badge llm-badge" v-if="task.llmModel" :title="task.llmModel">
+                {{ shortModelName(task.llmModel) }}
+              </span>
               <span class="task-step" v-if="isRunning(task.status)">{{ task.currentStep }}</span>
               <span class="task-dur" v-else-if="task.durationSeconds">{{ formatDuration(task.durationSeconds) }}</span>
             </div>
@@ -141,6 +192,9 @@
               <h3 class="detail-title">{{ detail.title || '未命名视频' }}</h3>
               <div class="detail-sub">
                 <span v-if="detail.platform" class="platform-badge">{{ platformLabel(detail.platform) }}</span>
+                <span v-if="detail.llmModel" class="platform-badge llm-badge" :title="detail.llmProvider || ''">
+                  {{ shortModelName(detail.llmModel) }}
+                </span>
                 <span v-if="detail.durationSeconds">时长 {{ formatDuration(detail.durationSeconds) }}</span>
                 <span v-if="detail.createdAt">创建于 {{ detail.createdAt }}</span>
                 <a v-if="detail.url" :href="detail.url" target="_blank" rel="noopener" class="source-link">
@@ -360,12 +414,15 @@ import {
   ExportOutlined,
   CopyOutlined,
   DeleteOutlined,
-  ExclamationCircleOutlined
+  ExclamationCircleOutlined,
+  ExperimentOutlined,
+  SettingOutlined
 } from '@ant-design/icons-vue'
 import { createVNode } from 'vue'
 import MarkdownIt from 'markdown-it'
 import { videoApi } from '@/api/video.api'
-import type { VideoTaskItem, TranscriptionSegment } from '@/types/api'
+import type { VideoTaskItem, TranscriptionSegment, AiProvider } from '@/types/api'
+import ModelManageModal from './ModelManageModal.vue'
 
 const md = new MarkdownIt({ html: false, linkify: true, breaks: true })
 
@@ -376,6 +433,18 @@ const options = reactive({
   extractMindMap: true,
   generateRepurposeScript: true
 })
+
+/** provider::modelId */
+const selectedModelKey = ref('')
+const availableProviders = ref<AiProvider[]>([])
+const modelsLoading = ref(false)
+const modelManageOpen = ref(false)
+const testingModel = ref(false)
+/** 测试通过的 modelKey 集合 */
+const testedOkKeys = ref<Set<string>>(new Set())
+const testedFailKeys = ref<Set<string>>(new Set())
+const testErrorMsg = ref('')
+const lastTestLatency = ref<number | null>(null)
 
 const tasks = ref<VideoTaskItem[]>([])
 const taskTotal = ref(0)
@@ -391,6 +460,138 @@ const videoRef = ref<HTMLVideoElement | null>(null)
 const deletingId = ref('')
 
 let pollTimer: ReturnType<typeof setInterval> | null = null
+
+const modelSelectOptions = computed(() =>
+  availableProviders.value.map((p) => ({
+    label: p.name,
+    options: (p.models || []).map((m) => ({
+      label: m.name || m.id,
+      value: `${p.key}::${m.id}`,
+      title: m.id
+    }))
+  }))
+)
+
+const currentModelTestStatus = computed<'ok' | 'fail' | 'none'>(() => {
+  if (!selectedModelKey.value) return 'none'
+  if (testedOkKeys.value.has(selectedModelKey.value)) return 'ok'
+  if (testedFailKeys.value.has(selectedModelKey.value)) return 'fail'
+  return 'none'
+})
+
+const canSubmit = computed(
+  () =>
+    !!urlInput.value.trim() &&
+    !!selectedModelKey.value &&
+    currentModelTestStatus.value === 'ok' &&
+    !submitting.value
+)
+
+function parseModelKey(key: string): { provider: string; model: string } | null {
+  const i = key.indexOf('::')
+  if (i <= 0) return null
+  return { provider: key.slice(0, i), model: key.slice(i + 2) }
+}
+
+function shortModelName(id?: string | null) {
+  if (!id) return ''
+  const parts = id.split('/')
+  return parts[parts.length - 1] || id
+}
+
+function filterModelOption(input: string, option: any) {
+  const q = (input || '').toLowerCase()
+  const label = String(option?.label || '').toLowerCase()
+  const value = String(option?.value || '').toLowerCase()
+  return label.includes(q) || value.includes(q)
+}
+
+function onModelChange() {
+  testErrorMsg.value = ''
+  lastTestLatency.value = null
+}
+
+async function loadModels() {
+  modelsLoading.value = true
+  try {
+    const res = await videoApi.listModels()
+    availableProviders.value = res.data || []
+    // 若当前选中已不在列表中，清空
+    if (selectedModelKey.value) {
+      const still = availableProviders.value.some((p) =>
+        (p.models || []).some((m) => `${p.key}::${m.id}` === selectedModelKey.value)
+      )
+      if (!still) {
+        selectedModelKey.value = ''
+        testedOkKeys.value = new Set()
+        testedFailKeys.value = new Set()
+      }
+    }
+    // 默认选中第一个供应商的第一个模型
+    if (!selectedModelKey.value && availableProviders.value.length) {
+      const p = availableProviders.value[0]
+      if (p.models?.length) {
+        selectedModelKey.value = `${p.key}::${p.models[0].id}`
+      }
+    }
+  } catch {
+    availableProviders.value = []
+  } finally {
+    modelsLoading.value = false
+  }
+}
+
+async function onModelsChanged() {
+  await loadModels()
+}
+
+async function handleTestModel() {
+  const parsed = parseModelKey(selectedModelKey.value)
+  if (!parsed) {
+    message.warning('请先选择模型')
+    return
+  }
+  testingModel.value = true
+  testErrorMsg.value = ''
+  lastTestLatency.value = null
+  try {
+    const res = await videoApi.testModel({
+      provider: parsed.provider,
+      model: parsed.model
+    })
+    const result = res.data
+    lastTestLatency.value = result.latencyMs ?? null
+    if (result.available) {
+      testedOkKeys.value = new Set([...testedOkKeys.value, selectedModelKey.value])
+      const nextFail = new Set(testedFailKeys.value)
+      nextFail.delete(selectedModelKey.value)
+      testedFailKeys.value = nextFail
+      message.success(`模型可用${result.latencyMs != null ? `（${result.latencyMs}ms）` : ''}`)
+    } else {
+      testedFailKeys.value = new Set([...testedFailKeys.value, selectedModelKey.value])
+      const nextOk = new Set(testedOkKeys.value)
+      nextOk.delete(selectedModelKey.value)
+      testedOkKeys.value = nextOk
+      testErrorMsg.value = result.errorMessage || '模型不可用'
+      message.error(testErrorMsg.value)
+    }
+  } catch (e: any) {
+    testedFailKeys.value = new Set([...testedFailKeys.value, selectedModelKey.value])
+    const nextOk = new Set(testedOkKeys.value)
+    nextOk.delete(selectedModelKey.value)
+    testedOkKeys.value = nextOk
+    // axios 超时 code 为 ECONNABORTED；统一提示 10s 不可用
+    const isTimeout =
+      e?.code === 'ECONNABORTED' ||
+      String(e?.message || '').toLowerCase().includes('timeout')
+    testErrorMsg.value = isTimeout
+      ? '超过 10 秒无响应，判定不可用'
+      : e?.message || '测试请求失败'
+    message.error(testErrorMsg.value)
+  } finally {
+    testingModel.value = false
+  }
+}
 
 const pipelineSteps = [
   { key: 'PENDING', name: '排队', icon: '①' },
@@ -538,6 +739,15 @@ async function handleSubmit() {
     message.warning('请粘贴视频链接')
     return
   }
+  const parsed = parseModelKey(selectedModelKey.value)
+  if (!parsed) {
+    message.warning('请选择 LLM 模型')
+    return
+  }
+  if (currentModelTestStatus.value !== 'ok') {
+    message.warning('请先点击「测试可用性」，确认模型可用后再创建任务')
+    return
+  }
   submitting.value = true
   try {
     const res = await videoApi.process({
@@ -545,7 +755,9 @@ async function handleSubmit() {
       options: {
         language: options.language,
         extractMindMap: options.extractMindMap,
-        generateRepurposeScript: options.generateRepurposeScript
+        generateRepurposeScript: options.generateRepurposeScript,
+        llmProvider: parsed.provider,
+        llmModel: parsed.model
       }
     })
     message.success('任务已提交，后台处理中')
@@ -706,7 +918,7 @@ watch(selectedId, () => {
 })
 
 onMounted(async () => {
-  await loadTasks(true)
+  await Promise.all([loadModels(), loadTasks(true)])
   startPolling()
 })
 
@@ -768,6 +980,59 @@ onUnmounted(() => {
 
     .input-prefix-icon {
       color: var(--text-muted);
+    }
+  }
+
+  .model-row {
+    margin-top: 14px;
+    padding: 12px 14px;
+    background: rgba(255, 255, 255, 0.72);
+    border: 1px solid rgba(22, 119, 255, 0.12);
+    border-radius: 12px;
+
+    .model-pick {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      flex-wrap: wrap;
+
+      .opt-label {
+        color: var(--text-secondary);
+        font-size: 13px;
+        flex-shrink: 0;
+      }
+
+      .model-select {
+        flex: 1;
+        min-width: 260px;
+        max-width: 520px;
+      }
+
+      .test-btn,
+      .manage-btn {
+        border-radius: 10px;
+      }
+    }
+
+    .model-status {
+      margin-top: 10px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex-wrap: wrap;
+      font-size: 12px;
+
+      &.muted {
+        color: var(--text-muted);
+      }
+
+      .test-err {
+        color: var(--danger-color);
+        max-width: 100%;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
     }
   }
 
@@ -931,6 +1196,15 @@ onUnmounted(() => {
   border-radius: 4px;
   background: #f3f4f6;
   color: var(--text-secondary);
+  max-width: 120px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+
+  &.llm-badge {
+    background: #eef2ff;
+    color: #4f46e5;
+  }
 }
 
 .detail-panel {

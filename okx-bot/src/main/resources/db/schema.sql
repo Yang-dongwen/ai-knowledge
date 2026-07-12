@@ -309,3 +309,20 @@ CREATE TABLE IF NOT EXISTS video_task (
     INDEX idx_platform (platform),
     INDEX idx_created_at (created_at)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='视频处理任务表';
+
+-- 15. 可配置 LLM 模型表（替代 yml 中 providers.*.models）
+CREATE TABLE IF NOT EXISTS ai_model_config (
+    id BIGINT NOT NULL COMMENT '主键',
+    provider VARCHAR(64) NOT NULL COMMENT '供应商标识，对应 ai.providers 的 key',
+    model_id VARCHAR(128) NOT NULL COMMENT 'API模型ID',
+    model_name VARCHAR(128) NOT NULL COMMENT '展示名称',
+    enabled TINYINT NOT NULL DEFAULT 1 COMMENT '是否启用 1是 0否',
+    sort_order INT NOT NULL DEFAULT 0 COMMENT '排序，越小越靠前',
+    remark VARCHAR(255) COMMENT '备注',
+    created_at DATETIME(3) NOT NULL COMMENT '创建时间',
+    updated_at DATETIME(3) NOT NULL COMMENT '更新时间',
+    PRIMARY KEY (id),
+    UNIQUE KEY uk_provider_model (provider, model_id),
+    INDEX idx_enabled_sort (enabled, sort_order)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='LLM模型配置表';
+

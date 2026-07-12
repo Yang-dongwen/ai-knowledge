@@ -50,6 +50,14 @@
         <template #icon><ControlOutlined /></template>
         系统设置
       </a-menu-item>
+      <a-menu-item key="ai-chat">
+        <template #icon><RobotOutlined /></template>
+        AI 助手
+      </a-menu-item>
+      <a-menu-item key="video-extract">
+        <template #icon><VideoCameraOutlined /></template>
+        视频提取
+      </a-menu-item>
     </a-menu>
 
     <!-- Bottom Actions -->
@@ -83,7 +91,9 @@ import {
   WalletOutlined,
   FileTextOutlined,
   ControlOutlined,
-  SwapOutlined
+  SwapOutlined,
+  RobotOutlined,
+  VideoCameraOutlined
 } from '@ant-design/icons-vue'
 import { useSystemStore } from '@/stores/system.store'
 

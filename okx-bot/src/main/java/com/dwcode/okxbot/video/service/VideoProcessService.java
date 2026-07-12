@@ -4,7 +4,6 @@ import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.dwcode.okxbot.common.exception.BusinessException;
 import com.dwcode.okxbot.chat.config.AiProperties;
-import com.dwcode.okxbot.chat.config.AiProperties.ModelConfig;
 import com.dwcode.okxbot.chat.config.AiProperties.ProviderConfig;
 import com.dwcode.okxbot.video.agent.VideoTaskAsyncRunner;
 import com.dwcode.okxbot.video.client.LlmChatClient;
@@ -52,6 +51,7 @@ public class VideoProcessService {
     private final AiProperties aiProperties;
     private final VideoProperties videoProperties;
     private final LlmChatClient llmChatClient;
+    private final AiModelConfigService aiModelConfigService;
 
     /**
      * 提交处理任务，立即返回 taskId，后台异步执行。
@@ -67,18 +67,25 @@ public class VideoProcessService {
             llmProvider = blankToNull(videoProperties.getLlm().getProvider());
         }
         if (llmProvider == null) {
-            llmProvider = aiProperties.getDefaultProvider() != null
+            // defaultProvider 字段为 key；getDefaultProvider() 返回配置对象
+            llmProvider = blankToNull(aiProperties.getDefaultProvider() != null
                     ? findProviderKey(aiProperties.getDefaultProvider())
-                    : null;
+                    : null);
+            if (llmProvider == null) {
+                llmProvider = firstAvailableProviderKey();
+            }
         }
-        // 校验供应商与模型
+        // 校验供应商与模型（模型列表来自数据库）
         if (llmProvider != null) {
             ProviderConfig pc = aiProperties.getProvider(llmProvider);
             if (pc == null || pc.getApiKey() == null || pc.getApiKey().isEmpty()) {
                 throw new BusinessException("LLM 供应商不可用或未配置 api-key: " + llmProvider);
             }
-            if (llmModel == null && pc.getModels() != null && !pc.getModels().isEmpty()) {
-                llmModel = pc.getModels().get(0).getId();
+            if (llmModel == null) {
+                llmModel = aiModelConfigService.firstEnabledModelId(llmProvider);
+            }
+            if (llmModel == null) {
+                throw new BusinessException("未配置可用 LLM 模型，请在「模型管理」中添加");
             }
         }
 
@@ -104,30 +111,6 @@ public class VideoProcessService {
     }
 
     /**
-     * 可用 LLM 供应商与模型列表（有 api-key 的）。
-     */
-    public List<Map<String, Object>> listLlmModels() {
-        List<Map<String, Object>> result = new ArrayList<>();
-        for (Map.Entry<String, ProviderConfig> entry : aiProperties.getAllAvailableProviders()) {
-            Map<String, Object> providerMap = new HashMap<>();
-            providerMap.put("key", entry.getKey());
-            providerMap.put("name", entry.getValue().getName());
-            List<Map<String, String>> modelList = new ArrayList<>();
-            if (entry.getValue().getModels() != null) {
-                for (ModelConfig m : entry.getValue().getModels()) {
-                    Map<String, String> mm = new HashMap<>();
-                    mm.put("id", m.getId());
-                    mm.put("name", m.getName());
-                    modelList.add(mm);
-                }
-            }
-            providerMap.put("models", modelList);
-            result.add(providerMap);
-        }
-        return result;
-    }
-
-    /**
      * 测试指定模型是否可用。
      */
     public LlmModelTestResponse testLlmModel(LlmModelTestRequest request) {
@@ -135,18 +118,27 @@ public class VideoProcessService {
     }
 
     private String findProviderKey(ProviderConfig target) {
+        if (target == null) {
+            return null;
+        }
         for (Map.Entry<String, ProviderConfig> e : aiProperties.getProviders().entrySet()) {
             if (e.getValue() == target) {
                 return e.getKey();
             }
         }
-        // 按 name 兜底
         for (Map.Entry<String, ProviderConfig> e : aiProperties.getProviders().entrySet()) {
             if (e.getValue().getName() != null && e.getValue().getName().equals(target.getName())) {
                 return e.getKey();
             }
         }
-        return aiProperties.getDefaultProvider();
+        return firstAvailableProviderKey();
+    }
+
+    private String firstAvailableProviderKey() {
+        return aiProperties.getAllAvailableProviders().stream()
+                .map(Map.Entry::getKey)
+                .findFirst()
+                .orElse(null);
     }
 
     private static String blankToNull(String s) {
@@ -256,6 +248,41 @@ public class VideoProcessService {
                 .contentType(MediaType.parseMediaType(contentType))
                 .header(HttpHeaders.CONTENT_DISPOSITION, "inline; filename=\"" + filename + "\"")
                 .body(resource);
+    }
+
+    /**
+     * 删除视频任务：数据库记录 + 任务目录下视频/音频/转录/摘要等文件。
+     */
+    public void deleteTask(Long taskId) {
+        VideoTaskEntity entity = requireTask(taskId);
+        String taskIdStr = String.valueOf(taskId);
+
+        int filesRemoved = storageService.deleteTaskDir(taskIdStr);
+        deleteIfExistsQuietly(entity.getVideoPath());
+        deleteIfExistsQuietly(entity.getAudioPath());
+        deleteIfExistsQuietly(entity.getTranscriptionPath());
+        deleteIfExistsQuietly(entity.getSummaryPath());
+
+        int rows = videoTaskMapper.deleteById(taskId);
+        if (rows <= 0) {
+            throw new BusinessException(404, "任务不存在或已删除: " + taskId);
+        }
+        log.info("已删除视频任务: taskId={}, title={}, filesRemoved≈{}",
+                taskId, entity.getTitle(), filesRemoved);
+    }
+
+    private void deleteIfExistsQuietly(String absolutePath) {
+        if (absolutePath == null || absolutePath.isBlank()) {
+            return;
+        }
+        try {
+            Path p = Path.of(absolutePath);
+            if (Files.isRegularFile(p)) {
+                Files.deleteIfExists(p);
+            }
+        } catch (Exception e) {
+            log.debug("删除路径忽略: {} — {}", absolutePath, e.getMessage());
+        }
     }
 
     private VideoTaskEntity requireTask(Long taskId) {

@@ -7,7 +7,10 @@ import type {
   VideoSummaryPart,
   AiProvider,
   LlmModelTestRequest,
-  LlmModelTestResult
+  LlmModelTestResult,
+  AiModelConfig,
+  AiModelConfigRequest,
+  AiProviderOption
 } from '@/types/api'
 
 /**
@@ -24,9 +27,34 @@ export const videoApi = {
     return request.get('/v1/video/models')
   },
 
-  /** 测试模型是否可用（冷启动可能较慢） */
+  /**
+   * 测试模型是否可用。
+   * 超过 10s 无响应前端直接判不可用（与后端 test-timeout-seconds 对齐）。
+   */
   testModel(data: LlmModelTestRequest): Promise<{ data: LlmModelTestResult }> {
-    return request.post('/v1/video/models/test', data, { timeout: 90000 })
+    return request.post('/v1/video/models/test', data, { timeout: 10000 })
+  },
+
+  // ---------- 模型配置管理（数据库） ----------
+
+  listModelConfigs(): Promise<{ data: AiModelConfig[] }> {
+    return request.get('/v1/video/model-configs')
+  },
+
+  listProviders(): Promise<{ data: AiProviderOption[] }> {
+    return request.get('/v1/video/model-configs/providers')
+  },
+
+  createModelConfig(data: AiModelConfigRequest): Promise<{ data: AiModelConfig }> {
+    return request.post('/v1/video/model-configs', data)
+  },
+
+  updateModelConfig(id: string, data: AiModelConfigRequest): Promise<{ data: AiModelConfig }> {
+    return request.put(`/v1/video/model-configs/${id}`, data)
+  },
+
+  deleteModelConfig(id: string): Promise<{ data: null }> {
+    return request.delete(`/v1/video/model-configs/${id}`)
   },
 
   /** 任务详情（含 SUCCESS 时的 result） */

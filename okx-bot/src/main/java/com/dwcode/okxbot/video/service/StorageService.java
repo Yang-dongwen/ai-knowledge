@@ -11,7 +11,9 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.Comparator;
 import java.util.Locale;
+import java.util.stream.Stream;
 
 /**
  * 文件存储与路径管理（v2 持久化核心）。
@@ -86,6 +88,42 @@ public class StorageService {
         } catch (IOException e) {
             throw new BusinessException("保存 JSON 文件失败: " + path + " — " + e.getMessage());
         }
+    }
+
+    /**
+     * 删除任务目录及其中全部文件（视频/音频/JSON 等）。
+     * 目录不存在时静默成功。
+     */
+    public int deleteTaskDir(String taskId) {
+        if (taskId == null || taskId.isBlank()) {
+            return 0;
+        }
+        Path dir = resolveTaskDir(taskId);
+        Path workRoot = Path.of(videoProperties.getWorkDir()).toAbsolutePath().normalize();
+        if (!dir.startsWith(workRoot) || dir.equals(workRoot)) {
+            log.warn("拒绝删除非任务目录: {}", dir);
+            return 0;
+        }
+        if (!Files.isDirectory(dir)) {
+            log.info("任务目录不存在，跳过文件清理: {}", dir);
+            return 0;
+        }
+        int deleted = 0;
+        try (Stream<Path> walk = Files.walk(dir)) {
+            for (Path p : walk.sorted(Comparator.reverseOrder()).toList()) {
+                try {
+                    if (Files.deleteIfExists(p)) {
+                        deleted++;
+                    }
+                } catch (IOException e) {
+                    log.warn("删除文件失败: {} — {}", p, e.getMessage());
+                }
+            }
+            log.info("已清理任务目录: path={}, deleted={}", dir, deleted);
+        } catch (IOException e) {
+            log.warn("遍历任务目录失败: {} — {}", dir, e.getMessage());
+        }
+        return deleted;
     }
 
     /**

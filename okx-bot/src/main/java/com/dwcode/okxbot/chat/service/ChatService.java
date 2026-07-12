@@ -2,8 +2,8 @@ package com.dwcode.okxbot.chat.service;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.dwcode.okxbot.chat.config.AiProperties;
-import com.dwcode.okxbot.chat.config.AiProperties.ModelConfig;
 import com.dwcode.okxbot.chat.config.AiProperties.ProviderConfig;
+import com.dwcode.okxbot.video.service.AiModelConfigService;
 import com.dwcode.okxbot.chat.dto.ChatMessageDTO;
 import com.dwcode.okxbot.chat.dto.ChatRequest;
 import com.dwcode.okxbot.chat.entity.ChatConversationEntity;
@@ -61,6 +61,7 @@ public class ChatService {
     private final OkxConfigService okxConfigService;
     private final SystemStateService systemStateService;
     private final AiProperties aiProperties;
+    private final AiModelConfigService aiModelConfigService;
 
     private final OkHttpClient httpClient = new OkHttpClient.Builder()
             .connectTimeout(30, java.util.concurrent.TimeUnit.SECONDS)
@@ -75,26 +76,10 @@ public class ChatService {
     // ==================== 模型列表 ====================
 
     /**
-     * 获取可用供应商及模型列表（apiKey 不为空的才返回）。
+     * 获取可用供应商及模型列表（数据库 ai_model_config + yml 中有 api-key 的供应商）。
      */
     public List<Map<String, Object>> listAvailableModels() {
-        List<Map.Entry<String, ProviderConfig>> available = aiProperties.getAllAvailableProviders();
-        List<Map<String, Object>> result = new ArrayList<>();
-        for (Map.Entry<String, ProviderConfig> entry : available) {
-            Map<String, Object> providerMap = new HashMap<>();
-            providerMap.put("key", entry.getKey());
-            providerMap.put("name", entry.getValue().getName());
-            List<Map<String, String>> modelList = entry.getValue().getModels().stream()
-                    .map(m -> {
-                        Map<String, String> mm = new HashMap<>();
-                        mm.put("id", m.getId());
-                        mm.put("name", m.getName());
-                        return mm;
-                    }).collect(Collectors.toList());
-            providerMap.put("models", modelList);
-            result.add(providerMap);
-        }
-        return result;
+        return aiModelConfigService.listEnabledGroupedByProvider();
     }
 
     // ==================== 会话管理 ====================
@@ -738,18 +723,22 @@ public class ChatService {
             sb.append("📋 策略: 共 ").append(strategies.size()).append(" 个，已启用 ").append(enabled).append(" 个\n");
         } catch (Exception ignored) {}
 
-        // 列出可用供应商信息
-        List<Map.Entry<String, ProviderConfig>> available = aiProperties.getAllAvailableProviders();
-        if (available.isEmpty()) {
-            sb.append("\n所有 AI 供应商均未配置 API Key。请在 application.yml 中配置供应商的 api-key 以启用智能对话。");
+        // 列出可用模型（数据库 ai_model_config）
+        List<Map<String, Object>> availableModels = aiModelConfigService.listEnabledGroupedByProvider();
+        if (availableModels.isEmpty()) {
+            sb.append("\n暂无可用模型。请在 application.yml 配置供应商 api-key，并在「模型管理」中添加模型。");
         } else {
             sb.append("\n当前可用模型: ");
-            for (Map.Entry<String, ProviderConfig> entry : available) {
-                sb.append(entry.getValue().getName()).append(" (");
-                for (ModelConfig m : entry.getValue().getModels()) {
-                    sb.append(m.getName()).append(", ");
+            for (Map<String, Object> entry : availableModels) {
+                sb.append(entry.get("name")).append(" (");
+                @SuppressWarnings("unchecked")
+                List<Map<String, String>> models = (List<Map<String, String>>) entry.get("models");
+                if (models != null && !models.isEmpty()) {
+                    for (Map<String, String> m : models) {
+                        sb.append(m.get("name")).append(", ");
+                    }
+                    sb.setLength(sb.length() - 2);
                 }
-                sb.setLength(sb.length() - 2);
                 sb.append(") ");
             }
         }

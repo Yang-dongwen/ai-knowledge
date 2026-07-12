@@ -32,6 +32,8 @@ public class LlmChatClient {
     private final VideoProperties videoProperties;
     private final ObjectMapper objectMapper;
     private final OkHttpClient httpClient;
+    /** 模型测试专用短超时客户端 */
+    private final OkHttpClient testHttpClient;
 
     public LlmChatClient(AiProperties aiProperties, VideoProperties videoProperties, ObjectMapper objectMapper) {
         this.aiProperties = aiProperties;
@@ -41,6 +43,13 @@ public class LlmChatClient {
                 .connectTimeout(30, TimeUnit.SECONDS)
                 .readTimeout(180, TimeUnit.SECONDS)
                 .writeTimeout(60, TimeUnit.SECONDS)
+                .build();
+        int testSec = Math.max(1, videoProperties.getLlm().getTestTimeoutSeconds());
+        this.testHttpClient = httpClient.newBuilder()
+                .connectTimeout(Math.min(10, testSec), TimeUnit.SECONDS)
+                .readTimeout(testSec, TimeUnit.SECONDS)
+                .writeTimeout(Math.min(10, testSec), TimeUnit.SECONDS)
+                .callTimeout(testSec, TimeUnit.SECONDS)
                 .build();
     }
 
@@ -61,23 +70,26 @@ public class LlmChatClient {
         return chatInternal(systemPrompt, userPrompt, providerKey, modelId,
                 videoProperties.getLlm().getMaxRetries(),
                 videoProperties.getLlm().getMaxTokens(),
-                videoProperties.getLlm().getTemperature());
+                videoProperties.getLlm().getTemperature(),
+                httpClient);
     }
 
     /**
-     * 连通性测试：短提示 + 少重试，返回结构化结果。
+     * 连通性测试：短提示 + 不重试 + 短超时（默认 10s），超时/失败均判不可用。
      */
     public LlmModelTestResponse testModel(String providerKey, String modelId) {
         long start = System.currentTimeMillis();
+        int timeoutSec = Math.max(1, videoProperties.getLlm().getTestTimeoutSeconds());
         try {
             String reply = chatInternal(
                     "你是一个简洁的助手。",
                     "请只回复：OK",
                     providerKey,
                     modelId,
-                    1,
+                    0, // 测试不重试，避免拖过超时
                     32,
-                    0.1
+                    0.1,
+                    testHttpClient
             );
             return LlmModelTestResponse.builder()
                     .available(true)
@@ -87,15 +99,29 @@ public class LlmChatClient {
                     .latencyMs(System.currentTimeMillis() - start)
                     .build();
         } catch (Exception e) {
-            log.warn("模型测试失败: provider={}, model={}, err={}", providerKey, modelId, e.getMessage());
+            long cost = System.currentTimeMillis() - start;
+            String msg = e.getMessage() != null ? e.getMessage() : "unknown";
+            // 超时统一文案
+            if (isTimeoutError(msg) || cost >= timeoutSec * 1000L - 50) {
+                msg = "超过 " + timeoutSec + " 秒无响应，判定不可用";
+            }
+            log.warn("模型测试失败: provider={}, model={}, {}ms, err={}", providerKey, modelId, cost, msg);
             return LlmModelTestResponse.builder()
                     .available(false)
                     .provider(providerKey)
                     .model(modelId)
-                    .latencyMs(System.currentTimeMillis() - start)
-                    .errorMessage(truncate(e.getMessage(), 500))
+                    .latencyMs(cost)
+                    .errorMessage(truncate(msg, 500))
                     .build();
         }
+    }
+
+    private static boolean isTimeoutError(String msg) {
+        String lower = msg.toLowerCase(Locale.ROOT);
+        return lower.contains("timeout")
+                || lower.contains("timed out")
+                || lower.contains("deadline")
+                || lower.contains("超时");
     }
 
     private String chatInternal(String systemPrompt,
@@ -104,7 +130,8 @@ public class LlmChatClient {
                                 String modelId,
                                 int maxRetries,
                                 int maxTokens,
-                                double temperature) {
+                                double temperature,
+                                OkHttpClient client) {
         ProviderConfig provider = resolveProvider(providerKey);
         String resolvedModel = resolveModelId(provider, modelId);
 
@@ -151,7 +178,7 @@ public class LlmChatClient {
                     .post(RequestBody.create(jsonBody, MediaType.parse("application/json")))
                     .build();
 
-            try (Response response = httpClient.newCall(httpRequest).execute()) {
+            try (Response response = client.newCall(httpRequest).execute()) {
                 String respBody = response.body() != null ? response.body().string() : "";
                 int code = response.code();
 

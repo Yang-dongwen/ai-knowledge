@@ -79,6 +79,11 @@ public class VideoProperties {
         private long retryBackoffMs = 3000;
         /** 单次退避上限毫秒 */
         private long retryMaxBackoffMs = 60000;
+        /**
+         * 模型连通性测试超时（秒）。超过则判定不可用。
+         * 默认 10 秒，避免长时间卡住。
+         */
+        private int testTimeoutSeconds = 10;
     }
 
     @Data
