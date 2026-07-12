@@ -144,4 +144,13 @@ public class VideoProcessController {
         videoProcessService.deleteTask(taskId);
         return ApiResult.ok();
     }
+
+    /**
+     * 失败任务重试（重置后重新跑完整流水线）。
+     */
+    @PostMapping("/tasks/{taskId}/retry")
+    public ApiResult<VideoTaskResponse> retryTask(@PathVariable Long taskId) {
+        log.info("重试视频任务: taskId={}", taskId);
+        return ApiResult.ok(videoProcessService.retryTask(taskId));
+    }
 }

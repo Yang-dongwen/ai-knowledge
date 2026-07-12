@@ -28,7 +28,7 @@ import java.util.stream.Stream;
  * 视频处理流水线（Agent 编排层）。
  *
  * 固定顺序：Download → Transcribe → Summarize。
- * 转录与核心内容同时写入数据库 + 文件系统（v2 持久化）。
+ * 各步骤记录耗时（毫秒）写入 video_task。
  */
 @Slf4j
 @Component
@@ -44,7 +44,7 @@ public class VideoProcessingPipeline {
     private final VideoProperties videoProperties;
 
     /**
-     * 执行完整流水线并更新任务状态。
+     * 执行完整流水线并更新任务状态与步骤耗时。
      */
     public void run(Long taskId) {
         VideoTaskEntity task = videoTaskMapper.selectById(taskId);
@@ -54,6 +54,7 @@ public class VideoProcessingPipeline {
         }
 
         String taskIdStr = String.valueOf(taskId);
+        long pipelineStart = System.currentTimeMillis();
         task.setStartedAt(LocalDateTime.now());
         task.setUpdatedAt(LocalDateTime.now());
         videoTaskMapper.updateById(task);
@@ -61,18 +62,25 @@ public class VideoProcessingPipeline {
         try {
             // Step 1: Download
             updateStatus(task, VideoTaskStatus.DOWNLOADING, "正在下载视频并提取音频");
+            long t0 = System.currentTimeMillis();
             DownloadResult download = downloadService.download(task.getSourceUrl(), taskIdStr);
+            long downloadMs = System.currentTimeMillis() - t0;
+            task.setDownloadDurationMs(downloadMs);
             task.setTitle(download.getTitle());
             task.setDurationSeconds(download.getDurationSeconds());
             task.setVideoPath(download.getVideoPath());
             task.setAudioPath(download.getAudioPath());
             task.setUpdatedAt(LocalDateTime.now());
             videoTaskMapper.updateById(task);
+            log.info("步骤耗时: taskId={}, download={}ms", taskId, downloadMs);
 
             // Step 2: Transcribe + 持久化
             updateStatus(task, VideoTaskStatus.TRANSCRIBING, "正在转录音频");
+            t0 = System.currentTimeMillis();
             TranscriptionResult transcription = transcriptionService.transcribe(
                     download.getAudioPath(), task.getLanguage());
+            long transcribeMs = System.currentTimeMillis() - t0;
+            task.setTranscribeDurationMs(transcribeMs);
             if (transcription.getDurationSeconds() != null) {
                 task.setDurationSeconds(transcription.getDurationSeconds());
             }
@@ -83,15 +91,20 @@ public class VideoProcessingPipeline {
             task.setTranscriptionPath(transcriptionPath);
             task.setUpdatedAt(LocalDateTime.now());
             videoTaskMapper.updateById(task);
+            log.info("步骤耗时: taskId={}, transcribe={}ms", taskId, transcribeMs);
 
             // Step 3: Summarize + 持久化
             updateStatus(task, VideoTaskStatus.SUMMARIZING,
                     "正在生成结构化摘要" + (task.getLlmModel() != null ? "（" + task.getLlmModel() + "）" : ""));
+            t0 = System.currentTimeMillis();
             boolean mindMap = task.getExtractMindMap() == null || task.getExtractMindMap() == 1;
             boolean repurpose = task.getGenerateRepurposeScript() == null || task.getGenerateRepurposeScript() == 1;
             VideoSummaryPart summaryPart = summarizationService.summarize(
                     task.getTitle(), transcription, mindMap, repurpose, task.getLanguage(),
                     task.getLlmProvider(), task.getLlmModel());
+            long summarizeMs = System.currentTimeMillis() - t0;
+            task.setSummarizeDurationMs(summarizeMs);
+            log.info("步骤耗时: taskId={}, summarize={}ms", taskId, summarizeMs);
 
             String summaryJson = objectMapper.writeValueAsString(summaryPart);
             task.setSummaryJson(summaryJson);
@@ -111,13 +124,13 @@ public class VideoProcessingPipeline {
             task.setStatus(VideoTaskStatus.SUCCESS.name());
             task.setCurrentStep("完成");
             task.setFinishedAt(LocalDateTime.now());
+            task.setTotalDurationMs(System.currentTimeMillis() - pipelineStart);
             task.setUpdatedAt(LocalDateTime.now());
             task.setErrorMessage(null);
             videoTaskMapper.updateById(task);
 
             if (videoProperties.isCleanupMedia()) {
                 cleanupTaskMedia(taskId);
-                // 清理后清空文件路径，避免接口误导
                 task.setVideoPath(null);
                 task.setAudioPath(null);
                 task.setTranscriptionPath(null);
@@ -126,13 +139,17 @@ public class VideoProcessingPipeline {
                 videoTaskMapper.updateById(task);
             }
 
-            log.info("视频任务完成: taskId={}, title={}", taskId, task.getTitle());
+            log.info("视频任务完成: taskId={}, title={}, total={}ms (download={}, transcribe={}, summarize={})",
+                    taskId, task.getTitle(), task.getTotalDurationMs(),
+                    task.getDownloadDurationMs(), task.getTranscribeDurationMs(), task.getSummarizeDurationMs());
         } catch (Exception e) {
             log.error("视频任务失败: taskId={}", taskId, e);
             task.setStatus(VideoTaskStatus.FAILED.name());
             task.setCurrentStep("失败");
             task.setErrorMessage(truncate(e.getMessage(), 1000));
             task.setFinishedAt(LocalDateTime.now());
+            // 失败时仍记录已完成的步骤耗时 + 总耗时
+            task.setTotalDurationMs(System.currentTimeMillis() - pipelineStart);
             task.setUpdatedAt(LocalDateTime.now());
             videoTaskMapper.updateById(task);
         }

@@ -77,6 +77,18 @@ public class VideoTaskEntity {
     /** 错误信息 */
     private String errorMessage;
 
+    /** 下载步骤耗时（毫秒） */
+    private Long downloadDurationMs;
+
+    /** 转录步骤耗时（毫秒） */
+    private Long transcribeDurationMs;
+
+    /** 总结步骤耗时（毫秒） */
+    private Long summarizeDurationMs;
+
+    /** 全流程总耗时（毫秒，从 startedAt 到 finishedAt） */
+    private Long totalDurationMs;
+
     private LocalDateTime startedAt;
     private LocalDateTime finishedAt;
     private LocalDateTime createdAt;

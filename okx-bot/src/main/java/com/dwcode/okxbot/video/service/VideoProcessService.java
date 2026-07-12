@@ -117,6 +117,49 @@ public class VideoProcessService {
         return llmChatClient.testModel(request.getProvider().trim(), request.getModel().trim());
     }
 
+    /**
+     * 失败任务重试：重置状态与中间结果，按原 URL/选项重新跑完整流水线。
+     * 仅允许 status=FAILED。
+     */
+    public VideoTaskResponse retryTask(Long taskId) {
+        VideoTaskEntity entity = requireTask(taskId);
+        if (!VideoTaskStatus.FAILED.name().equals(entity.getStatus())) {
+            throw new BusinessException(400, "仅失败任务可重试，当前状态: " + entity.getStatus());
+        }
+        if (entity.getSourceUrl() == null || entity.getSourceUrl().isBlank()) {
+            throw new BusinessException(400, "任务源链接为空，无法重试");
+        }
+
+        // 清理旧媒体目录，避免脏文件干扰
+        storageService.deleteTaskDir(String.valueOf(taskId));
+
+        entity.setStatus(VideoTaskStatus.PENDING.name());
+        entity.setCurrentStep("重试排队中");
+        entity.setErrorMessage(null);
+        entity.setTitle(null);
+        entity.setDurationSeconds(null);
+        entity.setVideoPath(null);
+        entity.setAudioPath(null);
+        entity.setTranscriptionPath(null);
+        entity.setSummaryPath(null);
+        entity.setTranscriptionJson(null);
+        entity.setSummaryJson(null);
+        entity.setResultJson(null);
+        entity.setDownloadDurationMs(null);
+        entity.setTranscribeDurationMs(null);
+        entity.setSummarizeDurationMs(null);
+        entity.setTotalDurationMs(null);
+        entity.setStartedAt(null);
+        entity.setFinishedAt(null);
+        entity.setUpdatedAt(LocalDateTime.now());
+        videoTaskMapper.updateById(entity);
+
+        log.info("失败任务重试: taskId={}, url={}, llm={}/{}",
+                taskId, entity.getSourceUrl(), entity.getLlmProvider(), entity.getLlmModel());
+        asyncRunner.runAsync(taskId);
+        return toResponse(entity, false);
+    }
+
     private String findProviderKey(ProviderConfig target) {
         if (target == null) {
             return null;
@@ -313,7 +356,12 @@ public class VideoProcessService {
                 .videoPath(entity.getVideoPath())
                 .audioPath(entity.getAudioPath())
                 .createdAt(formatTime(entity.getCreatedAt()))
-                .finishedAt(formatTime(entity.getFinishedAt()));
+                .finishedAt(formatTime(entity.getFinishedAt()))
+                .startedAt(formatTime(entity.getStartedAt()))
+                .downloadDurationMs(entity.getDownloadDurationMs())
+                .transcribeDurationMs(entity.getTranscribeDurationMs())
+                .summarizeDurationMs(entity.getSummarizeDurationMs())
+                .totalDurationMs(entity.getTotalDurationMs());
 
         if (includeResult
                 && VideoTaskStatus.SUCCESS.name().equals(entity.getStatus())

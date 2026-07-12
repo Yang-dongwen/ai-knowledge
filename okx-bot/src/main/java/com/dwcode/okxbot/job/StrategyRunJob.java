@@ -21,7 +21,7 @@ public class StrategyRunJob {
     /**
      * 每分钟执行一次策略。
      */
-    @Scheduled(fixedDelay = 60000, initialDelay = 30000)
+    // @Scheduled(fixedDelay = 60000, initialDelay = 30000)
     public void runStrategies() {
         try {
             strategyRunService.runEnabledStrategies();

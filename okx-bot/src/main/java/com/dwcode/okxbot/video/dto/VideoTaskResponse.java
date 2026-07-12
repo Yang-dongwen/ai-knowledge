@@ -28,6 +28,16 @@ public class VideoTaskResponse {
     private String audioPath;
     private String createdAt;
     private String finishedAt;
+    /** 开始处理时间 */
+    private String startedAt;
+    /** 下载步骤耗时 ms */
+    private Long downloadDurationMs;
+    /** 转录步骤耗时 ms */
+    private Long transcribeDurationMs;
+    /** 总结步骤耗时 ms */
+    private Long summarizeDurationMs;
+    /** 全流程总耗时 ms */
+    private Long totalDurationMs;
     /** 成功时包含完整结果（详情查询） */
     private VideoSummaryResponse result;
 }

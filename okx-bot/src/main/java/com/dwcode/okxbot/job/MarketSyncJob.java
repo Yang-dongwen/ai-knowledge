@@ -28,7 +28,7 @@ public class MarketSyncJob {
     /**
      * 每分钟同步一次 K 线。
      */
-    @Scheduled(fixedDelay = 60000)
+    //    @Scheduled(fixedDelay = 60000)
     public void syncCandles() {
         try {
             List<StrategyConfigEntity> strategies = strategyConfigService.getEnabledStrategies();
