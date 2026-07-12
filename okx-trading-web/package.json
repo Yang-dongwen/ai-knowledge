@@ -1,7 +1,7 @@
 {
   "name": "okx-trading-web",
   "version": "1.0.0",
-  "description": "OKX 自动交易助手 Web",
+  "description": "AI 工具台 Web",
   "type": "module",
   "scripts": {
     "dev": "vite",

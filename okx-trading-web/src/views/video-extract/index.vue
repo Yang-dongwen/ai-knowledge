@@ -129,6 +129,28 @@
               <div class="task-item-actions">
                 <span class="task-time">{{ shortTime(task.createdAt) }}</span>
                 <a-button
+                  v-if="isRunning(task.status) || task.status === 'PENDING'"
+                  type="text"
+                  size="small"
+                  class="task-pause-btn"
+                  :loading="pausingId === task.taskId"
+                  title="暂停"
+                  @click.stop="handlePause(task)"
+                >
+                  <template #icon><PauseCircleOutlined /></template>
+                </a-button>
+                <a-button
+                  v-if="task.status === 'FAILED' || task.status === 'PAUSED'"
+                  type="text"
+                  size="small"
+                  class="task-retry-btn"
+                  :loading="retryingId === task.taskId"
+                  title="重试（可改模型）"
+                  @click.stop="openRetryModal(task)"
+                >
+                  <template #icon><RedoOutlined /></template>
+                </a-button>
+                <a-button
                   type="text"
                   size="small"
                   danger
@@ -149,6 +171,9 @@
                 {{ shortModelName(task.llmModel) }}
               </span>
               <span class="task-step" v-if="isRunning(task.status)">{{ task.currentStep }}</span>
+              <span class="task-cost" v-else-if="task.totalDurationMs != null" :title="timingTooltip(task)">
+                耗时 {{ formatMs(task.totalDurationMs) }}
+              </span>
               <span class="task-dur" v-else-if="task.durationSeconds">{{ formatDuration(task.durationSeconds) }}</span>
             </div>
           </div>
@@ -207,6 +232,24 @@
                 <template #icon><ReloadOutlined /></template>
               </a-button>
               <a-button
+                v-if="isRunning(detail.status) || detail.status === 'PENDING'"
+                :loading="pausingId === detail.taskId"
+                @click="handlePause(detail)"
+              >
+                <template #icon><PauseCircleOutlined /></template>
+                暂停
+              </a-button>
+              <a-button
+                v-if="detail.status === 'FAILED' || detail.status === 'PAUSED'"
+                type="primary"
+                ghost
+                :loading="retryingId === detail.taskId"
+                @click="openRetryModal(detail)"
+              >
+                <template #icon><RedoOutlined /></template>
+                重试
+              </a-button>
+              <a-button
                 type="text"
                 danger
                 :loading="deletingId === detail.taskId"
@@ -223,13 +266,84 @@
             <a-steps
               :current="statusStepIndex(detail.status)"
               size="small"
-              :items="pipelineSteps.map((s) => ({ title: s.name }))"
+              :items="stepItemsWithTiming(detail)"
             />
             <div class="progress-hint">
               <a-spin size="small" />
               <span>{{ detail.currentStep || '处理中…' }} · 下载与转录可能需要几分钟，请稍候</span>
             </div>
+            <div class="timing-strip" v-if="hasAnyStepTiming(detail)">
+              <span class="timing-chip" v-if="detail.downloadDurationMs != null">
+                下载 <b>{{ formatMs(detail.downloadDurationMs) }}</b>
+              </span>
+              <span class="timing-chip" v-if="detail.transcribeDurationMs != null">
+                转录 <b>{{ formatMs(detail.transcribeDurationMs) }}</b>
+              </span>
+              <span class="timing-chip" v-if="detail.summarizeDurationMs != null">
+                总结 <b>{{ formatMs(detail.summarizeDurationMs) }}</b>
+              </span>
+            </div>
           </div>
+
+          <!-- 步骤耗时（成功 / 失败均可展示已完成步骤） -->
+          <div
+            class="timing-panel"
+            v-if="!isRunning(detail.status) && hasAnyStepTiming(detail)"
+          >
+            <div class="timing-panel-title">
+              <span>执行耗时</span>
+              <span class="timing-total" v-if="detail.totalDurationMs != null">
+                总计 {{ formatMs(detail.totalDurationMs) }}
+              </span>
+            </div>
+            <div class="timing-bars">
+              <div
+                class="timing-bar-row"
+                v-for="row in timingRows(detail)"
+                :key="row.key"
+              >
+                <div class="timing-bar-label">
+                  <span>{{ row.label }}</span>
+                  <span class="timing-bar-ms">{{ formatMs(row.ms) }}</span>
+                </div>
+                <div class="timing-bar-track">
+                  <div
+                    class="timing-bar-fill"
+                    :class="row.key"
+                    :style="{ width: timingBarWidth(row.ms, detail) }"
+                  />
+                </div>
+              </div>
+            </div>
+            <div class="timing-meta" v-if="detail.startedAt || detail.finishedAt">
+              <span v-if="detail.startedAt">开始 {{ detail.startedAt }}</span>
+              <span v-if="detail.finishedAt">结束 {{ detail.finishedAt }}</span>
+            </div>
+          </div>
+
+          <!-- 暂停提示 -->
+          <a-alert
+            v-if="detail.status === 'PAUSED'"
+            type="warning"
+            show-icon
+            class="fail-alert"
+            message="任务已暂停"
+          >
+            <template #description>
+              <div class="fail-desc">
+                <span>当前步骤结束后中断。可重新选择模型后「重试」，或等待其它排队任务执行。</span>
+                <a-button
+                  type="primary"
+                  size="small"
+                  :loading="retryingId === detail.taskId"
+                  @click="openRetryModal(detail)"
+                >
+                  <template #icon><RedoOutlined /></template>
+                  重试
+                </a-button>
+              </div>
+            </template>
+          </a-alert>
 
           <!-- 失败 -->
           <a-alert
@@ -238,8 +352,65 @@
             show-icon
             class="fail-alert"
             :message="detail.errorMessage || '任务失败'"
-            description="可检查链接有效性、Whisper 服务与 AI Key 后重新提交"
-          />
+          >
+            <template #description>
+              <div class="fail-desc">
+                <span>可检查链接、Whisper 与 AI Key，并重新选择模型后重试完整流水线。</span>
+                <a-button
+                  type="primary"
+                  size="small"
+                  danger
+                  :loading="retryingId === detail.taskId"
+                  @click="openRetryModal(detail)"
+                >
+                  <template #icon><RedoOutlined /></template>
+                  重试
+                </a-button>
+              </div>
+            </template>
+          </a-alert>
+
+          <!-- 重试弹窗：可重新配置 LLM -->
+          <a-modal
+            v-model:open="retryModalOpen"
+            title="重试任务"
+            ok-text="开始重试"
+            cancel-text="取消"
+            :confirm-loading="retryingId === retryTarget?.taskId"
+            @ok="submitRetry"
+          >
+            <p class="retry-hint">
+              将重新执行：下载 → 转录 → 总结。可更换 LLM 模型（建议先测试可用性）。
+            </p>
+            <div class="retry-url" v-if="retryTarget">
+              <span class="muted">链接</span>
+              <div class="url-text">{{ retryTarget.url }}</div>
+            </div>
+            <div class="retry-model-row">
+              <span class="opt-label">LLM 模型</span>
+              <a-select
+                v-model:value="retryModelKey"
+                class="model-select"
+                show-search
+                :options="modelSelectOptions"
+                :filter-option="filterModelOption"
+                placeholder="选择模型"
+                style="width: 100%; margin-top: 6px"
+              />
+            </div>
+            <div class="retry-actions">
+              <a-button
+                size="small"
+                :loading="retryTesting"
+                :disabled="!retryModelKey"
+                @click="testRetryModel"
+              >
+                测试可用性
+              </a-button>
+              <a-tag v-if="retryTestOk" color="success">✓ 可用</a-tag>
+              <a-tag v-else-if="retryTestFail" color="error">不可用</a-tag>
+            </div>
+          </a-modal>
 
           <!-- 成功结果 -->
           <template v-if="detail.status === 'SUCCESS' && detail.result">
@@ -416,7 +587,9 @@ import {
   DeleteOutlined,
   ExclamationCircleOutlined,
   ExperimentOutlined,
-  SettingOutlined
+  SettingOutlined,
+  RedoOutlined,
+  PauseCircleOutlined
 } from '@ant-design/icons-vue'
 import { createVNode } from 'vue'
 import MarkdownIt from 'markdown-it'
@@ -458,6 +631,14 @@ const transcriptQuery = ref('')
 const activeSegId = ref<number | null>(null)
 const videoRef = ref<HTMLVideoElement | null>(null)
 const deletingId = ref('')
+const retryingId = ref('')
+const pausingId = ref('')
+const retryModalOpen = ref(false)
+const retryTarget = ref<VideoTaskItem | null>(null)
+const retryModelKey = ref('')
+const retryTesting = ref(false)
+const retryTestOk = ref(false)
+const retryTestFail = ref(false)
 
 let pollTimer: ReturnType<typeof setInterval> | null = null
 
@@ -607,7 +788,8 @@ const STATUS_MAP: Record<string, { label: string; color: string }> = {
   TRANSCRIBING: { label: '转录中', color: 'purple' },
   SUMMARIZING: { label: '总结中', color: 'cyan' },
   SUCCESS: { label: '已完成', color: 'success' },
-  FAILED: { label: '失败', color: 'error' }
+  FAILED: { label: '失败', color: 'error' },
+  PAUSED: { label: '已暂停', color: 'warning' }
 }
 
 function statusMeta(status?: string) {
@@ -643,6 +825,72 @@ function formatDuration(sec?: number | null) {
   const r = s % 60
   if (h > 0) return `${h}:${String(m).padStart(2, '0')}:${String(r).padStart(2, '0')}`
   return `${m}:${String(r).padStart(2, '0')}`
+}
+
+/** 毫秒耗时可读化：1.2s / 1m 05s / 1h 02m */
+function formatMs(ms?: number | null) {
+  if (ms == null || isNaN(ms) || ms < 0) return '--'
+  if (ms < 1000) return `${Math.round(ms)}ms`
+  const sec = ms / 1000
+  if (sec < 60) return `${sec.toFixed(sec < 10 ? 1 : 0)}s`
+  const totalSec = Math.floor(sec)
+  const h = Math.floor(totalSec / 3600)
+  const m = Math.floor((totalSec % 3600) / 60)
+  const s = totalSec % 60
+  if (h > 0) return `${h}h ${m}m ${s}s`
+  return `${m}m ${String(s).padStart(2, '0')}s`
+}
+
+function hasAnyStepTiming(task: VideoTaskItem) {
+  return (
+    task.downloadDurationMs != null ||
+    task.transcribeDurationMs != null ||
+    task.summarizeDurationMs != null ||
+    task.totalDurationMs != null
+  )
+}
+
+function timingRows(task: VideoTaskItem) {
+  const rows: { key: string; label: string; ms: number }[] = []
+  if (task.downloadDurationMs != null) {
+    rows.push({ key: 'download', label: '下载', ms: task.downloadDurationMs })
+  }
+  if (task.transcribeDurationMs != null) {
+    rows.push({ key: 'transcribe', label: '转录', ms: task.transcribeDurationMs })
+  }
+  if (task.summarizeDurationMs != null) {
+    rows.push({ key: 'summarize', label: '总结', ms: task.summarizeDurationMs })
+  }
+  return rows
+}
+
+function timingBarWidth(ms: number, task: VideoTaskItem) {
+  const rows = timingRows(task)
+  const max = Math.max(...rows.map((r) => r.ms), 1)
+  const pct = Math.max(6, Math.round((ms / max) * 100))
+  return `${pct}%`
+}
+
+function timingTooltip(task: VideoTaskItem) {
+  const parts: string[] = []
+  if (task.downloadDurationMs != null) parts.push(`下载 ${formatMs(task.downloadDurationMs)}`)
+  if (task.transcribeDurationMs != null) parts.push(`转录 ${formatMs(task.transcribeDurationMs)}`)
+  if (task.summarizeDurationMs != null) parts.push(`总结 ${formatMs(task.summarizeDurationMs)}`)
+  if (task.totalDurationMs != null) parts.push(`合计 ${formatMs(task.totalDurationMs)}`)
+  return parts.join(' · ') || ''
+}
+
+function stepItemsWithTiming(task: VideoTaskItem) {
+  const map: Record<string, number | null | undefined> = {
+    DOWNLOADING: task.downloadDurationMs,
+    TRANSCRIBING: task.transcribeDurationMs,
+    SUMMARIZING: task.summarizeDurationMs
+  }
+  return pipelineSteps.map((s) => {
+    const ms = map[s.key]
+    const title = ms != null ? `${s.name} ${formatMs(ms)}` : s.name
+    return { title }
+  })
 }
 
 function formatSeconds(sec: number) {
@@ -807,6 +1055,131 @@ async function selectTask(taskId: string) {
   await refreshDetail()
 }
 
+/** 暂停进行中/排队中任务 */
+async function handlePause(task: VideoTaskItem) {
+  if (!isRunning(task.status) && task.status !== 'PENDING') {
+    message.warning('仅排队中或进行中的任务可暂停')
+    return
+  }
+  pausingId.value = task.taskId
+  try {
+    const res = await videoApi.pauseTask(task.taskId)
+    message.success('已请求暂停，当前步骤结束后中断，并调度排队任务')
+    const idx = tasks.value.findIndex((t) => t.taskId === task.taskId)
+    if (idx >= 0 && res.data) {
+      tasks.value[idx] = { ...tasks.value[idx], ...res.data }
+    }
+    if (selectedId.value === task.taskId) {
+      await refreshDetail()
+    }
+    // 刷新列表以看到其它排队任务启动
+    await loadTasks(true)
+  } catch {
+    // ignore
+  } finally {
+    pausingId.value = ''
+  }
+}
+
+/** 打开重试弹窗（可改 LLM） */
+function openRetryModal(task: VideoTaskItem) {
+  if (task.status !== 'FAILED' && task.status !== 'PAUSED') {
+    message.warning('仅失败或已暂停任务可重试')
+    return
+  }
+  retryTarget.value = task
+  // 默认用原任务模型，否则用当前页选中模型
+  if (task.llmProvider && task.llmModel) {
+    retryModelKey.value = `${task.llmProvider}::${task.llmModel}`
+  } else {
+    retryModelKey.value = selectedModelKey.value || ''
+  }
+  retryTestOk.value = false
+  retryTestFail.value = false
+  retryModalOpen.value = true
+  loadModels()
+}
+
+async function testRetryModel() {
+  const parsed = parseModelKey(retryModelKey.value)
+  if (!parsed) {
+    message.warning('请先选择模型')
+    return
+  }
+  retryTesting.value = true
+  retryTestOk.value = false
+  retryTestFail.value = false
+  try {
+    const res = await videoApi.testModel({
+      provider: parsed.provider,
+      model: parsed.model
+    })
+    if (res.data?.available) {
+      retryTestOk.value = true
+      message.success('模型可用')
+    } else {
+      retryTestFail.value = true
+      message.error(res.data?.errorMessage || '模型不可用')
+    }
+  } catch (e: any) {
+    retryTestFail.value = true
+    const isTimeout =
+      e?.code === 'ECONNABORTED' ||
+      String(e?.message || '').toLowerCase().includes('timeout')
+    message.error(isTimeout ? '超过 10 秒无响应，判定不可用' : e?.message || '测试失败')
+  } finally {
+    retryTesting.value = false
+  }
+}
+
+/**
+ * 确认重试：可带新 LLM 模型。
+ */
+async function submitRetry() {
+  const task = retryTarget.value
+  if (!task) return Promise.reject()
+  const parsed = parseModelKey(retryModelKey.value)
+  if (!parsed) {
+    message.warning('请选择 LLM 模型')
+    return Promise.reject()
+  }
+  retryingId.value = task.taskId
+  try {
+    const res = await videoApi.retryTask(task.taskId, {
+      llmProvider: parsed.provider,
+      llmModel: parsed.model
+    })
+    message.success('已重新排队，开始重试')
+    retryModalOpen.value = false
+    const idx = tasks.value.findIndex((t) => t.taskId === task.taskId)
+    if (idx >= 0 && res.data) {
+      tasks.value[idx] = { ...tasks.value[idx], ...res.data, result: undefined }
+    }
+    if (selectedId.value === task.taskId) {
+      detail.value = {
+        ...(res.data || task),
+        result: undefined,
+        status: res.data?.status || 'PENDING',
+        currentStep: res.data?.currentStep || '重试排队中',
+        errorMessage: null,
+        downloadDurationMs: null,
+        transcribeDurationMs: null,
+        summarizeDurationMs: null,
+        totalDurationMs: null,
+        finishedAt: null,
+        llmProvider: parsed.provider,
+        llmModel: parsed.model
+      }
+      await refreshDetail()
+    }
+    await loadTasks(true)
+  } catch {
+    return Promise.reject()
+  } finally {
+    retryingId.value = ''
+  }
+}
+
 /**
  * 删除确认：清理数据库记录 + 本地视频/音频/JSON。
  */
@@ -861,7 +1234,7 @@ async function refreshDetail() {
   try {
     const res = await videoApi.getTask(selectedId.value)
     detail.value = res.data
-    // 同步列表中的状态
+    // 同步列表中的状态与耗时
     const idx = tasks.value.findIndex((t) => t.taskId === selectedId.value)
     if (idx >= 0 && res.data) {
       tasks.value[idx] = {
@@ -872,7 +1245,12 @@ async function refreshDetail() {
         durationSeconds: res.data.durationSeconds,
         videoAvailable: res.data.videoAvailable,
         errorMessage: res.data.errorMessage,
-        finishedAt: res.data.finishedAt
+        finishedAt: res.data.finishedAt,
+        startedAt: res.data.startedAt,
+        downloadDurationMs: res.data.downloadDurationMs,
+        transcribeDurationMs: res.data.transcribeDurationMs,
+        summarizeDurationMs: res.data.summarizeDurationMs,
+        totalDurationMs: res.data.totalDurationMs
       }
     }
   } catch {
@@ -1143,7 +1521,9 @@ onUnmounted(() => {
       color: var(--text-muted);
     }
 
-    .task-del-btn {
+    .task-del-btn,
+    .task-retry-btn,
+    .task-pause-btn {
       opacity: 0;
       transition: opacity 0.15s;
       width: 24px;
@@ -1154,10 +1534,22 @@ onUnmounted(() => {
       align-items: center;
       justify-content: center;
     }
+
+    .task-retry-btn {
+      color: var(--primary-color);
+    }
+
+    .task-pause-btn {
+      color: var(--warning-color, #f59e0b);
+    }
   }
 
   &:hover .task-del-btn,
-  &.active .task-del-btn {
+  &:hover .task-retry-btn,
+  &:hover .task-pause-btn,
+  &.active .task-del-btn,
+  &.active .task-retry-btn,
+  &.active .task-pause-btn {
     opacity: 1;
   }
 
@@ -1324,10 +1716,163 @@ onUnmounted(() => {
     font-size: 13px;
     color: var(--text-secondary);
   }
+
+  .timing-strip {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-top: 12px;
+  }
+}
+
+.timing-chip {
+  font-size: 12px;
+  color: var(--text-secondary);
+  background: #fff;
+  border: 1px solid var(--border-color);
+  border-radius: 999px;
+  padding: 2px 10px;
+
+  b {
+    color: var(--primary-color);
+    font-weight: 600;
+    margin-left: 2px;
+  }
+}
+
+.timing-panel {
+  background: linear-gradient(135deg, #f8fafc 0%, #eef6ff 100%);
+  border: 1px solid var(--border-color);
+  border-radius: 12px;
+  padding: 14px 16px;
+  margin-bottom: 16px;
+
+  .timing-panel-title {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text-primary);
+    margin-bottom: 12px;
+
+    .timing-total {
+      font-weight: 600;
+      color: var(--primary-color);
+      font-size: 13px;
+    }
+  }
+
+  .timing-bars {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+
+  .timing-bar-row {
+    .timing-bar-label {
+      display: flex;
+      justify-content: space-between;
+      font-size: 12px;
+      color: var(--text-secondary);
+      margin-bottom: 4px;
+
+      .timing-bar-ms {
+        font-variant-numeric: tabular-nums;
+        color: var(--text-primary);
+        font-weight: 500;
+      }
+    }
+
+    .timing-bar-track {
+      height: 8px;
+      background: #e5e7eb;
+      border-radius: 999px;
+      overflow: hidden;
+    }
+
+    .timing-bar-fill {
+      height: 100%;
+      border-radius: 999px;
+      transition: width 0.35s ease;
+
+      &.download {
+        background: linear-gradient(90deg, #60a5fa, #2563eb);
+      }
+
+      &.transcribe {
+        background: linear-gradient(90deg, #a78bfa, #7c3aed);
+      }
+
+      &.summarize {
+        background: linear-gradient(90deg, #34d399, #059669);
+      }
+    }
+  }
+
+  .timing-meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 12px;
+    margin-top: 12px;
+    font-size: 11px;
+    color: var(--text-muted);
+  }
+}
+
+.task-cost {
+  color: var(--primary-color);
+  font-variant-numeric: tabular-nums;
 }
 
 .fail-alert {
   margin-bottom: 16px;
+
+  .fail-desc {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    margin-top: 4px;
+  }
+}
+
+.retry-hint {
+  font-size: 13px;
+  color: var(--text-secondary);
+  margin-bottom: 12px;
+}
+
+.retry-url {
+  margin-bottom: 12px;
+
+  .muted {
+    font-size: 12px;
+    color: var(--text-muted);
+  }
+
+  .url-text {
+    font-size: 12px;
+    word-break: break-all;
+    color: var(--text-primary);
+    margin-top: 4px;
+  }
+}
+
+.retry-model-row {
+  margin-bottom: 10px;
+
+  .opt-label {
+    font-size: 13px;
+    color: var(--text-secondary);
+  }
+}
+
+.retry-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
 }
 
 .waiting-card {

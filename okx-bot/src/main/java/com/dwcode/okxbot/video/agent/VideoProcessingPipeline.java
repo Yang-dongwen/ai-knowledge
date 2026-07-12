@@ -28,7 +28,7 @@ import java.util.stream.Stream;
  * 视频处理流水线（Agent 编排层）。
  *
  * 固定顺序：Download → Transcribe → Summarize。
- * 各步骤记录耗时（毫秒）写入 video_task。
+ * 步骤间检查暂停请求；结束时释放调度槽位并启动排队任务。
  */
 @Slf4j
 @Component
@@ -42,16 +42,26 @@ public class VideoProcessingPipeline {
     private final VideoTaskMapper videoTaskMapper;
     private final ObjectMapper objectMapper;
     private final VideoProperties videoProperties;
+    private final VideoTaskScheduler taskScheduler;
 
-    /**
-     * 执行完整流水线并更新任务状态与步骤耗时。
-     */
     public void run(Long taskId) {
         VideoTaskEntity task = videoTaskMapper.selectById(taskId);
         if (task == null) {
             log.error("视频任务不存在: {}", taskId);
+            taskScheduler.markFinished(taskId);
             return;
         }
+
+        // 已被暂停/删除等，不再执行
+        if (VideoTaskStatus.PAUSED.name().equals(task.getStatus())
+                || VideoTaskStatus.SUCCESS.name().equals(task.getStatus())) {
+            log.info("任务状态无需执行: taskId={}, status={}", taskId, task.getStatus());
+            taskScheduler.markFinished(taskId);
+            return;
+        }
+
+        taskScheduler.markRunning(taskId);
+        taskScheduler.clearPauseRequest(taskId);
 
         String taskIdStr = String.valueOf(taskId);
         long pipelineStart = System.currentTimeMillis();
@@ -61,6 +71,9 @@ public class VideoProcessingPipeline {
 
         try {
             // Step 1: Download
+            if (shouldPause(taskId, task, pipelineStart)) {
+                return;
+            }
             updateStatus(task, VideoTaskStatus.DOWNLOADING, "正在下载视频并提取音频");
             long t0 = System.currentTimeMillis();
             DownloadResult download = downloadService.download(task.getSourceUrl(), taskIdStr);
@@ -74,7 +87,11 @@ public class VideoProcessingPipeline {
             videoTaskMapper.updateById(task);
             log.info("步骤耗时: taskId={}, download={}ms", taskId, downloadMs);
 
-            // Step 2: Transcribe + 持久化
+            if (shouldPause(taskId, task, pipelineStart)) {
+                return;
+            }
+
+            // Step 2: Transcribe
             updateStatus(task, VideoTaskStatus.TRANSCRIBING, "正在转录音频");
             t0 = System.currentTimeMillis();
             TranscriptionResult transcription = transcriptionService.transcribe(
@@ -84,16 +101,25 @@ public class VideoProcessingPipeline {
             if (transcription.getDurationSeconds() != null) {
                 task.setDurationSeconds(transcription.getDurationSeconds());
             }
-            String transcriptionJson = objectMapper.writeValueAsString(transcription);
-            task.setTranscriptionJson(transcriptionJson);
-            String transcriptionPath = storageService.saveJson(
-                    storageService.resolveTranscriptionPath(taskIdStr), transcription);
-            task.setTranscriptionPath(transcriptionPath);
+            task.setTranscriptionJson(objectMapper.writeValueAsString(transcription));
+            task.setTranscriptionPath(storageService.saveJson(
+                    storageService.resolveTranscriptionPath(taskIdStr), transcription));
             task.setUpdatedAt(LocalDateTime.now());
             videoTaskMapper.updateById(task);
             log.info("步骤耗时: taskId={}, transcribe={}ms", taskId, transcribeMs);
 
-            // Step 3: Summarize + 持久化
+            if (shouldPause(taskId, task, pipelineStart)) {
+                return;
+            }
+
+            // Step 3: Summarize
+            // 重新读库，重试时可能刚改了 llm 字段（一般启动前已写好）
+            VideoTaskEntity latest = videoTaskMapper.selectById(taskId);
+            if (latest != null) {
+                task.setLlmProvider(latest.getLlmProvider());
+                task.setLlmModel(latest.getLlmModel());
+            }
+
             updateStatus(task, VideoTaskStatus.SUMMARIZING,
                     "正在生成结构化摘要" + (task.getLlmModel() != null ? "（" + task.getLlmModel() + "）" : ""));
             t0 = System.currentTimeMillis();
@@ -106,11 +132,13 @@ public class VideoProcessingPipeline {
             task.setSummarizeDurationMs(summarizeMs);
             log.info("步骤耗时: taskId={}, summarize={}ms", taskId, summarizeMs);
 
-            String summaryJson = objectMapper.writeValueAsString(summaryPart);
-            task.setSummaryJson(summaryJson);
-            String summaryPath = storageService.saveJson(
-                    storageService.resolveSummaryPath(taskIdStr), summaryPart);
-            task.setSummaryPath(summaryPath);
+            if (shouldPause(taskId, task, pipelineStart)) {
+                return;
+            }
+
+            task.setSummaryJson(objectMapper.writeValueAsString(summaryPart));
+            task.setSummaryPath(storageService.saveJson(
+                    storageService.resolveSummaryPath(taskIdStr), summaryPart));
 
             VideoSummaryResponse response = new VideoSummaryResponse();
             response.setVideoId(taskIdStr);
@@ -139,23 +167,72 @@ public class VideoProcessingPipeline {
                 videoTaskMapper.updateById(task);
             }
 
-            log.info("视频任务完成: taskId={}, title={}, total={}ms (download={}, transcribe={}, summarize={})",
-                    taskId, task.getTitle(), task.getTotalDurationMs(),
-                    task.getDownloadDurationMs(), task.getTranscribeDurationMs(), task.getSummarizeDurationMs());
+            log.info("视频任务完成: taskId={}, title={}, total={}ms",
+                    taskId, task.getTitle(), task.getTotalDurationMs());
         } catch (Exception e) {
+            // 若已请求暂停，优先记为暂停而非失败
+            if (taskScheduler.isPauseRequested(taskId) || isPausedInDb(taskId)) {
+                markPaused(task, pipelineStart, "用户暂停（当前步骤被中断）");
+                return;
+            }
             log.error("视频任务失败: taskId={}", taskId, e);
             task.setStatus(VideoTaskStatus.FAILED.name());
             task.setCurrentStep("失败");
             task.setErrorMessage(truncate(e.getMessage(), 1000));
             task.setFinishedAt(LocalDateTime.now());
-            // 失败时仍记录已完成的步骤耗时 + 总耗时
             task.setTotalDurationMs(System.currentTimeMillis() - pipelineStart);
             task.setUpdatedAt(LocalDateTime.now());
             videoTaskMapper.updateById(task);
+        } finally {
+            taskScheduler.markFinished(taskId);
         }
     }
 
+    /**
+     * 步骤间隙检查暂停；若需暂停则落库并返回 true。
+     */
+    private boolean shouldPause(Long taskId, VideoTaskEntity task, long pipelineStart) {
+        if (!taskScheduler.isPauseRequested(taskId) && !isPausedInDb(taskId)) {
+            return false;
+        }
+        markPaused(task, pipelineStart, "用户已暂停，等待重新调度");
+        return true;
+    }
+
+    private boolean isPausedInDb(Long taskId) {
+        VideoTaskEntity latest = videoTaskMapper.selectById(taskId);
+        return latest != null && VideoTaskStatus.PAUSED.name().equals(latest.getStatus());
+    }
+
+    private void markPaused(VideoTaskEntity task, long pipelineStart, String step) {
+        // 重新加载避免覆盖已写入的步骤耗时
+        VideoTaskEntity latest = videoTaskMapper.selectById(task.getId());
+        if (latest == null) {
+            return;
+        }
+        if (VideoTaskStatus.SUCCESS.name().equals(latest.getStatus())
+                || VideoTaskStatus.FAILED.name().equals(latest.getStatus())) {
+            return;
+        }
+        latest.setStatus(VideoTaskStatus.PAUSED.name());
+        latest.setCurrentStep(step);
+        latest.setErrorMessage(null);
+        latest.setFinishedAt(LocalDateTime.now());
+        latest.setTotalDurationMs(System.currentTimeMillis() - pipelineStart);
+        latest.setUpdatedAt(LocalDateTime.now());
+        videoTaskMapper.updateById(latest);
+        // 同步内存对象
+        task.setStatus(latest.getStatus());
+        task.setCurrentStep(latest.getCurrentStep());
+        task.setTotalDurationMs(latest.getTotalDurationMs());
+        log.info("任务已暂停: taskId={}, step={}", task.getId(), step);
+    }
+
     private void updateStatus(VideoTaskEntity task, VideoTaskStatus status, String step) {
+        // 暂停请求时不要覆盖为进行中
+        if (taskScheduler.isPauseRequested(task.getId())) {
+            return;
+        }
         task.setStatus(status.name());
         task.setCurrentStep(step);
         task.setUpdatedAt(LocalDateTime.now());

@@ -146,11 +146,25 @@ public class VideoProcessController {
     }
 
     /**
-     * 失败任务重试（重置后重新跑完整流水线）。
+     * 暂停进行中/排队中任务，并调度其它排队任务。
+     */
+    @PostMapping("/tasks/{taskId}/pause")
+    public ApiResult<VideoTaskResponse> pauseTask(@PathVariable Long taskId) {
+        log.info("暂停视频任务: taskId={}", taskId);
+        return ApiResult.ok(videoProcessService.pauseTask(taskId));
+    }
+
+    /**
+     * 失败/暂停任务重试（可 body 指定 llmProvider/llmModel）。
      */
     @PostMapping("/tasks/{taskId}/retry")
-    public ApiResult<VideoTaskResponse> retryTask(@PathVariable Long taskId) {
-        log.info("重试视频任务: taskId={}", taskId);
-        return ApiResult.ok(videoProcessService.retryTask(taskId));
+    public ApiResult<VideoTaskResponse> retryTask(
+            @PathVariable Long taskId,
+            @RequestBody(required = false) VideoRetryRequest request) {
+        log.info("重试视频任务: taskId={}, llm={}/{}",
+                taskId,
+                request != null ? request.getLlmProvider() : null,
+                request != null ? request.getLlmModel() : null);
+        return ApiResult.ok(videoProcessService.retryTask(taskId, request));
     }
 }

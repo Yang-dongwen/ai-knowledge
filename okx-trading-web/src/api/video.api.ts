@@ -82,6 +82,22 @@ export const videoApi = {
     return request.delete(`/v1/video/tasks/${taskId}`)
   },
 
+  /** 暂停进行中/排队中任务 */
+  pauseTask(taskId: string): Promise<{ data: VideoTaskItem }> {
+    return request.post(`/v1/video/tasks/${taskId}/pause`)
+  },
+
+  /**
+   * 失败/暂停任务重试（完整重跑流水线）。
+   * 可传入 llmProvider / llmModel 重新指定模型。
+   */
+  retryTask(
+    taskId: string,
+    body?: { llmProvider?: string; llmModel?: string }
+  ): Promise<{ data: VideoTaskItem }> {
+    return request.post(`/v1/video/tasks/${taskId}/retry`, body || {})
+  },
+
   /** 视频流 URL（给 <video> 使用，走 Vite 代理） */
   videoStreamUrl(taskId: string): string {
     return `/api/v1/video/tasks/${taskId}/video`

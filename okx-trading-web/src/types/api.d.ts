@@ -175,6 +175,7 @@ export type VideoTaskStatus =
   | 'SUMMARIZING'
   | 'SUCCESS'
   | 'FAILED'
+  | 'PAUSED'
 
 export interface VideoTaskItem {
   taskId: string
@@ -192,6 +193,15 @@ export interface VideoTaskItem {
   audioPath?: string | null
   createdAt?: string | null
   finishedAt?: string | null
+  startedAt?: string | null
+  /** 下载步骤耗时 ms */
+  downloadDurationMs?: number | null
+  /** 转录步骤耗时 ms */
+  transcribeDurationMs?: number | null
+  /** 总结步骤耗时 ms */
+  summarizeDurationMs?: number | null
+  /** 全流程总耗时 ms */
+  totalDurationMs?: number | null
   result?: VideoSummaryResult | null
 }
 

@@ -5,7 +5,7 @@ import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.dwcode.okxbot.common.exception.BusinessException;
 import com.dwcode.okxbot.chat.config.AiProperties;
 import com.dwcode.okxbot.chat.config.AiProperties.ProviderConfig;
-import com.dwcode.okxbot.video.agent.VideoTaskAsyncRunner;
+import com.dwcode.okxbot.video.agent.VideoTaskScheduler;
 import com.dwcode.okxbot.video.client.LlmChatClient;
 import com.dwcode.okxbot.video.config.VideoProperties;
 import com.dwcode.okxbot.video.dto.*;
@@ -45,7 +45,7 @@ public class VideoProcessService {
     private static final DateTimeFormatter DT_FMT = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
 
     private final VideoTaskMapper videoTaskMapper;
-    private final VideoTaskAsyncRunner asyncRunner;
+    private final VideoTaskScheduler taskScheduler;
     private final StorageService storageService;
     private final ObjectMapper objectMapper;
     private final AiProperties aiProperties;
@@ -105,7 +105,8 @@ public class VideoProcessService {
 
         log.info("创建视频任务: taskId={}, platform={}, llm={}/{}, url={}",
                 entity.getId(), entity.getPlatform(), llmProvider, llmModel, entity.getSourceUrl());
-        asyncRunner.runAsync(entity.getId());
+        // 进入排队，由调度器按并发槽位启动
+        taskScheduler.notifyPending();
 
         return toResponse(entity, false);
     }
@@ -118,20 +119,80 @@ public class VideoProcessService {
     }
 
     /**
-     * 失败任务重试：重置状态与中间结果，按原 URL/选项重新跑完整流水线。
-     * 仅允许 status=FAILED。
+     * 暂停进行中的任务：协作式中断当前流水线，并调度排队中的 PENDING 任务。
      */
-    public VideoTaskResponse retryTask(Long taskId) {
+    public VideoTaskResponse pauseTask(Long taskId) {
         VideoTaskEntity entity = requireTask(taskId);
-        if (!VideoTaskStatus.FAILED.name().equals(entity.getStatus())) {
-            throw new BusinessException(400, "仅失败任务可重试，当前状态: " + entity.getStatus());
+        String status = entity.getStatus();
+        if (!VideoTaskStatus.DOWNLOADING.name().equals(status)
+                && !VideoTaskStatus.TRANSCRIBING.name().equals(status)
+                && !VideoTaskStatus.SUMMARIZING.name().equals(status)
+                && !VideoTaskStatus.PENDING.name().equals(status)) {
+            throw new BusinessException(400, "仅排队中或进行中的任务可暂停，当前状态: " + status);
+        }
+
+        // PENDING：直接标记暂停，不进入执行
+        if (VideoTaskStatus.PENDING.name().equals(status)) {
+            entity.setStatus(VideoTaskStatus.PAUSED.name());
+            entity.setCurrentStep("已暂停（未开始执行）");
+            entity.setFinishedAt(LocalDateTime.now());
+            entity.setUpdatedAt(LocalDateTime.now());
+            videoTaskMapper.updateById(entity);
+            taskScheduler.markFinished(taskId);
+            log.info("排队任务已暂停: taskId={}", taskId);
+            return toResponse(entity, false);
+        }
+
+        // 进行中：发暂停信号，流水线在步骤间隙退出并 markFinished → tryStartNext
+        taskScheduler.requestPause(taskId);
+        entity.setStatus(VideoTaskStatus.PAUSED.name());
+        entity.setCurrentStep("暂停中，等待当前步骤结束…");
+        entity.setUpdatedAt(LocalDateTime.now());
+        videoTaskMapper.updateById(entity);
+        log.info("已请求暂停进行中任务: taskId={}, was={}", taskId, status);
+        // 主动尝试调度，即使当前步骤尚未结束，若有其它槽位也可启动排队
+        taskScheduler.tryStartNext();
+        return toResponse(entity, false);
+    }
+
+    /**
+     * 失败/暂停任务重试：可重新指定 LLM，重置后重新排队调度。
+     */
+    public VideoTaskResponse retryTask(Long taskId, VideoRetryRequest request) {
+        VideoTaskEntity entity = requireTask(taskId);
+        String status = entity.getStatus();
+        if (!VideoTaskStatus.FAILED.name().equals(status)
+                && !VideoTaskStatus.PAUSED.name().equals(status)) {
+            throw new BusinessException(400, "仅失败或已暂停任务可重试，当前状态: " + status);
         }
         if (entity.getSourceUrl() == null || entity.getSourceUrl().isBlank()) {
             throw new BusinessException(400, "任务源链接为空，无法重试");
         }
 
-        // 清理旧媒体目录，避免脏文件干扰
+        // 可选覆盖 LLM
+        if (request != null) {
+            String p = blankToNull(request.getLlmProvider());
+            String m = blankToNull(request.getLlmModel());
+            if (p != null) {
+                ProviderConfig pc = aiProperties.getProvider(p);
+                if (pc == null || pc.getApiKey() == null || pc.getApiKey().isEmpty()) {
+                    throw new BusinessException("LLM 供应商不可用或未配置 api-key: " + p);
+                }
+                entity.setLlmProvider(p);
+                if (m == null) {
+                    m = aiModelConfigService.firstEnabledModelId(p);
+                }
+                if (m == null) {
+                    throw new BusinessException("未配置可用 LLM 模型，请在「模型管理」中添加");
+                }
+                entity.setLlmModel(m);
+            } else if (m != null) {
+                entity.setLlmModel(m);
+            }
+        }
+
         storageService.deleteTaskDir(String.valueOf(taskId));
+        taskScheduler.clearPauseRequest(taskId);
 
         entity.setStatus(VideoTaskStatus.PENDING.name());
         entity.setCurrentStep("重试排队中");
@@ -154,9 +215,9 @@ public class VideoProcessService {
         entity.setUpdatedAt(LocalDateTime.now());
         videoTaskMapper.updateById(entity);
 
-        log.info("失败任务重试: taskId={}, url={}, llm={}/{}",
+        log.info("任务重试排队: taskId={}, url={}, llm={}/{}",
                 taskId, entity.getSourceUrl(), entity.getLlmProvider(), entity.getLlmModel());
-        asyncRunner.runAsync(taskId);
+        taskScheduler.notifyPending();
         return toResponse(entity, false);
     }
 
