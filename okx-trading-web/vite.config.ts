@@ -14,7 +14,10 @@ export default defineConfig({
     proxy: {
       '/api': {
         target: 'http://localhost:8080',
-        changeOrigin: true
+        changeOrigin: true,
+        // SSE 长连接：避免开发代理过早超时
+        timeout: 0,
+        proxyTimeout: 0
       }
     }
   },

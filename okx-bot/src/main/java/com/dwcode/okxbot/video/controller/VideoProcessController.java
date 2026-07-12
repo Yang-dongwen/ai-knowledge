@@ -1,15 +1,19 @@
 package com.dwcode.okxbot.video.controller;
 
+import com.dwcode.okxbot.auth.security.SecurityUtils;
 import com.dwcode.okxbot.common.response.ApiResult;
 import com.dwcode.okxbot.video.dto.*;
+import com.dwcode.okxbot.video.event.VideoTaskEventPublisher;
 import com.dwcode.okxbot.video.service.AiModelConfigService;
 import com.dwcode.okxbot.video.service.VideoProcessService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.core.io.Resource;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 import java.util.List;
 import java.util.Map;
@@ -25,6 +29,7 @@ public class VideoProcessController {
 
     private final VideoProcessService videoProcessService;
     private final AiModelConfigService aiModelConfigService;
+    private final VideoTaskEventPublisher videoTaskEventPublisher;
 
     /**
      * 提交视频链接，异步处理，返回任务 ID。
@@ -33,6 +38,17 @@ public class VideoProcessController {
     public ApiResult<VideoTaskResponse> process(@Valid @RequestBody VideoProcessRequest request) {
         log.info("收到视频处理请求: url={}", request.getUrl());
         return ApiResult.ok(videoProcessService.submit(request));
+    }
+
+    /**
+     * 当前用户任务状态 SSE 流（步骤变更实时推送）。
+     * 需 Authorization: Bearer；前端用 fetch 读流（原生 EventSource 不便带头）。
+     */
+    @GetMapping(value = "/events", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
+    public SseEmitter streamEvents() {
+        Long userId = SecurityUtils.requireCurrentUserId();
+        log.debug("打开视频任务 SSE: userId={}", userId);
+        return videoTaskEventPublisher.subscribe(userId);
     }
 
     // ---------- LLM 模型（任务选择：仅启用 + 有 api-key 的供应商） ----------

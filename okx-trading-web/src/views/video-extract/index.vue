@@ -3,7 +3,16 @@
     <!-- 顶部：提交区 -->
     <div class="submit-hero page-card">
       <div class="hero-text">
-        <h2 class="page-title">视频核心内容提取</h2>
+        <div class="hero-title-row">
+          <h2 class="page-title">视频核心内容提取</h2>
+          <a-tooltip :title="liveChannelTip">
+            <span class="live-badge" :class="liveChannel">
+              <span class="live-dot" />
+              <span class="live-label">{{ liveChannelLabel }}</span>
+              <span v-if="lastEventHint" class="live-hint">{{ lastEventHint }}</span>
+            </span>
+          </a-tooltip>
+        </div>
         <p class="page-subtitle">
           粘贴抖音 / B站 / YouTube 链接，自动下载 · 转录 · AI 提炼要点与二创文案
         </p>
@@ -635,6 +644,7 @@ import {
 import { createVNode } from 'vue'
 import MarkdownIt from 'markdown-it'
 import { videoApi } from '@/api/video.api'
+import { connectVideoTaskEvents, type VideoTaskSseEvent } from '@/api/video.events'
 import type { VideoTaskItem, TranscriptionSegment, AiProvider } from '@/types/api'
 import ModelManageModal from './ModelManageModal.vue'
 import { useAuthStore } from '@/stores/auth.store'
@@ -684,7 +694,7 @@ const retryTesting = ref(false)
 const retryTestOk = ref(false)
 const retryTestFail = ref(false)
 
-let pollTimer: ReturnType<typeof setInterval> | null = null
+let pollTimer: ReturnType<typeof setTimeout> | null = null
 
 const modelSelectOptions = computed(() =>
   availableProviders.value.map((p) => ({
@@ -1353,48 +1363,298 @@ async function refreshDetail() {
   }
 }
 
+/** SSE 已连接时不轮询；断线则智能轮询兜底 */
+const sseConnected = ref(false)
+/** 是否正在发起/重连 SSE（尚未 onOpen） */
+const sseConnecting = ref(false)
+/** 智能轮询是否在跑（用于角标，需 ref 才能刷新 UI） */
+const pollingActive = ref(false)
+/** 最近一次有效业务事件（不含 ping） */
+const lastSseEventAt = ref<number | null>(null)
+const lastSseEventType = ref('')
+/** 角标「xs前」每秒刷新 */
+const liveTick = ref(0)
+let liveHintTimer: ReturnType<typeof setInterval> | null = null
+let sseHandle: { close: () => void } | null = null
+let pollIntervalMs = 3000
+let visibilityHandler: (() => void) | null = null
+
+/** idle | connecting | sse | poll */
+const liveChannel = computed(() => {
+  if (sseConnected.value) return 'sse'
+  if (pollingActive.value) return 'poll'
+  if (sseConnecting.value) return 'connecting'
+  return 'idle'
+})
+
+const liveChannelLabel = computed(() => {
+  switch (liveChannel.value) {
+    case 'sse':
+      return '实时 · SSE'
+    case 'poll':
+      return '实时 · 轮询'
+    case 'connecting':
+      return '连接中…'
+    default:
+      return '待机'
+  }
+})
+
+const lastEventHint = computed(() => {
+  void liveTick.value
+  if (!lastSseEventAt.value || !lastSseEventType.value) return ''
+  const sec = Math.max(0, Math.round((Date.now() - lastSseEventAt.value) / 1000))
+  const when = sec < 5 ? '刚刚' : sec < 60 ? `${sec}s前` : `${Math.floor(sec / 60)}m前`
+  return `${lastSseEventType.value} · ${when}`
+})
+
+const liveChannelTip = computed(() => {
+  const base =
+    '状态通道：SSE=服务端推送长连接（Network 里叫 events，类型常是 fetch，不是 EventStream）；轮询=断线时兜底拉 tasks；待机=无活跃任务且未连上推送。'
+  if (liveChannel.value === 'sse') {
+    return `${base}\n当前：SSE 已连接，任务状态由推送更新。Edge 请在 Network → 筛选「全部」搜 events，看一条一直 Pending 的请求。`
+  }
+  if (liveChannel.value === 'poll') {
+    return `${base}\n当前：SSE 未连通，正在智能轮询 /v1/video/tasks。`
+  }
+  if (liveChannel.value === 'connecting') {
+    return `${base}\n当前：正在连接 /api/v1/video/events …`
+  }
+  return `${base}\n当前：待机（无进行中任务时也可能不轮询）。`
+})
+
+function startLiveHintClock() {
+  if (liveHintTimer) return
+  liveHintTimer = setInterval(() => {
+    liveTick.value++
+  }, 1000)
+}
+function stopLiveHintClock() {
+  if (liveHintTimer) {
+    clearInterval(liveHintTimer)
+    liveHintTimer = null
+  }
+}
+
+function mergeTaskPatch(taskId: string, patch: Partial<VideoTaskItem>) {
+  const idx = tasks.value.findIndex((t) => t.taskId === taskId)
+  if (idx >= 0) {
+    tasks.value[idx] = { ...tasks.value[idx], ...patch }
+  } else if (patch.status || patch.url) {
+    // 新任务（created）插到顶部
+    tasks.value.unshift({
+      taskId,
+      status: patch.status || 'PENDING',
+      url: patch.url || '',
+      ...patch
+    } as VideoTaskItem)
+    taskTotal.value += 1
+  }
+  if (selectedId.value === taskId && detail.value) {
+    detail.value = { ...detail.value, ...patch }
+  } else if (selectedId.value === taskId && !detail.value && patch) {
+    detail.value = { taskId, status: patch.status || 'PENDING', url: patch.url || '', ...patch } as VideoTaskItem
+  }
+}
+
+async function handleSseEvent(ev: VideoTaskSseEvent) {
+  if (ev.type === 'ping') return
+  if (ev.type === 'connected') {
+    sseConnected.value = true
+    sseConnecting.value = false
+    lastSseEventType.value = 'connected'
+    lastSseEventAt.value = Date.now()
+    return
+  }
+
+  lastSseEventType.value = String(ev.type || 'event')
+  lastSseEventAt.value = Date.now()
+
+  if (ev.type === 'task.deleted') {
+    const id = String(ev.taskId || ev.data?.taskId || '')
+    if (!id) return
+    tasks.value = tasks.value.filter((t) => t.taskId !== id)
+    taskTotal.value = Math.max(0, taskTotal.value - 1)
+    if (selectedId.value === id) {
+      selectedId.value = ''
+      detail.value = null
+    }
+    return
+  }
+
+  const data = (ev.data || {}) as Partial<VideoTaskItem> & { taskId?: string }
+  const taskId = String(ev.taskId || data.taskId || '')
+  if (!taskId) return
+
+  const patch: Partial<VideoTaskItem> = {
+    taskId,
+    status: data.status as VideoTaskItem['status'],
+    url: data.url as string | undefined,
+    title: data.title as string | null | undefined,
+    platform: data.platform as string | null | undefined,
+    llmProvider: data.llmProvider as string | null | undefined,
+    llmModel: data.llmModel as string | null | undefined,
+    currentStep: data.currentStep as string | null | undefined,
+    errorMessage: data.errorMessage as string | null | undefined,
+    durationSeconds: data.durationSeconds as number | null | undefined,
+    videoAvailable: data.videoAvailable as boolean | null | undefined,
+    createdAt: data.createdAt as string | null | undefined,
+    startedAt: data.startedAt as string | null | undefined,
+    finishedAt: data.finishedAt as string | null | undefined,
+    downloadDurationMs: data.downloadDurationMs as number | null | undefined,
+    transcribeDurationMs: data.transcribeDurationMs as number | null | undefined,
+    summarizeDurationMs: data.summarizeDurationMs as number | null | undefined,
+    totalDurationMs: data.totalDurationMs as number | null | undefined
+  }
+  // 去掉 undefined，避免覆盖已有字段
+  Object.keys(patch).forEach((k) => {
+    if ((patch as any)[k] === undefined) delete (patch as any)[k]
+  })
+
+  mergeTaskPatch(taskId, patch)
+
+  // 终态成功：拉完整 result（含摘要/转录）
+  if (selectedId.value === taskId && data.status === 'SUCCESS') {
+    await refreshDetail()
+  }
+}
+
+function startSse() {
+  stopSse()
+  sseConnecting.value = true
+  sseHandle = connectVideoTaskEvents({
+    onOpen: () => {
+      // HTTP 流已建立；真正业务以 connected 事件为准，这里先标为已连
+      sseConnected.value = true
+      sseConnecting.value = false
+      stopPolling()
+    },
+    onEvent: (ev) => {
+      void handleSseEvent(ev)
+    },
+    onError: () => {
+      sseConnected.value = false
+      sseConnecting.value = false
+      ensurePolling()
+    },
+    onClose: () => {
+      sseConnected.value = false
+      sseConnecting.value = false
+    }
+  })
+}
+
+function stopSse() {
+  sseHandle?.close()
+  sseHandle = null
+  sseConnected.value = false
+  sseConnecting.value = false
+}
+
+function computePollInterval(): number {
+  if (typeof document !== 'undefined' && document.hidden) return 15000
+  const active = tasks.value.filter((t) => needsPoll(t))
+  if (!active.length) return 8000
+  if (active.some((t) => t.status === 'SUMMARIZING' || isPauseDraining(t))) return 2000
+  if (active.some((t) => t.status === 'DOWNLOADING' || t.status === 'TRANSCRIBING')) return 3000
+  return 5000 // PENDING 等
+}
+
+function ensurePolling() {
+  if (sseConnected.value) {
+    stopPolling()
+    return
+  }
+  const hasActive =
+    tasks.value.some((t) => needsPoll(t)) || !!(detail.value && needsPoll(detail.value))
+  if (!hasActive) {
+    stopPolling()
+    return
+  }
+  if (!pollTimer) {
+    startPolling()
+  }
+}
+
 function startPolling() {
   stopPolling()
-  pollTimer = setInterval(async () => {
-    const hasRunning = tasks.value.some((t) => needsPoll(t))
-    if (!hasRunning && !(detail.value && needsPoll(detail.value))) return
-    // 轻量刷新列表
+  pollingActive.value = true
+  const tick = async () => {
+    if (sseConnected.value) {
+      stopPolling()
+      return
+    }
+    const hasActive =
+      tasks.value.some((t) => needsPoll(t)) || !!(detail.value && needsPoll(detail.value))
+    if (!hasActive) {
+      stopPolling()
+      return
+    }
     try {
       const res = await videoApi.listTasks(0, 20)
       const map = new Map((res.data.items || []).map((t) => [t.taskId, t]))
       tasks.value = tasks.value.map((t) => map.get(t.taskId) || t)
-      // 合并新任务到顶部
       for (const item of res.data.items || []) {
         if (!tasks.value.find((t) => t.taskId === item.taskId)) {
           tasks.value.unshift(item)
         }
       }
-    } catch { /* ignore */ }
-
+      lastSseEventType.value = 'poll.tasks'
+      lastSseEventAt.value = Date.now()
+    } catch {
+      /* ignore */
+    }
     if (detail.value && needsPoll(detail.value)) {
       await refreshDetail()
     }
-  }, 3000)
+    pollIntervalMs = computePollInterval()
+    pollTimer = setTimeout(() => {
+      pollTimer = null
+      void tick()
+    }, pollIntervalMs)
+  }
+  void tick()
 }
 
 function stopPolling() {
   if (pollTimer) {
-    clearInterval(pollTimer)
+    clearTimeout(pollTimer)
     pollTimer = null
   }
+  pollingActive.value = false
 }
 
 watch(selectedId, () => {
   activeSegId.value = null
 })
 
+// 任务列表变化时：SSE 断线则维护轮询
+watch(
+  () => tasks.value.map((t) => `${t.taskId}:${t.status}:${t.currentStep}`).join('|'),
+  () => ensurePolling()
+)
+
 onMounted(async () => {
   await Promise.all([loadModels(), loadTasks(true)])
-  startPolling()
+  startSse()
+  ensurePolling()
+  startLiveHintClock()
+  visibilityHandler = () => {
+    if (!document.hidden && !sseConnected.value) {
+      ensurePolling()
+    }
+  }
+  document.addEventListener('visibilitychange', visibilityHandler)
 })
 
 onUnmounted(() => {
   stopPolling()
+  stopSse()
+  stopLiveHintClock()
+  if (visibilityHandler) {
+    document.removeEventListener('visibilitychange', visibilityHandler)
+    visibilityHandler = null
+  }
 })
 </script>
 
@@ -1425,6 +1685,114 @@ onUnmounted(() => {
 
   .hero-text {
     margin-bottom: 16px;
+  }
+
+  .hero-title-row {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 10px 14px;
+    margin-bottom: 4px;
+
+    .page-title {
+      margin-bottom: 0;
+    }
+  }
+
+  .live-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    max-width: 100%;
+    padding: 3px 10px 3px 8px;
+    border-radius: 999px;
+    font-size: 12px;
+    line-height: 1.4;
+    border: 1px solid transparent;
+    cursor: help;
+    user-select: none;
+    white-space: nowrap;
+
+    .live-dot {
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      flex-shrink: 0;
+      background: #9ca3af;
+    }
+
+    .live-label {
+      font-weight: 600;
+      color: #374151;
+    }
+
+    .live-hint {
+      color: #9ca3af;
+      font-weight: 400;
+      max-width: 160px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    &.sse {
+      background: #ecfdf5;
+      border-color: #a7f3d0;
+      .live-dot {
+        background: #10b981;
+        box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.25);
+        animation: live-pulse 1.6s ease-in-out infinite;
+      }
+      .live-label {
+        color: #047857;
+      }
+    }
+
+    &.poll {
+      background: #fff7ed;
+      border-color: #fed7aa;
+      .live-dot {
+        background: #f59e0b;
+        animation: live-pulse 1.6s ease-in-out infinite;
+      }
+      .live-label {
+        color: #c2410c;
+      }
+    }
+
+    &.connecting {
+      background: #eff6ff;
+      border-color: #bfdbfe;
+      .live-dot {
+        background: #3b82f6;
+        animation: live-pulse 0.9s ease-in-out infinite;
+      }
+      .live-label {
+        color: #1d4ed8;
+      }
+    }
+
+    &.idle {
+      background: #f9fafb;
+      border-color: #e5e7eb;
+      .live-dot {
+        background: #9ca3af;
+      }
+      .live-label {
+        color: #6b7280;
+      }
+    }
+  }
+
+  @keyframes live-pulse {
+    0%,
+    100% {
+      opacity: 1;
+      transform: scale(1);
+    }
+    50% {
+      opacity: 0.55;
+      transform: scale(0.85);
+    }
   }
 
   .submit-row {

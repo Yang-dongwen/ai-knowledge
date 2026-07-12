@@ -7,6 +7,7 @@ import com.dwcode.okxbot.video.dto.VideoSummaryResponse;
 import com.dwcode.okxbot.video.entity.VideoTaskEntity;
 import com.dwcode.okxbot.video.enums.VideoTaskStatus;
 import com.dwcode.okxbot.video.mapper.VideoTaskMapper;
+import com.dwcode.okxbot.video.event.VideoTaskEventPublisher;
 import com.dwcode.okxbot.video.service.StorageService;
 import com.dwcode.okxbot.video.service.SummarizationService;
 import com.dwcode.okxbot.video.service.TranscriptionService;
@@ -43,6 +44,7 @@ public class VideoProcessingPipeline {
     private final ObjectMapper objectMapper;
     private final VideoProperties videoProperties;
     private final VideoTaskScheduler taskScheduler;
+    private final VideoTaskEventPublisher eventPublisher;
 
     public void run(Long taskId) {
         VideoTaskEntity task = videoTaskMapper.selectById(taskId);
@@ -68,6 +70,7 @@ public class VideoProcessingPipeline {
         task.setStartedAt(LocalDateTime.now());
         task.setUpdatedAt(LocalDateTime.now());
         videoTaskMapper.updateById(task);
+        eventPublisher.publishEntity(task, VideoTaskEventPublisher.TYPE_STATUS);
 
         try {
             // Step 1: Download
@@ -85,6 +88,7 @@ public class VideoProcessingPipeline {
             task.setAudioPath(download.getAudioPath());
             task.setUpdatedAt(LocalDateTime.now());
             videoTaskMapper.updateById(task);
+            eventPublisher.publishEntity(task, VideoTaskEventPublisher.TYPE_STATUS);
             log.info("步骤耗时: taskId={}, download={}ms", taskId, downloadMs);
 
             if (shouldPause(taskId, task, pipelineStart)) {
@@ -106,6 +110,7 @@ public class VideoProcessingPipeline {
                     storageService.resolveTranscriptionPath(taskIdStr), transcription));
             task.setUpdatedAt(LocalDateTime.now());
             videoTaskMapper.updateById(task);
+            eventPublisher.publishEntity(task, VideoTaskEventPublisher.TYPE_STATUS);
             log.info("步骤耗时: taskId={}, transcribe={}ms", taskId, transcribeMs);
 
             if (shouldPause(taskId, task, pipelineStart)) {
@@ -156,6 +161,7 @@ public class VideoProcessingPipeline {
             task.setUpdatedAt(LocalDateTime.now());
             task.setErrorMessage(null);
             videoTaskMapper.updateById(task);
+            eventPublisher.publishEntity(task, VideoTaskEventPublisher.TYPE_STATUS);
 
             if (videoProperties.isCleanupMedia()) {
                 cleanupTaskMedia(taskId);
@@ -165,6 +171,7 @@ public class VideoProcessingPipeline {
                 task.setSummaryPath(null);
                 task.setUpdatedAt(LocalDateTime.now());
                 videoTaskMapper.updateById(task);
+                eventPublisher.publishEntity(task, VideoTaskEventPublisher.TYPE_STATUS);
             }
 
             log.info("视频任务完成: taskId={}, title={}, total={}ms",
@@ -183,6 +190,7 @@ public class VideoProcessingPipeline {
             task.setTotalDurationMs(System.currentTimeMillis() - pipelineStart);
             task.setUpdatedAt(LocalDateTime.now());
             videoTaskMapper.updateById(task);
+            eventPublisher.publishEntity(task, VideoTaskEventPublisher.TYPE_STATUS);
         } finally {
             taskScheduler.markFinished(taskId);
         }
@@ -225,6 +233,7 @@ public class VideoProcessingPipeline {
         task.setStatus(latest.getStatus());
         task.setCurrentStep(latest.getCurrentStep());
         task.setTotalDurationMs(latest.getTotalDurationMs());
+        eventPublisher.publishEntity(latest, VideoTaskEventPublisher.TYPE_STATUS);
         log.info("任务已暂停: taskId={}, step={}", task.getId(), step);
     }
 
@@ -237,6 +246,7 @@ public class VideoProcessingPipeline {
         task.setCurrentStep(step);
         task.setUpdatedAt(LocalDateTime.now());
         videoTaskMapper.updateById(task);
+        eventPublisher.publishEntity(task, VideoTaskEventPublisher.TYPE_STATUS);
         log.info("任务状态更新: taskId={}, status={}, step={}", task.getId(), status, step);
     }
 

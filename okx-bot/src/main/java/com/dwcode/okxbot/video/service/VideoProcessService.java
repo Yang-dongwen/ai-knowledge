@@ -12,6 +12,7 @@ import com.dwcode.okxbot.video.config.VideoProperties;
 import com.dwcode.okxbot.video.dto.*;
 import com.dwcode.okxbot.video.entity.VideoTaskEntity;
 import com.dwcode.okxbot.video.enums.VideoTaskStatus;
+import com.dwcode.okxbot.video.event.VideoTaskEventPublisher;
 import com.dwcode.okxbot.video.mapper.VideoTaskMapper;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
@@ -53,6 +54,7 @@ public class VideoProcessService {
     private final VideoProperties videoProperties;
     private final LlmChatClient llmChatClient;
     private final AiModelConfigService aiModelConfigService;
+    private final VideoTaskEventPublisher eventPublisher;
 
     /**
      * 提交处理任务，立即返回 taskId，后台异步执行。
@@ -109,6 +111,7 @@ public class VideoProcessService {
                 entity.getId(), entity.getPlatform(), llmProvider, llmModel, entity.getSourceUrl());
         // 进入排队，由调度器按并发槽位启动
         taskScheduler.notifyPending();
+        eventPublisher.publishEntity(entity, VideoTaskEventPublisher.TYPE_CREATED);
 
         return toResponse(entity, false);
     }
@@ -141,6 +144,7 @@ public class VideoProcessService {
             entity.setUpdatedAt(LocalDateTime.now());
             videoTaskMapper.updateById(entity);
             taskScheduler.markFinished(taskId);
+            eventPublisher.publishEntity(entity, VideoTaskEventPublisher.TYPE_STATUS);
             log.info("排队任务已暂停: taskId={}", taskId);
             return toResponse(entity, false);
         }
@@ -151,6 +155,7 @@ public class VideoProcessService {
         entity.setCurrentStep("暂停中，等待当前步骤结束…");
         entity.setUpdatedAt(LocalDateTime.now());
         videoTaskMapper.updateById(entity);
+        eventPublisher.publishEntity(entity, VideoTaskEventPublisher.TYPE_STATUS);
         log.info("已请求暂停进行中任务: taskId={}, was={}", taskId, status);
         // 主动尝试调度，即使当前步骤尚未结束，若有其它槽位也可启动排队
         taskScheduler.tryStartNext();
@@ -216,6 +221,7 @@ public class VideoProcessService {
         entity.setFinishedAt(null);
         entity.setUpdatedAt(LocalDateTime.now());
         videoTaskMapper.updateById(entity);
+        eventPublisher.publishEntity(entity, VideoTaskEventPublisher.TYPE_STATUS);
 
         log.info("任务重试排队: taskId={}, url={}, llm={}/{}",
                 taskId, entity.getSourceUrl(), entity.getLlmProvider(), entity.getLlmModel());
@@ -365,6 +371,7 @@ public class VideoProcessService {
      */
     public void deleteTask(Long taskId) {
         VideoTaskEntity entity = requireOwnedTask(taskId);
+        Long ownerId = entity.getUserId();
         String taskIdStr = String.valueOf(taskId);
 
         int filesRemoved = storageService.deleteTaskDir(taskIdStr);
@@ -377,6 +384,7 @@ public class VideoProcessService {
         if (rows <= 0) {
             throw new BusinessException(404, "任务不存在或已删除: " + taskId);
         }
+        eventPublisher.publishDeleted(ownerId, taskId);
         log.info("已删除视频任务: taskId={}, title={}, filesRemoved≈{}",
                 taskId, entity.getTitle(), filesRemoved);
     }
