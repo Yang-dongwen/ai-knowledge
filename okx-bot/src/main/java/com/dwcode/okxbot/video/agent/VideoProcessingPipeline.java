@@ -85,11 +85,13 @@ public class VideoProcessingPipeline {
             videoTaskMapper.updateById(task);
 
             // Step 3: Summarize + 持久化
-            updateStatus(task, VideoTaskStatus.SUMMARIZING, "正在生成结构化摘要");
+            updateStatus(task, VideoTaskStatus.SUMMARIZING,
+                    "正在生成结构化摘要" + (task.getLlmModel() != null ? "（" + task.getLlmModel() + "）" : ""));
             boolean mindMap = task.getExtractMindMap() == null || task.getExtractMindMap() == 1;
             boolean repurpose = task.getGenerateRepurposeScript() == null || task.getGenerateRepurposeScript() == 1;
             VideoSummaryPart summaryPart = summarizationService.summarize(
-                    task.getTitle(), transcription, mindMap, repurpose, task.getLanguage());
+                    task.getTitle(), transcription, mindMap, repurpose, task.getLanguage(),
+                    task.getLlmProvider(), task.getLlmModel());
 
             String summaryJson = objectMapper.writeValueAsString(summaryPart);
             task.setSummaryJson(summaryJson);

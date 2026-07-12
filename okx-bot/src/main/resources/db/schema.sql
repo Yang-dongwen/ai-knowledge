@@ -287,6 +287,8 @@ CREATE TABLE IF NOT EXISTS video_task (
     status VARCHAR(32) NOT NULL DEFAULT 'PENDING' COMMENT '状态 PENDING/DOWNLOADING/TRANSCRIBING/SUMMARIZING/SUCCESS/FAILED',
     current_step VARCHAR(128) COMMENT '当前步骤说明',
     language VARCHAR(16) DEFAULT 'zh' COMMENT '语言',
+    llm_provider VARCHAR(64) COMMENT 'LLM供应商标识',
+    llm_model VARCHAR(128) COMMENT 'LLM模型ID',
     extract_mind_map TINYINT NOT NULL DEFAULT 1 COMMENT '是否提取思维导图 1是 0否',
     generate_repurpose_script TINYINT NOT NULL DEFAULT 1 COMMENT '是否生成repurpose脚本 1是 0否',
     duration_seconds DOUBLE COMMENT '视频时长(秒)',

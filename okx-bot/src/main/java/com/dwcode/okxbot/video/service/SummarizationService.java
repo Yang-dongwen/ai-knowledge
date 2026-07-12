@@ -33,17 +33,23 @@ public class SummarizationService {
 
     /**
      * 基于转录结果生成结构化摘要。
+     *
+     * @param llmProvider 可空，任务级供应商
+     * @param llmModel    可空，任务级模型
      */
     public VideoSummaryPart summarize(String title,
                                       TranscriptionResult transcription,
                                       boolean extractMindMap,
                                       boolean generateRepurposeScript,
-                                      String language) {
+                                      String language,
+                                      String llmProvider,
+                                      String llmModel) {
         String userPrompt = buildUserPrompt(title, transcription, extractMindMap, generateRepurposeScript, language);
-        log.info("开始 LLM 总结: title={}, transcriptLen={}", title,
+        log.info("开始 LLM 总结: title={}, provider={}, model={}, transcriptLen={}",
+                title, llmProvider, llmModel,
                 transcription.getText() != null ? transcription.getText().length() : 0);
 
-        String raw = llmChatClient.chat(SYSTEM_PROMPT, userPrompt);
+        String raw = llmChatClient.chat(SYSTEM_PROMPT, userPrompt, llmProvider, llmModel);
         VideoSummaryPart part = parseSummaryJson(raw);
 
         if (!extractMindMap) {

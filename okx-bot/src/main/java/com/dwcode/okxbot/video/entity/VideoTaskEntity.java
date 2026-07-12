@@ -38,6 +38,12 @@ public class VideoTaskEntity {
     /** 语言 */
     private String language;
 
+    /** 本任务使用的 LLM 供应商（ai.providers key） */
+    private String llmProvider;
+
+    /** 本任务使用的 LLM 模型 ID */
+    private String llmModel;
+
     /** 是否提取思维导图 1/0 */
     private Integer extractMindMap;
 

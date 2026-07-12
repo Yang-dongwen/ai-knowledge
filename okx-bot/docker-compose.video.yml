@@ -1,0 +1,41 @@
+# 视频提取相关本地依赖（Whisper + 可选 Ollama）
+# 用法：docker compose -f docker-compose.video.yml up -d
+#
+# 注意：Java 后端（okx-bot）仍在宿主机用 Maven/IDE 启动，
+# 通过 application.yml 的 video.whisper.base-url 连接本服务。
+
+services:
+  whisper-service:
+    build: ./whisper-service
+    ports:
+      - "8000:8000"
+    environment:
+      WHISPER_MODEL: medium
+      WHISPER_DEVICE: cpu
+      WHISPER_COMPUTE: int8
+    # GPU 示例（需 nvidia-container-toolkit）：
+    # environment:
+    #   WHISPER_MODEL: large-v3
+    #   WHISPER_DEVICE: cuda
+    #   WHISPER_COMPUTE: float16
+    # deploy:
+    #   resources:
+    #     reservations:
+    #       devices:
+    #         - driver: nvidia
+    #           count: 1
+    #           capabilities: [gpu]
+    volumes:
+      - whisper-cache:/root/.cache
+
+  # 可选：本地 LLM（若不用云端 NVIDIA/OpenAI）
+  # ollama:
+  #   image: ollama/ollama
+  #   ports:
+  #     - "11434:11434"
+  #   volumes:
+  #     - ollama-data:/root/.ollama
+
+volumes:
+  whisper-cache:
+  # ollama-data:

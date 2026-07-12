@@ -1,3 +1,40 @@
 /.vscode
 /desgin
 /first
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+venv/
+.venv/
+ENV/
+env/
+*.egg-info/
+dist/
+build/
+
+# Java
+*.class
+*.jar
+*.war
+target/
+
+# Node.js
+node_modules/
+dist/
+.vite/
+
+# IDE
+.idea/
+*.iml
+.claude/
+
+# Logs
+*.log
+
+# OS
+.DS_Store
+Thumbs.db

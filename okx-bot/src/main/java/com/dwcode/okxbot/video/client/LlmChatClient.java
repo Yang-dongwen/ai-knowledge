@@ -4,6 +4,7 @@ import com.dwcode.okxbot.chat.config.AiProperties;
 import com.dwcode.okxbot.chat.config.AiProperties.ProviderConfig;
 import com.dwcode.okxbot.common.exception.BusinessException;
 import com.dwcode.okxbot.video.config.VideoProperties;
+import com.dwcode.okxbot.video.dto.LlmModelTestResponse;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.extern.slf4j.Slf4j;
@@ -21,7 +22,7 @@ import java.util.concurrent.TimeUnit;
  * OpenAI 兼容 LLM 聊天客户端。
  *
  * 复用 {@link AiProperties} 中的多供应商配置，与 chat 模块共用 API Key。
- * 对 429/503 等瞬时繁忙错误做指数退避重试（NVIDIA 免费档常见）。
+ * 支持按任务指定 provider/model；对 429/503 做指数退避重试。
  */
 @Slf4j
 @Component
@@ -44,14 +45,68 @@ public class LlmChatClient {
     }
 
     /**
-     * 发送 chat completion 请求，返回 assistant 文本内容。
-     *
-     * @param systemPrompt 系统提示
-     * @param userPrompt   用户提示
+     * 使用 video.llm 默认供应商/模型。
      */
     public String chat(String systemPrompt, String userPrompt) {
-        ProviderConfig provider = resolveProvider();
-        String modelId = resolveModelId(provider);
+        return chat(systemPrompt, userPrompt, null, null);
+    }
+
+    /**
+     * 发送 chat completion。
+     *
+     * @param providerKey 可空，空则用 video.llm.provider / 默认
+     * @param modelId     可空，空则用 video.llm.model / 供应商第一个模型
+     */
+    public String chat(String systemPrompt, String userPrompt, String providerKey, String modelId) {
+        return chatInternal(systemPrompt, userPrompt, providerKey, modelId,
+                videoProperties.getLlm().getMaxRetries(),
+                videoProperties.getLlm().getMaxTokens(),
+                videoProperties.getLlm().getTemperature());
+    }
+
+    /**
+     * 连通性测试：短提示 + 少重试，返回结构化结果。
+     */
+    public LlmModelTestResponse testModel(String providerKey, String modelId) {
+        long start = System.currentTimeMillis();
+        try {
+            String reply = chatInternal(
+                    "你是一个简洁的助手。",
+                    "请只回复：OK",
+                    providerKey,
+                    modelId,
+                    1,
+                    32,
+                    0.1
+            );
+            return LlmModelTestResponse.builder()
+                    .available(true)
+                    .provider(providerKey)
+                    .model(modelId)
+                    .reply(truncate(reply, 200))
+                    .latencyMs(System.currentTimeMillis() - start)
+                    .build();
+        } catch (Exception e) {
+            log.warn("模型测试失败: provider={}, model={}, err={}", providerKey, modelId, e.getMessage());
+            return LlmModelTestResponse.builder()
+                    .available(false)
+                    .provider(providerKey)
+                    .model(modelId)
+                    .latencyMs(System.currentTimeMillis() - start)
+                    .errorMessage(truncate(e.getMessage(), 500))
+                    .build();
+        }
+    }
+
+    private String chatInternal(String systemPrompt,
+                                String userPrompt,
+                                String providerKey,
+                                String modelId,
+                                int maxRetries,
+                                int maxTokens,
+                                double temperature) {
+        ProviderConfig provider = resolveProvider(providerKey);
+        String resolvedModel = resolveModelId(provider, modelId);
 
         List<Map<String, String>> messages = List.of(
                 Map.of("role", "system", "content", systemPrompt),
@@ -59,10 +114,10 @@ public class LlmChatClient {
         );
 
         Map<String, Object> requestBody = new HashMap<>();
-        requestBody.put("model", modelId);
+        requestBody.put("model", resolvedModel);
         requestBody.put("messages", messages);
-        requestBody.put("temperature", videoProperties.getLlm().getTemperature());
-        requestBody.put("max_tokens", videoProperties.getLlm().getMaxTokens());
+        requestBody.put("temperature", temperature);
+        requestBody.put("max_tokens", maxTokens);
 
         final String jsonBody;
         try {
@@ -72,9 +127,9 @@ public class LlmChatClient {
         }
 
         String chatUrl = buildChatUrl(provider.getBaseUrl());
-        log.info("调用 LLM: provider={}, model={}, url={}", provider.getName(), modelId, chatUrl);
+        log.info("调用 LLM: provider={}, model={}, url={}", provider.getName(), resolvedModel, chatUrl);
 
-        int maxRetries = Math.max(0, videoProperties.getLlm().getMaxRetries());
+        maxRetries = Math.max(0, maxRetries);
         long backoffMs = Math.max(200L, videoProperties.getLlm().getRetryBackoffMs());
         long maxBackoffMs = Math.max(backoffMs, videoProperties.getLlm().getRetryMaxBackoffMs());
 
@@ -84,7 +139,6 @@ public class LlmChatClient {
         for (int attempt = 0; attempt <= maxRetries; attempt++) {
             if (attempt > 0) {
                 long sleepMs = Math.min(maxBackoffMs, backoffMs * (1L << (attempt - 1)));
-                // 轻微抖动，避免同时打满
                 sleepMs = sleepMs + (long) (Math.random() * Math.min(1000, sleepMs / 5));
                 log.warn("LLM 瞬时失败，第 {}/{} 次重试，等待 {}ms …", attempt, maxRetries, sleepMs);
                 sleepQuietly(sleepMs);
@@ -135,6 +189,10 @@ public class LlmChatClient {
         JsonNode choices = respJson.path("choices");
         if (choices.isArray() && !choices.isEmpty()) {
             String content = choices.get(0).path("message").path("content").asText("");
+            // 部分推理模型把思考放在 reasoning_content，content 可能为空
+            if (content.isBlank()) {
+                content = choices.get(0).path("message").path("reasoning_content").asText("");
+            }
             if (content.isBlank()) {
                 throw new BusinessException("LLM 返回空内容");
             }
@@ -143,9 +201,6 @@ public class LlmChatClient {
         throw new BusinessException("LLM 未返回有效 choices");
     }
 
-    /**
-     * HTTP 层可重试状态：限流 / 服务繁忙 / 网关超时。
-     */
     private static boolean isRetryableStatus(int code) {
         return code == 408 || code == 429 || code == 500 || code == 502 || code == 503 || code == 504;
     }
@@ -172,14 +227,17 @@ public class LlmChatClient {
         }
     }
 
-    private ProviderConfig resolveProvider() {
-        String key = videoProperties.getLlm().getProvider();
+    private ProviderConfig resolveProvider(String providerKey) {
+        String key = providerKey;
+        if (key == null || key.isBlank()) {
+            key = videoProperties.getLlm().getProvider();
+        }
         if (key != null && !key.isBlank()) {
             ProviderConfig config = aiProperties.getProvider(key);
             if (config != null && config.getApiKey() != null && !config.getApiKey().isEmpty()) {
                 return config;
             }
-            log.warn("video.llm.provider={} 不可用，回退默认供应商", key);
+            log.warn("provider={} 不可用，回退默认供应商", key);
         }
         ProviderConfig defaultProvider = aiProperties.getDefaultProvider();
         if (defaultProvider == null || defaultProvider.getApiKey() == null || defaultProvider.getApiKey().isEmpty()) {
@@ -188,10 +246,13 @@ public class LlmChatClient {
         return defaultProvider;
     }
 
-    private String resolveModelId(ProviderConfig provider) {
-        String model = videoProperties.getLlm().getModel();
-        if (model != null && !model.isBlank()) {
-            return model;
+    private String resolveModelId(ProviderConfig provider, String modelId) {
+        if (modelId != null && !modelId.isBlank()) {
+            return modelId;
+        }
+        String cfgModel = videoProperties.getLlm().getModel();
+        if (cfgModel != null && !cfgModel.isBlank()) {
+            return cfgModel;
         }
         if (provider.getModels() != null && !provider.getModels().isEmpty()) {
             return provider.getModels().get(0).getId();

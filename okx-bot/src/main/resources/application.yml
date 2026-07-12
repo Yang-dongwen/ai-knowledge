@@ -52,13 +52,32 @@ ai:
           name: DeepSeek Chat
         - id: deepseek-reasoner
           name: DeepSeek R1
+    # 模型来自 https://build.nvidia.com/models ，可按需增删
     nvidia:
-      name: NVIDIA
+      name: NVIDIA NIM
       base-url: https://integrate.api.nvidia.com/v1
       api-key: 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
       models:
         - id: deepseek-ai/deepseek-v4-flash
-          name: deepseek-ai
+          name: DeepSeek V4 Flash（快）
+        - id: deepseek-ai/deepseek-r1
+          name: DeepSeek R1（强推理）
+        - id: meta/llama-3.3-70b-instruct
+          name: Llama 3.3 70B Instruct
+        - id: meta/llama-3.1-8b-instruct
+          name: Llama 3.1 8B Instruct（轻量）
+        - id: nvidia/llama-3.1-nemotron-70b-instruct
+          name: Nemotron 70B Instruct
+        - id: qwen/qwen2.5-72b-instruct
+          name: Qwen2.5 72B Instruct（中文强）
+        - id: qwen/qwen2.5-7b-instruct
+          name: Qwen2.5 7B Instruct
+        - id: google/gemma-2-27b-it
+          name: Gemma 2 27B
+        - id: mistralai/mistral-small-24b-instruct
+          name: Mistral Small 24B
+        - id: microsoft/phi-4-mini-instruct
+          name: Phi-4 Mini Instruct
 
 # 视频核心内容提取（VideoCoreExtractor v2 持久化）
 video:

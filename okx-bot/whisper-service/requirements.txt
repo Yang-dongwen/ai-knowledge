@@ -1,0 +1,6 @@
+fastapi>=0.110.0
+uvicorn[standard]>=0.27.0
+python-multipart>=0.0.9
+faster-whisper>=1.0.0
+# 可选：有 GPU 时安装对应 CUDA 版 torch 可加速
+# torch

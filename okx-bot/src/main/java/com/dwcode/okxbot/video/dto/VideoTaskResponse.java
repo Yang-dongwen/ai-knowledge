@@ -15,6 +15,10 @@ public class VideoTaskResponse {
     private String title;
     /** 平台：douyin / bilibili / youtube / other */
     private String platform;
+    /** 本任务 LLM 供应商 */
+    private String llmProvider;
+    /** 本任务 LLM 模型 */
+    private String llmModel;
     private String currentStep;
     private String errorMessage;
     private Double durationSeconds;
