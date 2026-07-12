@@ -71,7 +71,8 @@ video:
   cleanup-media: false
   whisper:
     base-url: http://127.0.0.1:8000
-    model: medium
+    # CPU 无独显：small 比 medium 快数倍；要更高精度可改 medium（更慢）
+    model: small
     timeout-seconds: 600
     language: zh
   llm:
@@ -88,6 +89,11 @@ video:
     max-duration-seconds: 7200
     audio-format: mp3
     timeout-seconds: 600
+    # --- 下载加速（转录不需要 4K）---
+    max-height: 720              # 最高 720p；改 480 更快，0=原画最慢
+    concurrent-fragments: 8      # HLS/DASH 分片并发，可试 4~16
+    prefer-merged: true          # 优先单文件流，减少双轨下载+合并
+    # format: "best[height<=480]"  # 可选：完全自定义 yt-dlp -f，非空则覆盖上面规则
 
 logging:
   level:

@@ -54,24 +54,35 @@ public class VideoDownloadService {
             throw new BusinessException("视频时长超过限制（" + maxDuration + "s）: " + meta.getDurationSeconds() + "s");
         }
 
-        // 2. 下载最佳音视频到任务目录
-        //    显式传入 --ffmpeg-location，避免 IDE/JVM PATH 不含 ffmpeg 时无法 merge
+        // 2. 下载音视频（限分辨率 + 分片并发，加速转录场景）
+        //    --ffmpeg-location：避免 IDE/JVM PATH 无 ffmpeg 时无法 merge
+        String format = buildFormatSelector();
+        int concurrent = Math.max(1, videoProperties.getDownload().getConcurrentFragments());
         Path videoTemplate = taskDir.resolve("video.%(ext)s");
+
         List<String> downloadCmd = new ArrayList<>();
         downloadCmd.add(videoProperties.getYtDlpPath());
         downloadCmd.add("-f");
-        downloadCmd.add("bv*+ba/b");
+        downloadCmd.add(format);
         downloadCmd.add("--merge-output-format");
         downloadCmd.add("mp4");
         downloadCmd.add("--ffmpeg-location");
         downloadCmd.add(resolveFfmpegDir());
-        downloadCmd.add("-o");
-        downloadCmd.add(videoTemplate.toAbsolutePath().toString());
+        // HLS/DASH 多分片并行下载
+        downloadCmd.add("-N");
+        downloadCmd.add(String.valueOf(concurrent));
+        // 略减无关开销
         downloadCmd.add("--no-playlist");
+        downloadCmd.add("--no-write-playlist-metafiles");
         downloadCmd.add("--retries");
         downloadCmd.add("3");
+        downloadCmd.add("--fragment-retries");
+        downloadCmd.add("5");
+        downloadCmd.add("-o");
+        downloadCmd.add(videoTemplate.toAbsolutePath().toString());
         downloadCmd.add(url);
 
+        log.info("yt-dlp 下载: format={}, concurrentFragments={}, url={}", format, concurrent, url);
         processExecutor.execute(downloadCmd, videoProperties.getDownload().getTimeoutSeconds());
 
         // 3. 解析下载产物：可能是已合并 video.mp4，也可能是 video.fXXX.mp4 + video.fYYY.m4a
@@ -296,6 +307,43 @@ public class VideoDownloadService {
         ffmpegCmd.add(audioFile.toAbsolutePath().toString());
 
         processExecutor.execute(ffmpegCmd, videoProperties.getDownload().getTimeoutSeconds());
+    }
+
+    /**
+     * 拼装 yt-dlp -f 格式选择器。
+     * <p>默认策略（加速转录场景）：
+     * <ul>
+     *   <li>限制高度 ≤ maxHeight（默认 720p，体积远小于 1080p/4K）</li>
+     *   <li>preferMerged 时优先单文件/已封装流，少一次双轨下载+合并</li>
+     *   <li>回退到分轨再合并，最后不限清晰度保证能下到</li>
+     * </ul>
+     */
+    String buildFormatSelector() {
+        VideoProperties.Download cfg = videoProperties.getDownload();
+        if (cfg.getFormat() != null && !cfg.getFormat().isBlank()) {
+            return cfg.getFormat().trim();
+        }
+
+        int h = cfg.getMaxHeight();
+        if (h <= 0) {
+            // 不限分辨率：原逻辑
+            return "bv*+ba/b";
+        }
+
+        // height 过滤：bv / ba / progressive best
+        String hFilter = "[height<=?" + h + "]";
+        if (cfg.isPreferMerged()) {
+            // 1) 单文件且 ≤maxHeight（最快）
+            // 2) 分轨视频≤maxHeight + 最佳音轨
+            // 3) 任意 ≤maxHeight
+            // 4) 再放宽到不限高度，避免平台无 720 档失败
+            return "b" + hFilter + "[ext=mp4]"
+                    + "/b" + hFilter
+                    + "/bv*" + hFilter + "+ba/b"
+                    + "/bv*+ba/b";
+        }
+        return "bv*" + hFilter + "+ba/b"
+                + "/bv*+ba/b";
     }
 
     /**

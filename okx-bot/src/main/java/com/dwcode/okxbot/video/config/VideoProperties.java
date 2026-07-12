@@ -89,5 +89,28 @@ public class VideoProperties {
         private String audioFormat = "mp3";
         /** 下载超时（秒） */
         private int timeoutSeconds = 600;
+
+        /**
+         * 最高分辨率（高度像素）。转录场景 720 足够，比默认「最高画质」快很多。
+         * 0 表示不限制（下载原画，可能很慢）。
+         */
+        private int maxHeight = 720;
+
+        /**
+         * 分片并发数（yt-dlp -N）。对 HLS/DASH 多连接提速明显，建议 4–16。
+         */
+        private int concurrentFragments = 8;
+
+        /**
+         * 自定义 yt-dlp -f 格式串；非空时优先于 maxHeight 自动拼装。
+         * 例：best[height&lt;=480] / bv*[height&lt;=720]+ba/b
+         */
+        private String format;
+
+        /**
+         * 是否优先已封装的单文件格式（减少双轨下载+合并时间）。
+         * true 时在分辨率限制内尽量选 progressive / 已合并流。
+         */
+        private boolean preferMerged = true;
     }
 }
