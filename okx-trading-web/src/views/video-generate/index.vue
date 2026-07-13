@@ -670,16 +670,28 @@ const testedFailKeys = ref<Set<string>>(new Set())
 const testErrorMsg = ref('')
 const lastTestLatency = ref<number | null>(null)
 
-const liveChannel = ref<'live' | 'offline' | 'connecting'>('connecting')
+const sseConnected = ref(false)
+const sseConnecting = ref(true)
+const pollingActive = ref(false)
+let pollTimer: ReturnType<typeof setTimeout> | null = null
+
+const liveChannel = computed(() => {
+  if (sseConnected.value) return 'live' as const
+  if (pollingActive.value) return 'poll' as const
+  if (sseConnecting.value) return 'connecting' as const
+  return 'offline' as const
+})
 const liveChannelLabel = computed(() => {
-  if (liveChannel.value === 'live') return '实时'
+  if (liveChannel.value === 'live') return '实时 · SSE'
+  if (liveChannel.value === 'poll') return '实时 · 轮询'
   if (liveChannel.value === 'connecting') return '连接中'
   return '离线'
 })
 const liveChannelTip = computed(() => {
   if (liveChannel.value === 'live') return 'SSE 已连接，任务状态实时更新'
+  if (liveChannel.value === 'poll') return 'SSE 未连通，正在轮询任务列表兜底'
   if (liveChannel.value === 'connecting') return '正在连接任务推送…'
-  return '推送断开，将自动重连；也可手动刷新列表'
+  return '推送断开，将自动重连；有进行中任务时用轮询兜底'
 })
 
 const selected = computed(() => tasks.value.find((t) => t.id === selectedId.value) || null)
@@ -1203,6 +1215,8 @@ async function handleSubmit() {
     revokeVideoUrl()
     autoLoadedTaskId.value = null
     message.success('任务已提交')
+    // SSE 若未连通，立刻用轮询兜底，避免一直停在「排队中」
+    ensurePolling()
   } catch {
     // interceptor
   } finally {
@@ -1410,18 +1424,99 @@ watch(
 
 let sseClose: (() => void) | null = null
 
+function needsPoll(task?: AigenTaskItem | null) {
+  if (!task?.status) return false
+  return (
+    task.status === 'PENDING' ||
+    task.status === 'PLANNING' ||
+    task.status === 'ASSET_GENERATING' ||
+    task.status === 'RENDERING' ||
+    isPauseDraining(task)
+  )
+}
+
+function stopPolling() {
+  if (pollTimer) {
+    clearTimeout(pollTimer)
+    pollTimer = null
+  }
+  pollingActive.value = false
+}
+
+function ensurePolling() {
+  if (sseConnected.value) {
+    stopPolling()
+    return
+  }
+  if (!tasks.value.some((t) => needsPoll(t))) {
+    stopPolling()
+    return
+  }
+  if (!pollTimer) {
+    startPolling()
+  }
+}
+
+function startPolling() {
+  stopPolling()
+  pollingActive.value = true
+  const tick = async () => {
+    if (sseConnected.value) {
+      stopPolling()
+      return
+    }
+    if (!tasks.value.some((t) => needsPoll(t))) {
+      stopPolling()
+      return
+    }
+    try {
+      const res = await aigenApi.listTasks(0, 50)
+      const map = new Map((res.data?.items || []).map((t) => [t.id, t]))
+      tasks.value = tasks.value.map((t) => map.get(t.id) || t)
+      for (const item of res.data?.items || []) {
+        if (!tasks.value.find((t) => t.id === item.id)) {
+          tasks.value.unshift(item)
+        }
+      }
+      void maybeAutoLoadVideo()
+    } catch {
+      /* ignore */
+    }
+    const active = tasks.value.some((t) => needsPoll(t))
+    if (!active || sseConnected.value) {
+      stopPolling()
+      return
+    }
+    pollTimer = setTimeout(() => {
+      pollTimer = null
+      void tick()
+    }, 3000)
+  }
+  void tick()
+}
+
 onMounted(async () => {
   await Promise.all([loadTemplates(), loadModels(), loadVoices(), loadTasks()])
   await maybeAutoLoadVideo()
+  ensurePolling()
   sseClose = connectAigenTaskEvents({
     onOpen: () => {
-      liveChannel.value = 'live'
+      sseConnected.value = true
+      sseConnecting.value = false
+      stopPolling()
     },
     onError: () => {
-      liveChannel.value = 'offline'
+      sseConnected.value = false
+      sseConnecting.value = false
+      ensurePolling()
+    },
+    onClose: () => {
+      sseConnected.value = false
     },
     onEvent: (ev) => {
-      liveChannel.value = 'live'
+      sseConnected.value = true
+      sseConnecting.value = false
+      if (ev.type === 'connected' || ev.type === 'ping') return
       if (ev.type === 'task.deleted') {
         const id = String(ev.data?.id || ev.data?.taskId || ev.taskId || '')
         if (id) {
@@ -1433,20 +1528,27 @@ onMounted(async () => {
             autoLoadedTaskId.value = null
           }
         }
+        ensurePolling()
         return
       }
       if (ev.type === 'task.created' || ev.type === 'task.status') {
         if (ev.data) {
           mergeFromEvent(ev.data)
-          // watch 会触发 auto load；这里再兜底一次
           void maybeAutoLoadVideo()
         }
+        ensurePolling()
       }
     }
   }).close
 })
 
+watch(
+  () => tasks.value.map((t) => `${t.id}:${t.status}`).join('|'),
+  () => ensurePolling()
+)
+
 onUnmounted(() => {
+  stopPolling()
   sseClose?.()
   revokeVideoUrl()
 })

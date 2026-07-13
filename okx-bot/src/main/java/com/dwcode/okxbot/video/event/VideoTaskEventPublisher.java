@@ -72,7 +72,7 @@ public class VideoTaskEventPublisher {
             payload.put("data", Map.of("message", "ok", "userId", String.valueOf(userId)));
             emitter.send(SseEmitter.event()
                     .name(TYPE_CONNECTED)
-                    .data(objectMapper.writeValueAsString(payload), MediaType.APPLICATION_JSON));
+                    .data(objectMapper.writeValueAsString(payload), MediaType.TEXT_PLAIN));
         } catch (IOException e) {
             cleanup.run();
             log.debug("SSE 初始推送失败 userId={}: {}", userId, e.getMessage());
@@ -118,7 +118,7 @@ public class VideoTaskEventPublisher {
         List<SseEmitter> dead = new ArrayList<>();
         for (SseEmitter emitter : list) {
             try {
-                emitter.send(SseEmitter.event().name(type).data(json, MediaType.APPLICATION_JSON));
+                emitter.send(SseEmitter.event().name(type).data(json, MediaType.TEXT_PLAIN));
             } catch (Exception e) {
                 dead.add(emitter);
             }
@@ -150,7 +150,7 @@ public class VideoTaskEventPublisher {
             List<SseEmitter> dead = new ArrayList<>();
             for (SseEmitter emitter : e.getValue()) {
                 try {
-                    emitter.send(SseEmitter.event().name(TYPE_PING).data(json, MediaType.APPLICATION_JSON));
+                    emitter.send(SseEmitter.event().name(TYPE_PING).data(json, MediaType.TEXT_PLAIN));
                 } catch (Exception ex) {
                     dead.add(emitter);
                 }

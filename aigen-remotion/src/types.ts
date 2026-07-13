@@ -1,4 +1,12 @@
-export type SceneType = "title" | "bullets" | "outro" | string;
+export type SceneType =
+  | "title"
+  | "bullets"
+  | "outro"
+  | "hook"
+  | "compare"
+  | "insight"
+  | "metric"
+  | string;
 
 export interface SceneProps {
   title?: string;
@@ -6,6 +14,18 @@ export interface SceneProps {
   heading?: string;
   items?: string[];
   cta?: string;
+  /** 眉题 / 小标签 */
+  eyebrow?: string;
+  /** 左右对比 */
+  leftLabel?: string;
+  rightLabel?: string;
+  leftItems?: string[];
+  rightItems?: string[];
+  /** 大数字 */
+  value?: string;
+  unit?: string;
+  label?: string;
+  hint?: string;
 }
 
 export interface Scene {

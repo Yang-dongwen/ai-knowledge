@@ -17,4 +17,19 @@ public class SceneProps {
     @JsonDeserialize(using = FlexibleStringListDeserializer.class)
     private List<String> items = new ArrayList<>();
     private String cta;
+
+    /** 洞察对比等：小标签 / 眉题 */
+    private String eyebrow;
+    /** 左右对比 */
+    private String leftLabel;
+    private String rightLabel;
+    @JsonDeserialize(using = FlexibleStringListDeserializer.class)
+    private List<String> leftItems = new ArrayList<>();
+    @JsonDeserialize(using = FlexibleStringListDeserializer.class)
+    private List<String> rightItems = new ArrayList<>();
+    /** 大数字场景 */
+    private String value;
+    private String unit;
+    private String label;
+    private String hint;
 }

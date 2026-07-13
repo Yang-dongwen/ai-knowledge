@@ -67,9 +67,10 @@ public class AigenTaskEventPublisher {
         try {
             Map<String, Object> payload = baseEnvelope(TYPE_CONNECTED, null);
             payload.put("data", Map.of("message", "ok", "userId", String.valueOf(userId)));
+            // 必须用 TEXT_PLAIN 发送已序列化 JSON：APPLICATION_JSON 会把 String 再包一层引号，前端解析失败
             emitter.send(SseEmitter.event()
                     .name(TYPE_CONNECTED)
-                    .data(objectMapper.writeValueAsString(payload), MediaType.APPLICATION_JSON));
+                    .data(objectMapper.writeValueAsString(payload), MediaType.TEXT_PLAIN));
         } catch (IOException e) {
             cleanup.run();
             log.debug("aigen SSE 初始推送失败 userId={}: {}", userId, e.getMessage());
@@ -115,7 +116,7 @@ public class AigenTaskEventPublisher {
         List<SseEmitter> dead = new ArrayList<>();
         for (SseEmitter emitter : list) {
             try {
-                emitter.send(SseEmitter.event().name(type).data(json, MediaType.APPLICATION_JSON));
+                emitter.send(SseEmitter.event().name(type).data(json, MediaType.TEXT_PLAIN));
             } catch (Exception e) {
                 dead.add(emitter);
             }
@@ -147,7 +148,7 @@ public class AigenTaskEventPublisher {
             List<SseEmitter> dead = new ArrayList<>();
             for (SseEmitter emitter : e.getValue()) {
                 try {
-                    emitter.send(SseEmitter.event().name(TYPE_PING).data(json, MediaType.APPLICATION_JSON));
+                    emitter.send(SseEmitter.event().name(TYPE_PING).data(json, MediaType.TEXT_PLAIN));
                 } catch (Exception ex) {
                     dead.add(emitter);
                 }

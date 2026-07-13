@@ -49,9 +49,14 @@ function parseSseChunk(buffer: string): { events: AigenTaskSseEvent[]; rest: str
     if (!dataLines.length) continue
     const raw = dataLines.join('\n')
     try {
-      const parsed = JSON.parse(raw) as AigenTaskSseEvent
-      if (!parsed.type) parsed.type = eventName
-      events.push(parsed)
+      // 兼容后端曾用 APPLICATION_JSON 发送 String 导致的双重编码
+      let parsed: unknown = JSON.parse(raw)
+      if (typeof parsed === 'string') {
+        parsed = JSON.parse(parsed)
+      }
+      const ev = parsed as AigenTaskSseEvent
+      if (!ev.type) ev.type = eventName
+      events.push(ev)
     } catch {
       events.push({ type: eventName, data: { raw } })
     }

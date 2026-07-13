@@ -118,9 +118,13 @@ edge-tts --version
 - Storyboard 校验 + 规范化
 - 路径安全：`assets/` 下解析、禁止 `..`
 - 媒体接口：`GET /api/v1/aigen/tasks/{id}/media/output`
-- 新工程：`aigen-remotion/`（不进 Vue）
+- 工程：`aigen-remotion/`（不进 Vue）
+- **真模板**：
+  - `knowledge-cards` → Composition `KnowledgeCards`（title/bullets/outro）
+  - `insight-compare` → Composition `InsightCompare`（hook/compare/insight/metric/outro）
+- TTS：`auto` 优先 Edge-TTS，否则 Windows SAPI；可用 mock
 
-语音：`MockTtsProvider` 只估时长写占位，**真实 TTS 后续**替换 `TtsPort` 实现即可。
+设计说明见：`AI视频生成_真模板设计指南.md`
 
 ---
 

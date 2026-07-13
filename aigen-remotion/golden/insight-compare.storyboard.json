@@ -1,0 +1,81 @@
+{
+  "version": "1.0",
+  "meta": {
+    "title": "先场景，后模型",
+    "language": "zh",
+    "templateId": "insight-compare",
+    "fps": 30,
+    "width": 1080,
+    "height": 1920,
+    "durationInFrames": 720
+  },
+  "style": {
+    "theme": "compare-duo",
+    "primaryColor": "#0ea5e9"
+  },
+  "scenes": [
+    {
+      "id": "s1",
+      "type": "hook",
+      "startFrame": 0,
+      "durationInFrames": 150,
+      "narration": "很多人学 AI，一上来就追最新模型，结果三个月还是不会落地。",
+      "props": {
+        "eyebrow": "常见误区",
+        "title": "先追模型，还是先追场景？",
+        "subtitle": "差的是路径，不是智商"
+      }
+    },
+    {
+      "id": "s2",
+      "type": "compare",
+      "startFrame": 150,
+      "durationInFrames": 210,
+      "narration": "左边是堆概念，右边是拿一个真实任务跑通最小闭环。",
+      "props": {
+        "heading": "两种学习路径",
+        "leftLabel": "无效路径",
+        "rightLabel": "有效路径",
+        "leftItems": ["只收藏教程", "频繁换模型", "没有验收标准"],
+        "rightItems": ["锁定一个场景", "最小可运行版本", "用结果迭代"]
+      }
+    },
+    {
+      "id": "s3",
+      "type": "metric",
+      "startFrame": 360,
+      "durationInFrames": 150,
+      "narration": "把范围收窄以后，两周就能做出第一个能演示的版本。",
+      "props": {
+        "value": "14",
+        "unit": "天",
+        "label": "从零到可演示",
+        "hint": "范围足够小的时候"
+      }
+    },
+    {
+      "id": "s4",
+      "type": "insight",
+      "startFrame": 510,
+      "durationInFrames": 120,
+      "narration": "记住三件事：场景优先、闭环优先、结果优先。",
+      "props": {
+        "heading": "落地三原则",
+        "items": ["先选场景", "最小闭环", "用结果迭代"]
+      }
+    },
+    {
+      "id": "s5",
+      "type": "outro",
+      "startFrame": 630,
+      "durationInFrames": 90,
+      "narration": "先选场景，再选工具。关注我，下期拆一条可复制清单。",
+      "props": {
+        "title": "先场景，后模型",
+        "cta": "关注 · 下期清单"
+      }
+    }
+  ],
+  "audio": { "tracks": [] },
+  "subtitles": []
+}

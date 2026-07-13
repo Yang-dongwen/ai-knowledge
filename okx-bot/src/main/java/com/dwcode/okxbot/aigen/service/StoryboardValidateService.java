@@ -1,6 +1,7 @@
 package com.dwcode.okxbot.aigen.service;
 
 import com.dwcode.okxbot.aigen.domain.SceneDto;
+import com.dwcode.okxbot.aigen.domain.SceneProps;
 import com.dwcode.okxbot.aigen.domain.StoryboardDto;
 import com.dwcode.okxbot.aigen.domain.StoryboardMeta;
 import com.dwcode.okxbot.aigen.service.TemplateRegistry.TemplateDef;
@@ -87,6 +88,11 @@ public class StoryboardValidateService {
                     && looksLikeUrl(sc.getProps().getTitle())) {
                 errors.add(p + ".props 疑似包含 URL");
             }
+            validateScenePropsByType(sc, p, errors);
+        }
+
+        if (TemplateRegistry.INSIGHT_COMPARE.equals(tid)) {
+            validateInsightCompareStructure(sb, errors);
         }
 
         // audio.src 安全
@@ -112,6 +118,108 @@ public class StoryboardValidateService {
             }
         }
         return errors;
+    }
+
+    private static void validateScenePropsByType(SceneDto sc, String p, List<String> errors) {
+        SceneProps props = sc.getProps();
+        if (props == null) {
+            errors.add(p + ".props 不能为空");
+            return;
+        }
+        String type = sc.getType();
+        if (type == null) {
+            return;
+        }
+        switch (type) {
+            case "title", "hook" -> {
+                if (blank(props.getTitle())) {
+                    errors.add(p + ".props.title 不能为空");
+                }
+            }
+            case "bullets", "insight" -> {
+                if (blank(props.getHeading()) && blank(props.getTitle())) {
+                    errors.add(p + ".props.heading 不能为空");
+                }
+                if (props.getItems() == null || props.getItems().isEmpty()) {
+                    errors.add(p + ".props.items 至少 1 条");
+                } else if (props.getItems().size() > 5) {
+                    errors.add(p + ".props.items 建议 ≤5，当前 " + props.getItems().size());
+                }
+            }
+            case "compare" -> {
+                if (blank(props.getLeftLabel()) || blank(props.getRightLabel())) {
+                    errors.add(p + ".props.leftLabel/rightLabel 不能为空");
+                }
+                int left = props.getLeftItems() == null ? 0 : props.getLeftItems().size();
+                int right = props.getRightItems() == null ? 0 : props.getRightItems().size();
+                if (left < 2 || right < 2) {
+                    errors.add(p + ".props leftItems/rightItems 各至少 2 条");
+                }
+                if (left > 4 || right > 4) {
+                    errors.add(p + ".props leftItems/rightItems 各最多 4 条");
+                }
+            }
+            case "metric" -> {
+                if (blank(props.getValue())) {
+                    errors.add(p + ".props.value 不能为空");
+                }
+                if (blank(props.getLabel()) && blank(props.getTitle())) {
+                    errors.add(p + ".props.label 不能为空");
+                }
+            }
+            case "outro" -> {
+                if (blank(props.getTitle())) {
+                    errors.add(p + ".props.title 不能为空");
+                }
+            }
+            default -> {
+                // 其它 type 仅校验白名单已在上层完成
+            }
+        }
+    }
+
+    private static void validateInsightCompareStructure(StoryboardDto sb, List<String> errors) {
+        boolean hasHook = false;
+        boolean hasCompare = false;
+        boolean hasOutro = false;
+        int maxSameRun = 1;
+        int run = 0;
+        String prev = null;
+        for (SceneDto sc : sb.getScenes()) {
+            String t = sc.getType();
+            if ("hook".equals(t) || "title".equals(t)) {
+                hasHook = true;
+            }
+            if ("compare".equals(t)) {
+                hasCompare = true;
+            }
+            if ("outro".equals(t)) {
+                hasOutro = true;
+            }
+            if (t != null && t.equals(prev)) {
+                run++;
+                maxSameRun = Math.max(maxSameRun, run);
+            } else {
+                run = 1;
+                prev = t;
+            }
+        }
+        if (!hasHook) {
+            errors.add("insight-compare 建议含 hook（或 title）开场");
+        }
+        if (!hasCompare) {
+            errors.add("insight-compare 至少需要 1 个 compare 场景");
+        }
+        if (!hasOutro) {
+            errors.add("insight-compare 需要 outro 收尾");
+        }
+        if (maxSameRun >= 3) {
+            errors.add("禁止连续 3 个相同 type 场景，请调整叙事节奏");
+        }
+    }
+
+    private static boolean blank(String s) {
+        return s == null || s.isBlank();
     }
 
     private static boolean looksLikeUrl(String s) {

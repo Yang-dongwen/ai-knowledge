@@ -59,6 +59,10 @@ public class AigenPipeline {
 
         long pipelineStart = System.currentTimeMillis();
         task.setStartedAt(LocalDateTime.now());
+        // 立刻离开 PENDING，避免前端一直显示「排队中」
+        task.setStatus(AigenTaskStatus.PLANNING.name());
+        task.setCurrentStep("任务已启动，准备规划…");
+        task.setProgress(5);
         // 重试后重新跑：清空错误与旧耗时展示干扰
         task.setErrorMessage("");
         task.setUpdatedAt(LocalDateTime.now());

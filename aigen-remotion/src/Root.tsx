@@ -1,21 +1,28 @@
 import React from "react";
 import { Composition, getInputProps } from "remotion";
 import { KnowledgeCards, defaultStoryboard } from "./templates/KnowledgeCards";
+import {
+  InsightCompare,
+  defaultInsightStoryboard,
+} from "./templates/InsightCompare";
 import type { Storyboard } from "./types";
 
 const calcMeta = ({ props }: { props: Storyboard }) => {
-  const meta = props?.meta ?? defaultStoryboard.meta;
+  const meta = props?.meta;
   return {
-    durationInFrames: Math.max(30, meta.durationInFrames || 300),
-    fps: meta.fps || 30,
-    width: meta.width || 1080,
-    height: meta.height || 1920,
+    durationInFrames: Math.max(30, meta?.durationInFrames || 300),
+    fps: meta?.fps || 30,
+    width: meta?.width || 1080,
+    height: meta?.height || 1920,
   };
 };
 
+function asStoryboard(props: unknown): Storyboard {
+  return (props as Storyboard) || defaultStoryboard;
+}
+
 export const RemotionRoot: React.FC = () => {
-  // Studio 预览时可用默认 props；HTTP 渲染通过 inputProps 注入
-  const previewProps = (getInputProps() as Storyboard) || defaultStoryboard;
+  const previewProps = asStoryboard(getInputProps());
 
   return (
     <>
@@ -27,7 +34,21 @@ export const RemotionRoot: React.FC = () => {
         width={previewProps.meta?.width || 1080}
         height={previewProps.meta?.height || 1920}
         defaultProps={defaultStoryboard}
-        calculateMetadata={async ({ props }) => calcMeta({ props: props as Storyboard })}
+        calculateMetadata={async ({ props }) =>
+          calcMeta({ props: asStoryboard(props) })
+        }
+      />
+      <Composition
+        id="InsightCompare"
+        component={InsightCompare as unknown as React.FC}
+        durationInFrames={defaultInsightStoryboard.meta.durationInFrames}
+        fps={defaultInsightStoryboard.meta.fps}
+        width={defaultInsightStoryboard.meta.width}
+        height={defaultInsightStoryboard.meta.height}
+        defaultProps={defaultInsightStoryboard}
+        calculateMetadata={async ({ props }) =>
+          calcMeta({ props: asStoryboard(props) })
+        }
       />
     </>
   );

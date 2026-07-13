@@ -5,32 +5,10 @@ import {
   Sequence,
   interpolate,
   useCurrentFrame,
-  useVideoConfig,
 } from "remotion";
-import type { AudioTrack, Scene, Storyboard, Subtitle } from "../types";
-
-/**
- * Remotion Audio 只能拉取 http(s)（不能 file:// 或盘符路径）。
- * 本地路径兜底：…/aigen/{taskId}/assets/audio/xx → http://127.0.0.1:3100/media/{taskId}/assets/audio/xx
- */
-function resolvePlayableAudio(track: AudioTrack | undefined): string | null {
-  if (!track || track.mock) return null;
-  let src = (track.src || track.absSrc || "").trim();
-  if (!src) return null;
-  const lower = src.toLowerCase();
-  if (lower.endsWith(".txt") || lower.includes(".mock")) return null;
-  if (lower.startsWith("http://") || lower.startsWith("https://")) {
-    return src;
-  }
-  // file:///D:/... 或 D:\... 或 D:/...
-  src = src.replace(/^file:\/\//i, "").replace(/^\/([A-Za-z]:)/, "$1");
-  const norm = src.replace(/\\/g, "/");
-  const m = norm.match(/\/aigen\/([^/]+)\/(assets\/audio\/[^?]+)$/i);
-  if (m) {
-    return `http://127.0.0.1:3100/media/${m[1]}/${m[2]}`;
-  }
-  return null;
-}
+import { resolvePlayableAudio } from "../shared/audio";
+import { SubtitleBar } from "../shared/SubtitleBar";
+import type { Scene, Storyboard } from "../types";
 
 export const defaultStoryboard: Storyboard = {
   version: "1.0",
@@ -206,32 +184,6 @@ const OutroScene: React.FC<{ scene: Scene; primary: string }> = ({ scene, primar
   );
 };
 
-const SubtitleBar: React.FC<{ subtitles: Subtitle[] }> = ({ subtitles }) => {
-  const frame = useCurrentFrame();
-  const { fps } = useVideoConfig();
-  const ms = (frame / fps) * 1000;
-  const current = subtitles.find((s) => ms >= s.startMs && ms <= s.endMs);
-  if (!current?.text) return null;
-  return (
-    <AbsoluteFill style={{ justifyContent: "flex-end", alignItems: "center", paddingBottom: 120 }}>
-      <div
-        style={{
-          maxWidth: "86%",
-          background: "rgba(15,23,42,0.72)",
-          color: "#fff",
-          fontSize: 32,
-          lineHeight: 1.4,
-          padding: "14px 28px",
-          borderRadius: 16,
-          textAlign: "center",
-        }}
-      >
-        {current.text}
-      </div>
-    </AbsoluteFill>
-  );
-};
-
 export const KnowledgeCards: React.FC<Storyboard> = (props) => {
   const data = props?.meta ? props : defaultStoryboard;
   const primary = data.style?.primaryColor || "#6366F1";
@@ -258,7 +210,7 @@ export const KnowledgeCards: React.FC<Storyboard> = (props) => {
             ) : (
               <BulletsScene scene={scene} primary={primary} />
             )}
-            {audioSrc ? <Audio src={audioSrc} /> : null}
+            {audioSrc ? <Audio src={audioSrc} volume={1} /> : null}
           </Sequence>
         );
       })}
