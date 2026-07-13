@@ -163,7 +163,7 @@
                   </a-button>
                 </a-tooltip>
                 <a-button
-                  v-if="task.status === 'FAILED' || task.status === 'PAUSED'"
+                  v-if="canRetry(task)"
                   type="text"
                   size="small"
                   class="task-retry-btn"
@@ -265,7 +265,7 @@
                 </a-button>
               </a-tooltip>
               <a-button
-                v-if="detail.status === 'FAILED' || detail.status === 'PAUSED'"
+                v-if="canRetry(detail)"
                 type="primary"
                 ghost
                 :loading="retryingId === detail.taskId"
@@ -423,14 +423,19 @@
           <!-- 重试弹窗：可重新配置 LLM -->
           <a-modal
             v-model:open="retryModalOpen"
-            title="重试任务"
-            ok-text="开始重试"
+            :title="retryTarget?.status === 'SUCCESS' ? '重新提取' : '重试任务'"
+            :ok-text="retryTarget?.status === 'SUCCESS' ? '开始重新提取' : '开始重试'"
             cancel-text="取消"
             :confirm-loading="retryingId === retryTarget?.taskId"
             @ok="submitRetry"
           >
             <p class="retry-hint">
-              将重新执行：下载 → 转录 → 总结。可更换 LLM 模型（建议先测试可用性）。
+              <template v-if="retryTarget?.status === 'SUCCESS'">
+                将清空当前结果并重新执行：下载 → 转录 → 总结。可更换 LLM 模型（测试可用性可选）。
+              </template>
+              <template v-else>
+                将重新执行：下载 → 转录 → 总结。可更换 LLM 模型（测试可用性可选）。
+              </template>
             </p>
             <div class="retry-url" v-if="retryTarget">
               <span class="muted">链接</span>
@@ -1184,10 +1189,16 @@ async function doPause(task: VideoTaskItem) {
   }
 }
 
+/** 失败 / 暂停 / 成功 可重试（可改 LLM） */
+function canRetry(task?: VideoTaskItem | null) {
+  if (!task?.status) return false
+  return ['FAILED', 'PAUSED', 'SUCCESS'].includes(String(task.status).toUpperCase())
+}
+
 /** 打开重试弹窗（可改 LLM） */
 function openRetryModal(task: VideoTaskItem) {
-  if (task.status !== 'FAILED' && task.status !== 'PAUSED') {
-    message.warning('仅失败或已暂停任务可重试')
+  if (!canRetry(task)) {
+    message.warning('仅失败、已暂停或已成功的任务可重试')
     return
   }
   retryTarget.value = task
@@ -1252,7 +1263,9 @@ async function submitRetry() {
       llmProvider: parsed.provider,
       llmModel: parsed.model
     })
-    message.success('已重新排队，开始重试')
+    message.success(
+      task.status === 'SUCCESS' ? '已重新排队，开始重新提取' : '已重新排队，开始重试'
+    )
     retryModalOpen.value = false
     const idx = tasks.value.findIndex((t) => t.taskId === task.taskId)
     if (idx >= 0 && res.data) {

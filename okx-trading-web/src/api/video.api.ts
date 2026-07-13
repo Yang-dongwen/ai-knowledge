@@ -88,7 +88,7 @@ export const videoApi = {
   },
 
   /**
-   * 失败/暂停任务重试（完整重跑流水线）。
+   * 失败/暂停/成功任务重试（完整重跑流水线，成功会清空原产物）。
    * 可传入 llmProvider / llmModel 重新指定模型。
    */
   retryTask(

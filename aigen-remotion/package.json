@@ -1,0 +1,24 @@
+{
+  "name": "aigen-remotion",
+  "version": "1.0.0",
+  "private": true,
+  "description": "AI video generation Remotion templates + HTTP render service",
+  "scripts": {
+    "dev": "remotion studio",
+    "render-server": "node server/index.mjs",
+    "build": "remotion bundle"
+  },
+  "dependencies": {
+    "@remotion/bundler": "4.0.484",
+    "@remotion/cli": "4.0.484",
+    "@remotion/renderer": "4.0.484",
+    "express": "^4.21.2",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "remotion": "4.0.484"
+  },
+  "devDependencies": {
+    "@types/react": "^18.3.12",
+    "typescript": "5.9.3"
+  }
+}

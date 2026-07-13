@@ -32,6 +32,7 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.stream.Collectors;
 
 /**
@@ -162,15 +163,22 @@ public class VideoProcessService {
         return toResponse(entity, false);
     }
 
+    /** 可重试状态：失败 / 暂停 / 成功（成功=重新提取） */
+    private static final Set<String> VIDEO_RETRYABLE_STATUSES = Set.of(
+            VideoTaskStatus.FAILED.name(),
+            VideoTaskStatus.PAUSED.name(),
+            VideoTaskStatus.SUCCESS.name()
+    );
+
     /**
-     * 失败/暂停任务重试：可重新指定 LLM，重置后重新排队调度。
+     * 失败 / 暂停 / 成功任务重试：可重新指定 LLM，清空产物后重新排队调度。
      */
     public VideoTaskResponse retryTask(Long taskId, VideoRetryRequest request) {
         VideoTaskEntity entity = requireOwnedTask(taskId);
-        String status = entity.getStatus();
-        if (!VideoTaskStatus.FAILED.name().equals(status)
-                && !VideoTaskStatus.PAUSED.name().equals(status)) {
-            throw new BusinessException(400, "仅失败或已暂停任务可重试，当前状态: " + status);
+        String status = entity.getStatus() == null ? "" : entity.getStatus().trim().toUpperCase();
+        if (!VIDEO_RETRYABLE_STATUSES.contains(status)) {
+            throw new BusinessException(400,
+                    "仅失败、已暂停或已成功的任务可重试，当前状态: " + entity.getStatus());
         }
         if (entity.getSourceUrl() == null || entity.getSourceUrl().isBlank()) {
             throw new BusinessException(400, "任务源链接为空，无法重试");

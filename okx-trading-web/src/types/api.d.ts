@@ -253,3 +253,79 @@ export interface AiProviderOption {
   key: string
   name: string
 }
+
+// ---------- AI 视频生成 (aigen) ----------
+
+export type AigenTaskStatus =
+  | 'PENDING'
+  | 'PLANNING'
+  | 'ASSET_GENERATING'
+  | 'RENDERING'
+  | 'SUCCESS'
+  | 'FAILED'
+  | 'CANCELLED'
+  | 'PAUSED'
+
+export interface AigenCreateOptions {
+  language?: string
+  aspectRatio?: string
+  targetDurationSec?: number
+  voiceId?: string
+  bgmId?: string
+  llmProvider?: string
+  llmModel?: string
+  negativePrompt?: string
+  styleJson?: string
+}
+
+export interface AigenCreateRequest {
+  prompt: string
+  templateId?: string
+  options?: AigenCreateOptions
+}
+
+export interface AigenTaskItem {
+  id: string
+  title?: string | null
+  prompt: string
+  templateId: string
+  status: AigenTaskStatus | string
+  currentStep?: string | null
+  progress?: number | null
+  language?: string | null
+  aspectRatio?: string | null
+  targetDurationSec?: number | null
+  voiceId?: string | null
+  bgmId?: string | null
+  llmProvider?: string | null
+  llmModel?: string | null
+  errorMessage?: string | null
+  durationSeconds?: number | null
+  outputAvailable?: boolean | null
+  planDurationMs?: number | null
+  assetDurationMs?: number | null
+  renderDurationMs?: number | null
+  totalDurationMs?: number | null
+  startedAt?: string | null
+  finishedAt?: string | null
+  createdAt?: string | null
+  updatedAt?: string | null
+}
+
+export interface AigenTaskPage {
+  items: AigenTaskItem[]
+  total: number
+  page: number
+  size: number
+}
+
+export interface AigenTemplate {
+  id: string
+  name: string
+  description?: string
+  compositionId?: string
+  aspectRatios?: string[]
+  defaultDurationSec?: number
+  minDurationSec?: number
+  maxDurationSec?: number
+}

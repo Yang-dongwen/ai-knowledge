@@ -171,7 +171,8 @@ public class VideoProcessController {
     }
 
     /**
-     * 失败/暂停任务重试（可 body 指定 llmProvider/llmModel）。
+     * 失败 / 暂停 / 成功任务重试（可 body 指定 llmProvider/llmModel）。
+     * 成功任务重试会清空原产物后整流水线重跑。
      */
     @PostMapping("/tasks/{taskId}/retry")
     public ApiResult<VideoTaskResponse> retryTask(

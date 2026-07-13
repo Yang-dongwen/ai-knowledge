@@ -92,6 +92,12 @@ const routes: RouteRecordRaw[] = [
         name: 'VideoExtract',
         component: () => import('@/views/video-extract/index.vue'),
         meta: { title: '视频提取', group: 'tools' }
+      },
+      {
+        path: 'video-generate',
+        name: 'VideoGenerate',
+        component: () => import('@/views/video-generate/index.vue'),
+        meta: { title: 'AI 视频生成', group: 'tools' }
       }
     ]
   }

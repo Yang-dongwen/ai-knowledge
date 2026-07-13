@@ -123,6 +123,55 @@ video:
     prefer-merged: true          # 优先单文件流，减少双轨下载+合并
     # format: "best[height<=480]"  # 可选：完全自定义 yt-dlp -f，非空则覆盖上面规则
 
+# AI 视频生成 Phase 1
+# mock-pipeline=true 时三步全 mock；false 时按 steps 切换
+aigen:
+  work-dir: ./data/aigen
+  max-concurrent-tasks: 1
+  mock-pipeline: false
+  mock-step-delay-ms: 800
+  cleanup-on-delete: true
+  min-duration-sec: 5
+  max-duration-sec: 90
+  steps:
+    plan: real          # real=调 LLM；mock=本地模板分镜
+    asset: real         # real=TTS 配音；mock=无声估时长
+    render: real        # 需 aigen-remotion
+  llm:
+    provider: nvidia
+    model:
+    temperature: 0.5
+    max-tokens: 8192
+    max-retries: 3
+    timeout-seconds: 120
+    structured-mode: auto
+    max-repair-attempts: 1
+    log-prompts: false
+  tts:
+    # auto=优先 edge-tts，否则 Windows SAPI；也可 edge / windows / mock
+    provider: auto
+    default-voice: zh-CN-XiaoxiaoNeural
+    timeout-seconds: 120
+    # 需把 Python 与 Scripts 加入 PATH（见下方说明），无需写绝对路径
+    edge-command: edge-tts
+    edge-mode: auto          # auto | cli | python
+    python-path: python
+    fail-open-to-mock: false
+    tail-padding-frames: 6
+    # ffprobe-path: 空则尝试从 video.ffmpeg-path 推导
+  remotion:
+    base-url: http://127.0.0.1:3100
+    timeout-seconds: 600
+    codec: h264
+    crf: 18
+    render-token: ""
+    # Java 托管 Node 渲染进程：随应用启停；端口已有健康服务则不重复启动
+    manage-process: true
+    auto-start-on-boot: true          # false=首次渲染时再启动
+    project-dir: ../aigen-remotion    # 相对 okx-bot 运行目录；可改绝对路径
+    node-path: node                   # 或 node.exe 绝对路径
+    startup-timeout-seconds: 180      # 首次 bundle 可能较慢
+
 logging:
   level:
     root: INFO

@@ -43,20 +43,27 @@
           </button>
 
           <transition name="dropdown-fade">
-            <div v-show="openGroup === group.key" class="nav-dropdown" :class="`cols-${group.cols}`">
+            <div
+              v-show="openGroup === group.key"
+              class="nav-dropdown"
+              :class="[`cols-${group.cols}`, `items-${Math.min(group.children.length, 6)}`]"
+            >
               <div class="dropdown-head">
                 <div class="dropdown-head-left">
                   <span class="dropdown-head-icon" :style="{ background: group.accentSoft, color: group.accent }">
                     <component :is="group.icon" />
                   </span>
-                  <div>
+                  <div class="dropdown-head-text">
                     <div class="dropdown-head-title">{{ group.title }}</div>
                     <div class="dropdown-head-desc">{{ group.description }}</div>
                   </div>
                 </div>
               </div>
 
-              <div class="dropdown-grid" :style="{ gridTemplateColumns: `repeat(${group.cols}, minmax(0, 1fr))` }">
+              <div
+                class="dropdown-grid"
+                :style="{ gridTemplateColumns: `repeat(${group.cols}, minmax(0, 1fr))` }"
+              >
                 <button
                   v-for="item in group.children"
                   :key="item.key"
@@ -75,6 +82,7 @@
                     </span>
                     <span class="item-desc">{{ item.description }}</span>
                   </span>
+                  <span class="item-chevron" aria-hidden="true">›</span>
                 </button>
               </div>
             </div>
@@ -203,7 +211,7 @@ const TRADING_KEYS = new Set([
   'ai-chat'
 ])
 
-const TOOLS_KEYS = new Set(['video-extract'])
+const TOOLS_KEYS = new Set(['video-extract', 'video-generate'])
 
 /** 系统管理（仅超级管理员） */
 const ADMIN_KEYS = new Set(['user-manage'])
@@ -214,20 +222,29 @@ const SUPER_ADMIN_ONLY_GROUPS = new Set(['trading', 'admin'])
 const ALL_MENU_GROUPS: MenuGroup[] = [
   {
     key: 'tools',
-    title: '工具使用',
-    description: '常用效率与内容处理工具',
+    title: 'AI 工具',
+    description: '视频内容提取与智能生成',
     icon: markRaw(ToolOutlined),
     accent: '#7C3AED',
     accentSoft: '#F3E8FF',
+    // 条目少时用单列卡片，避免两列挤在窄浮层里难看
     cols: 1,
     children: [
       {
         key: 'video-extract',
         title: '视频提取',
-        description: '提取视频核心内容与摘要',
+        description: '粘贴链接，自动转录并提炼核心内容',
         icon: markRaw(VideoCameraOutlined),
         iconBg: '#F3E8FF',
         iconColor: '#7C3AED'
+      },
+      {
+        key: 'video-generate',
+        title: 'AI 视频生成',
+        description: '输入提示词，自动规划分镜并生成视频',
+        icon: markRaw(RobotOutlined),
+        iconBg: '#EEF2FF',
+        iconColor: '#4F46E5'
       }
     ]
   },
@@ -596,7 +613,7 @@ function handleEmergencyStop() {
 }
 
 .nav-current-page {
-  max-width: 96px;
+  max-width: 120px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -622,8 +639,9 @@ function handleEmergencyStop() {
   position: absolute;
   top: calc(100% + 10px);
   left: 0;
-  min-width: 280px;
-  padding: 12px;
+  min-width: 320px;
+  max-width: min(920px, calc(100vw - 32px));
+  padding: 10px;
   border-radius: 16px;
   background: #fff;
   border: 1px solid #E5E7EB;
@@ -631,6 +649,16 @@ function handleEmergencyStop() {
     0 4px 6px -1px rgba(15, 23, 42, 0.06),
     0 18px 40px -12px rgba(15, 23, 42, 0.18);
   z-index: 50;
+
+  /* 单列工具菜单：固定舒适宽度，条目纵向排列 */
+  &.cols-1 {
+    min-width: 340px;
+    width: 340px;
+  }
+
+  &.cols-2 {
+    min-width: 560px;
+  }
 
   &.cols-3 {
     min-width: 720px;
@@ -650,98 +678,130 @@ function handleEmergencyStop() {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 4px 6px 12px;
-  margin-bottom: 4px;
+  padding: 8px 10px 12px;
+  margin-bottom: 2px;
   border-bottom: 1px solid #F3F4F6;
 }
 
 .dropdown-head-left {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 12px;
+  min-width: 0;
+}
+
+.dropdown-head-text {
+  min-width: 0;
 }
 
 .dropdown-head-icon {
-  width: 34px;
-  height: 34px;
-  border-radius: 10px;
+  width: 36px;
+  height: 36px;
+  border-radius: 11px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  font-size: 16px;
+  font-size: 17px;
+  flex-shrink: 0;
 }
 
 .dropdown-head-title {
   font-size: 14px;
   font-weight: 700;
   color: #111827;
+  line-height: 1.3;
 }
 
 .dropdown-head-desc {
   font-size: 12px;
   color: #9CA3AF;
-  margin-top: 1px;
+  margin-top: 2px;
+  line-height: 1.35;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .dropdown-grid {
   display: grid;
   gap: 6px;
-  padding-top: 8px;
+  padding: 8px 2px 2px;
 }
 
 .dropdown-item {
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   gap: 12px;
   width: 100%;
   text-align: left;
-  padding: 12px;
+  padding: 12px 12px;
   border: 1px solid transparent;
   border-radius: 12px;
   background: transparent;
   cursor: pointer;
-  transition: all 0.16s ease;
+  transition: background 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease;
+  box-sizing: border-box;
 
   &:hover {
     background: #F8FAFC;
-    border-color: #EEF2F7;
+    border-color: #E5E7EB;
+
+    .item-chevron {
+      opacity: 1;
+      transform: translateX(2px);
+      color: #6366F1;
+    }
   }
 
   &.active {
-    background: linear-gradient(180deg, #F5F3FF 0%, #EEF2FF 100%);
-    border-color: #E0E7FF;
+    background: linear-gradient(135deg, #F5F3FF 0%, #EEF2FF 100%);
+    border-color: #DDD6FE;
+    box-shadow: inset 0 0 0 1px rgba(99, 102, 241, 0.06);
 
     .item-title {
       color: #4338CA;
     }
+
+    .item-chevron {
+      opacity: 1;
+      color: #6366F1;
+    }
   }
 }
 
+/* 单列菜单条目略增高，信息更易读 */
+.nav-dropdown.cols-1 .dropdown-item {
+  padding: 14px 14px;
+  min-height: 68px;
+}
+
 .item-icon {
-  width: 36px;
-  height: 36px;
-  border-radius: 10px;
+  width: 40px;
+  height: 40px;
+  border-radius: 12px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  font-size: 16px;
+  font-size: 18px;
   flex-shrink: 0;
 }
 
 .item-body {
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: 3px;
   min-width: 0;
+  flex: 1;
 }
 
 .item-title {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
-  font-size: 13px;
+  gap: 8px;
+  font-size: 14px;
   font-weight: 600;
   color: #1F2937;
+  line-height: 1.3;
 }
 
 .item-badge {
@@ -750,14 +810,42 @@ function handleEmergencyStop() {
   color: #6366F1;
   background: rgba(99, 102, 241, 0.12);
   border-radius: 999px;
-  padding: 0 6px;
+  padding: 0 7px;
   line-height: 18px;
+  flex-shrink: 0;
 }
 
 .item-desc {
   font-size: 12px;
   color: #9CA3AF;
-  line-height: 1.35;
+  line-height: 1.4;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.item-chevron {
+  flex-shrink: 0;
+  width: 18px;
+  text-align: center;
+  font-size: 18px;
+  line-height: 1;
+  color: #D1D5DB;
+  opacity: 0.65;
+  transition: opacity 0.15s ease, transform 0.15s ease, color 0.15s ease;
+  font-weight: 300;
+}
+
+/* 多列网格时隐藏箭头，避免拥挤 */
+.nav-dropdown.cols-2 .item-chevron,
+.nav-dropdown.cols-3 .item-chevron {
+  display: none;
+}
+
+.nav-dropdown.cols-2 .dropdown-item,
+.nav-dropdown.cols-3 .dropdown-item {
+  align-items: flex-start;
 }
 
 .header-right {
