@@ -1678,9 +1678,15 @@ onUnmounted(() => {
 }
 
 .submit-hero {
-  margin-bottom: 16px;
-  background: linear-gradient(135deg, #ffffff 0%, #f0f7ff 55%, #eef9f4 100%);
-  border: 1px solid var(--border-color);
+  margin-bottom: 18px;
+  padding: 24px 26px 20px;
+  border-radius: 20px;
+  background:
+    linear-gradient(145deg, rgba(255, 255, 255, 0.98) 0%, rgba(239, 246, 255, 0.96) 50%, rgba(236, 253, 245, 0.92) 100%);
+  border: 1px solid rgba(59, 130, 246, 0.12);
+  box-shadow:
+    0 1px 2px rgba(15, 23, 42, 0.04),
+    0 12px 36px rgba(37, 99, 235, 0.07);
   position: relative;
   overflow: hidden;
 
@@ -1689,10 +1695,10 @@ onUnmounted(() => {
     position: absolute;
     right: -40px;
     top: -40px;
-    width: 180px;
-    height: 180px;
+    width: 200px;
+    height: 200px;
     border-radius: 50%;
-    background: radial-gradient(circle, rgba(22, 119, 255, 0.12), transparent 70%);
+    background: radial-gradient(circle, rgba(37, 99, 235, 0.14), transparent 70%);
     pointer-events: none;
   }
 
@@ -1823,11 +1829,17 @@ onUnmounted(() => {
     }
 
     .submit-btn {
-      height: 40px;
-      border-radius: 10px;
-      padding: 0 22px;
-      font-weight: 500;
-      box-shadow: 0 4px 12px rgba(22, 119, 255, 0.25);
+      height: 44px;
+      border-radius: 12px;
+      padding: 0 24px;
+      font-weight: 650;
+      border: none;
+      background: linear-gradient(135deg, #2563eb, #4f46e5 55%, #6366f1);
+      box-shadow: 0 10px 22px rgba(37, 99, 235, 0.28);
+
+      &:hover:not(:disabled) {
+        filter: brightness(1.04);
+      }
     }
 
     .input-prefix-icon {
@@ -1837,10 +1849,11 @@ onUnmounted(() => {
 
   .model-row {
     margin-top: 14px;
-    padding: 12px 14px;
-    background: rgba(255, 255, 255, 0.72);
-    border: 1px solid rgba(22, 119, 255, 0.12);
-    border-radius: 12px;
+    padding: 14px 16px;
+    background: rgba(255, 255, 255, 0.8);
+    border: 1px solid rgba(148, 163, 184, 0.22);
+    border-radius: 16px;
+    backdrop-filter: blur(8px);
 
     .model-pick {
       display: flex;

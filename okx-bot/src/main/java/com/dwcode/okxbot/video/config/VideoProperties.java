@@ -60,6 +60,47 @@ public class VideoProperties {
         private int timeoutSeconds = 600;
         /** 语言，空表示自动检测 */
         private String language = "zh";
+        /**
+         * 由 Spring Boot 托管启动/停止本地 whisper-service 进程。
+         * 若启动前 health 已可用，则不重复拉起，关闭时也不杀外部进程。
+         */
+        private WhisperManaged managed = new WhisperManaged();
+    }
+
+    @Data
+    public static class WhisperManaged {
+        /** 是否随应用启停 Whisper 子进程 */
+        private boolean enabled = true;
+        /**
+         * whisper-service 目录（含 main.py）。
+         * 相对路径相对 user.dir（一般是项目根 / 运行目录）。
+         */
+        private String workingDir = "./whisper-service";
+        /**
+         * Python 可执行文件；空则优先 workingDir/.venv，再回退系统 python。
+         * Windows 示例：D:/.../whisper-service/.venv/Scripts/python.exe
+         */
+        private String pythonPath = "";
+        /** 监听地址（uvicorn 模式） */
+        private String host = "0.0.0.0";
+        /** 端口；空则从 base-url 解析，默认 8000 */
+        private Integer port;
+        /** 覆盖 WHISPER_MODEL；空则用 whisper.model */
+        private String model = "";
+        private String device = "cpu";
+        private String compute = "int8";
+        private boolean preload = true;
+        /** 启动后等待 /health 的最长时间 */
+        private int startupTimeoutSeconds = 180;
+        /** 关闭时等待进程退出秒数 */
+        private int stopTimeoutSeconds = 15;
+        /** true：启动失败则让 Spring Boot 启动失败 */
+        private boolean failIfUnavailable = false;
+        private String healthPath = "/health";
+        /** 追加环境变量 */
+        private java.util.Map<String, String> env = new java.util.LinkedHashMap<>();
+        /** 使用 uvicorn 时的额外参数 */
+        private java.util.List<String> extraArgs = new java.util.ArrayList<>();
     }
 
     @Data

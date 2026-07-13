@@ -2,6 +2,7 @@ package com.dwcode.okxbot.aigen.adapter.render;
 
 import com.dwcode.okxbot.aigen.config.AigenProperties;
 import com.dwcode.okxbot.common.exception.BusinessException;
+import com.dwcode.okxbot.video.config.VideoProperties;
 import jakarta.annotation.PreDestroy;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -40,6 +41,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 public class RemotionProcessManager {
 
     private final AigenProperties aigenProperties;
+    private final VideoProperties videoProperties;
     private final ObjectMapper objectMapper = new ObjectMapper();
 
     private final Object lock = new Object();
@@ -237,6 +239,14 @@ public class RemotionProcessManager {
         // 任务目录在 work-dir/{taskId} 下，允许根即 aigen.work-dir
         Path workRoot = Path.of(aigenProperties.getWorkDir()).toAbsolutePath().normalize();
         pb.environment().put("ALLOWED_WORK_ROOT", workRoot.toString());
+        // 成片旁白混音依赖 ffmpeg（修复 Remotion 静音轨）
+        String ffmpeg = resolveFfmpegPath();
+        if (ffmpeg != null) {
+            pb.environment().put("FFMPEG_PATH", ffmpeg);
+            log.info("aigen-remotion 将使用 FFMPEG_PATH={}", ffmpeg);
+        } else {
+            log.warn("未配置 ffmpeg 路径，成片可能仍无旁白声（请配置 video.ffmpeg-path）");
+        }
 
         log.info("正在启动 aigen-remotion: dir={}, cmd={}, port={}", projectDir, cmd, port);
         try {
@@ -365,6 +375,24 @@ public class RemotionProcessManager {
             return configured.trim();
         }
         return "node";
+    }
+
+    /**
+     * 优先 aigen.tts.ffmpeg-path，其次 video.ffmpeg-path。
+     */
+    private String resolveFfmpegPath() {
+        String p = aigenProperties.getTts() != null ? aigenProperties.getTts().getFfmpegPath() : null;
+        if (p == null || p.isBlank()) {
+            p = videoProperties != null ? videoProperties.getFfmpegPath() : null;
+        }
+        if (p == null || p.isBlank()) {
+            return null;
+        }
+        Path path = Path.of(p.trim());
+        if (Files.isRegularFile(path)) {
+            return path.toAbsolutePath().normalize().toString();
+        }
+        return p.trim();
     }
 
     private String healthUrl() {

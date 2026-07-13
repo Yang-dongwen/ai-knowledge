@@ -101,6 +101,24 @@ video:
     model: small
     timeout-seconds: 600
     language: zh
+    # Spring Boot 托管启动/停止本地 whisper-service（main.py）
+    managed:
+      enabled: true
+      # 相对运行目录（IDE 一般是 okx-bot 根目录）
+      working-dir: ./whisper-service
+      # 空则自动用 .venv/Scripts/python.exe（Windows）或 .venv/bin/python
+      python-path: ""
+      host: 0.0.0.0
+      # 空则从 base-url 取端口
+      # port: 8000
+      device: cpu
+      compute: int8
+      preload: true
+      # 首次下载模型可能较慢
+      startup-timeout-seconds: 300
+      stop-timeout-seconds: 15
+      # true= Whisper 起不来则整个应用启动失败
+      fail-if-unavailable: false
   llm:
     # 复用上方 ai.providers；为空则用 ai.default-provider
     provider: nvidia
@@ -148,14 +166,15 @@ aigen:
     max-repair-attempts: 1
     log-prompts: false
   tts:
-    # auto=优先 edge-tts，否则 Windows SAPI；也可 edge / windows / mock
+    # auto=优先 edge-tts CLI，否则 Windows SAPI；也可 edge / windows / mock
     provider: auto
     default-voice: zh-CN-XiaoxiaoNeural
     timeout-seconds: 120
-    # 需把 Python 与 Scripts 加入 PATH（见下方说明），无需写绝对路径
+    # 走系统 PATH 即可（已修复脏 PATH / WindowsApps 假 python 导致的解析失败）
+    # 需 PATH 含：Python\Scripts（edge-tts）与 Python 安装目录
     edge-command: edge-tts
-    edge-mode: auto          # auto | cli | python
-    python-path: python
+    edge-mode: auto          # auto | cli | python（auto 优先 CLI）
+    python-path: python      # 仅 edge-mode=python 时用；auto 优先 edge-tts 命令
     fail-open-to-mock: false
     tail-padding-frames: 6
     # ffprobe-path: 空则尝试从 video.ffmpeg-path 推导

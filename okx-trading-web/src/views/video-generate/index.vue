@@ -12,17 +12,31 @@
           </a-tooltip>
         </div>
         <p class="page-subtitle">
-          输入提示词，自动规划分镜并渲染短视频（语音配音将在后续版本接入）
+          一句话生成分镜 · 配音 · 成片，适合短视频知识科普与口播脚本
         </p>
+        <div class="pipeline-row">
+          <span class="pipe-chip"><i>1</i>规划分镜</span>
+          <span class="pipe-sep" />
+          <span class="pipe-chip"><i>2</i>配音素材</span>
+          <span class="pipe-sep" />
+          <span class="pipe-chip"><i>3</i>渲染成片</span>
+        </div>
       </div>
 
       <div class="form-block">
-        <label class="field-label">提示词</label>
+        <div class="field-label-row">
+          <label class="field-label">创作提示词</label>
+          <span class="char-meter" :class="{ warn: prompt.length > 3600 }">
+            <i :style="{ width: `${Math.min(100, (prompt.length / 4000) * 100)}%` }" />
+            <em>{{ prompt.length }} / 4000</em>
+          </span>
+        </div>
         <a-textarea
           v-model:value="prompt"
           :rows="4"
           :maxlength="4000"
-          show-count
+          :show-count="false"
+          class="prompt-textarea"
           placeholder="例如：用通俗语言讲解比特币减半，适合竖屏短视频，语气轻松"
           @pressEnter.ctrl="handleSubmit"
         />
@@ -108,9 +122,27 @@
             <a-radio-button value="1:1">方形 1:1</a-radio-button>
           </a-radio-group>
         </div>
-        <div class="opt">
-          <span class="field-label">目标时长（秒）</span>
-          <a-input-number v-model:value="targetDurationSec" :min="5" :max="90" class="full" />
+        <div class="opt duration-opt" @wheel.prevent="onDurationWheel">
+          <div class="duration-head">
+            <span class="field-label">目标时长</span>
+            <span class="duration-badge">
+              <strong>{{ targetDurationSec }}</strong>
+              <em>秒</em>
+            </span>
+          </div>
+          <a-slider
+            v-model:value="targetDurationSec"
+            :min="5"
+            :max="90"
+            :step="1"
+            :tooltip-open="false"
+            class="duration-slider"
+          />
+          <div class="duration-marks">
+            <span>5s</span>
+            <span class="hint-wheel">滚轮调节</span>
+            <span>90s</span>
+          </div>
         </div>
         <div class="opt">
           <span class="field-label">语言</span>
@@ -144,7 +176,7 @@
           <template #icon><ThunderboltOutlined /></template>
           生成视频
         </a-button>
-        <span class="hint">Ctrl + Enter 提交 · 时长 5～90 秒 · 成片生成后自动播放</span>
+        <span class="hint">Ctrl + Enter 提交 · 5–90 秒 · 成片可在线预览下载</span>
       </div>
     </div>
 
@@ -435,9 +467,24 @@
               <span class="k">当前步骤</span>
               <span class="v">{{ selected.currentStep || '—' }}</span>
             </div>
-            <div class="detail-row">
+            <div class="detail-row prompt-row">
               <span class="k">提示词</span>
-              <span class="v prompt-text">{{ selected.prompt }}</span>
+              <div class="v prompt-cell">
+                <p
+                  class="prompt-text"
+                  :class="{ collapsed: promptCollapsed && promptNeedsCollapse }"
+                >
+                  {{ selected.prompt }}
+                </p>
+                <button
+                  v-if="promptNeedsCollapse"
+                  type="button"
+                  class="prompt-toggle"
+                  @click="promptCollapsed = !promptCollapsed"
+                >
+                  {{ promptCollapsed ? '展开全部' : '收起' }}
+                </button>
+              </div>
             </div>
             <div class="detail-row">
               <span class="k">模板 / 画幅</span>
@@ -451,60 +498,92 @@
               <span class="k">错误</span>
               <span class="v error">{{ selected.errorMessage }}</span>
             </div>
-            <div class="detail-row">
-              <span class="k">成片</span>
-              <span class="v">
-                <template v-if="selected.outputAvailable">
-                  <span v-if="videoLoading">正在加载播放器…</span>
-                  <span v-else-if="videoObjectUrl">已自动加载，可直接播放</span>
-                  <span v-else>可播放</span>
-                </template>
-                <template v-else-if="selected.status === 'SUCCESS'">
-                  流程已完成但无 MP4（请确认渲染步骤与 aigen-remotion）
-                </template>
-                <template v-else>生成成功后自动播放</template>
-              </span>
-            </div>
           </div>
 
           <div v-if="selected.outputAvailable" class="player-box">
-            <div v-if="videoLoading" class="player-loading">
-              <a-spin tip="正在加载成片…" />
+            <div class="player-head">
+              <div class="player-head-left">
+                <span class="player-label">成片预览</span>
+                <span class="player-state" v-if="videoLoading">加载中…</span>
+                <span class="player-state ok" v-else-if="videoObjectUrl">已就绪</span>
+                <span class="player-state warn" v-else>待加载</span>
+              </div>
+              <div class="player-tools">
+                <button
+                  type="button"
+                  class="tool-btn"
+                  :disabled="videoLoading"
+                  :title="'重新加载'"
+                  @click="() => loadVideo(true)"
+                >
+                  <ReloadOutlined />
+                  <span>重新加载</span>
+                </button>
+                <button
+                  type="button"
+                  class="tool-btn primary"
+                  :disabled="!videoObjectUrl"
+                  title="下载 MP4"
+                  @click="downloadVideo"
+                >
+                  <DownloadOutlined />
+                  <span>下载</span>
+                </button>
+              </div>
             </div>
-            <video
-              v-else-if="videoObjectUrl"
-              ref="videoRef"
-              class="player"
-              :src="videoObjectUrl"
-              controls
-              playsinline
-              autoplay
-            />
-            <div v-else class="player-loading muted">成片加载失败，请点击重试</div>
-            <div class="player-actions">
-              <a-button type="primary" size="small" :loading="videoLoading" @click="() => loadVideo(true)">
-                重新加载
-              </a-button>
-              <a-button size="small" :disabled="!videoObjectUrl" @click="downloadVideo">
-                下载 MP4
-              </a-button>
+            <div class="player-frame">
+              <div v-if="videoLoading" class="player-loading">
+                <a-spin tip="正在加载成片…" />
+              </div>
+              <video
+                v-else-if="videoObjectUrl"
+                ref="videoRef"
+                class="player"
+                :src="videoObjectUrl"
+                controls
+                playsinline
+                preload="auto"
+                @loadedmetadata="onVideoMeta"
+              />
+              <div v-else class="player-loading muted">成片加载失败，请点击上方「重新加载」</div>
             </div>
+          </div>
+          <div v-else class="player-placeholder">
+            <span v-if="selected.status === 'SUCCESS'">流程已完成但暂无成片文件</span>
+            <span v-else>生成成功后将在此预览成片</span>
           </div>
 
-          <div v-if="storyboardPreview" class="storyboard-box">
-            <div class="panel-header">
-              <span class="panel-title">分镜 JSON</span>
-              <a-button type="text" size="small" @click="loadStoryboard">刷新</a-button>
-            </div>
-            <pre class="json-pre">{{ storyboardPreview }}</pre>
-          </div>
-          <a-button
-            v-else-if="selected.status === 'SUCCESS' || selected.status === 'RENDERING' || selected.status === 'ASSET_GENERATING'"
-            type="link"
-            @click="loadStoryboard"
+          <div
+            v-if="canShowStoryboard"
+            class="storyboard-panel"
+            :class="{ open: storyboardOpen }"
           >
-            查看分镜 JSON
-          </a-button>
+            <button type="button" class="storyboard-toggle" @click="toggleStoryboard">
+              <span class="sb-left">
+                <CodeOutlined />
+                <span>分镜数据</span>
+                <em v-if="storyboardPreview">JSON</em>
+              </span>
+              <span class="sb-right">
+                <span class="sb-action">{{ storyboardOpen ? '收起' : '展开' }}</span>
+                <DownOutlined class="sb-chevron" :class="{ rotated: storyboardOpen }" />
+              </span>
+            </button>
+            <div v-show="storyboardOpen" class="storyboard-body">
+              <div class="storyboard-toolbar">
+                <span class="sb-hint">任务规划与素材时间轴（只读）</span>
+                <button type="button" class="tool-btn ghost" @click="loadStoryboard">
+                  <ReloadOutlined />
+                  <span>刷新</span>
+                </button>
+              </div>
+              <pre v-if="storyboardPreview" class="json-pre">{{ storyboardPreview }}</pre>
+              <div v-else class="storyboard-empty">
+                <a-spin v-if="storyboardLoading" size="small" />
+                <span v-else>暂无数据，点击刷新加载</span>
+              </div>
+            </div>
+          </div>
         </template>
         <a-empty v-else description="选择左侧任务查看详情" />
       </section>
@@ -524,7 +603,10 @@ import {
   RedoOutlined,
   DeleteOutlined,
   StopOutlined,
-  ExclamationCircleOutlined
+  ExclamationCircleOutlined,
+  DownloadOutlined,
+  CodeOutlined,
+  DownOutlined
 } from '@ant-design/icons-vue'
 import { aigenApi } from '@/api/aigen.api'
 import { videoApi } from '@/api/video.api'
@@ -540,6 +622,13 @@ const templateId = ref('knowledge-cards')
 const aspectRatio = ref('9:16')
 const targetDurationSec = ref(30)
 const language = ref('zh')
+
+/** 在时长控件上滚轮调节秒数 */
+function onDurationWheel(e: WheelEvent) {
+  const delta = e.deltaY > 0 ? -1 : 1
+  const next = Math.min(90, Math.max(5, (targetDurationSec.value || 30) + delta))
+  targetDurationSec.value = next
+}
 const voiceId = ref('zh-CN-XiaoxiaoNeural')
 const voicesLoading = ref(false)
 const voiceOptions = ref<Array<{ value: string; label: string }>>([])
@@ -550,6 +639,11 @@ const templates = ref<AigenTemplate[]>([])
 const tasks = ref<AigenTaskItem[]>([])
 const selectedId = ref<string | null>(null)
 const storyboardPreview = ref('')
+const storyboardOpen = ref(false)
+const storyboardLoading = ref(false)
+/** 详情提示词默认折叠（超过阈值时） */
+const promptCollapsed = ref(true)
+const PROMPT_COLLAPSE_LEN = 96
 const videoObjectUrl = ref('')
 const videoLoading = ref(false)
 const videoRef = ref<HTMLVideoElement | null>(null)
@@ -588,6 +682,18 @@ const liveChannelTip = computed(() => {
   return '推送断开，将自动重连；也可手动刷新列表'
 })
 
+const selected = computed(() => tasks.value.find((t) => t.id === selectedId.value) || null)
+
+const promptNeedsCollapse = computed(() => {
+  const p = selected.value?.prompt || ''
+  return p.length > PROMPT_COLLAPSE_LEN
+})
+
+const canShowStoryboard = computed(() => {
+  const s = selected.value?.status
+  return s === 'SUCCESS' || s === 'RENDERING' || s === 'ASSET_GENERATING' || s === 'PLANNING'
+})
+
 const templateOptions = computed(() =>
   templates.value.map((t) => ({
     value: t.id,
@@ -620,8 +726,6 @@ const canSubmit = computed(
     !submitting.value &&
     !modelsLoading.value
 )
-
-const selected = computed(() => tasks.value.find((t) => t.id === selectedId.value) || null)
 
 const PAUSE_BOUNDARY_TIP =
   '暂停仅在步骤边界生效：当前「规划 / 素材 / 渲染」会先跑完，再中断并释放并发槽。'
@@ -1006,8 +1110,24 @@ function selectTask(id: string) {
   if (selectedId.value === id) return
   selectedId.value = id
   storyboardPreview.value = ''
+  storyboardOpen.value = false
+  promptCollapsed.value = true
   revokeVideoUrl()
   autoLoadedTaskId.value = null
+}
+
+function onVideoMeta() {
+  const el = videoRef.value
+  if (!el) return
+  el.muted = false
+  el.volume = 1
+}
+
+async function toggleStoryboard() {
+  storyboardOpen.value = !storyboardOpen.value
+  if (storyboardOpen.value && !storyboardPreview.value) {
+    await loadStoryboard()
+  }
 }
 
 /**
@@ -1025,11 +1145,11 @@ async function loadVideo(force = false) {
     videoObjectUrl.value = URL.createObjectURL(blob)
     autoLoadedTaskId.value = selectedId.value
     await nextTick()
-    // 尽量自动播放（部分浏览器可能拦截有声 autoplay；无声轨一般可过）
+    onVideoMeta()
     try {
       await videoRef.value?.play()
     } catch {
-      // 用户可手动点播放
+      // 有声自动播放可能被拦截
     }
   } catch (e: any) {
     autoLoadedTaskId.value = null
@@ -1269,11 +1389,14 @@ async function doDelete(id: string) {
 
 async function loadStoryboard() {
   if (!selectedId.value) return
+  storyboardLoading.value = true
   try {
     const res = await aigenApi.getStoryboard(selectedId.value)
     storyboardPreview.value = JSON.stringify(res.data, null, 2)
   } catch {
     storyboardPreview.value = ''
+  } finally {
+    storyboardLoading.value = false
   }
 }
 
@@ -1329,604 +1452,4 @@ onUnmounted(() => {
 })
 </script>
 
-<style lang="scss" scoped>
-.aigen-page {
-  max-width: 1280px;
-  margin: 0 auto;
-}
-
-.hero-title-row {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  flex-wrap: wrap;
-}
-
-.live-badge {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 2px 10px;
-  border-radius: 999px;
-  font-size: 12px;
-  border: 1px solid var(--border-color);
-  background: #f9fafb;
-  color: var(--text-secondary);
-
-  .live-dot {
-    width: 7px;
-    height: 7px;
-    border-radius: 50%;
-    background: #9ca3af;
-  }
-
-  &.live {
-    color: #047857;
-    background: #ecfdf5;
-    border-color: #a7f3d0;
-    .live-dot {
-      background: #10b981;
-      box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.25);
-    }
-  }
-
-  &.connecting {
-    color: #b45309;
-    background: #fffbeb;
-    border-color: #fde68a;
-    .live-dot {
-      background: #f59e0b;
-      animation: pulse 1.2s ease-in-out infinite;
-    }
-  }
-
-  &.offline {
-    color: #b91c1c;
-    background: #fef2f2;
-    border-color: #fecaca;
-    .live-dot {
-      background: #ef4444;
-    }
-  }
-}
-
-@keyframes pulse {
-  0%,
-  100% {
-    opacity: 1;
-  }
-  50% {
-    opacity: 0.35;
-  }
-}
-
-.form-block {
-  margin-top: 16px;
-}
-
-.field-label {
-  display: block;
-  font-size: 13px;
-  color: var(--text-secondary);
-  margin-bottom: 6px;
-}
-
-.model-row {
-  margin-top: 14px;
-  padding: 12px 14px;
-  background: rgba(255, 255, 255, 0.72);
-  border: 1px solid rgba(99, 102, 241, 0.14);
-  border-radius: 12px;
-
-  .model-pick {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    flex-wrap: wrap;
-
-    .opt-label {
-      color: var(--text-secondary);
-      font-size: 13px;
-      flex-shrink: 0;
-    }
-
-    .model-select {
-      flex: 1;
-      min-width: 260px;
-      max-width: 520px;
-    }
-
-    .test-btn,
-    .manage-btn {
-      border-radius: 10px;
-    }
-  }
-
-  .model-status {
-    margin-top: 10px;
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    flex-wrap: wrap;
-    font-size: 12px;
-
-    &.muted {
-      color: var(--text-muted);
-    }
-
-    .test-err {
-      color: #b91c1c;
-      max-width: 420px;
-      overflow: hidden;
-      text-overflow: ellipsis;
-      white-space: nowrap;
-    }
-  }
-}
-
-.options-grid {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 16px;
-  margin-top: 16px;
-
-  .full {
-    width: 100%;
-  }
-
-  @media (max-width: 768px) {
-    grid-template-columns: 1fr;
-  }
-}
-
-.submit-actions {
-  margin-top: 20px;
-  display: flex;
-  align-items: center;
-  gap: 16px;
-  flex-wrap: wrap;
-
-  .hint {
-    font-size: 12px;
-    color: var(--text-muted);
-  }
-}
-
-.workspace {
-  display: grid;
-  grid-template-columns: 340px 1fr;
-  gap: 16px;
-  align-items: start;
-
-  @media (max-width: 960px) {
-    grid-template-columns: 1fr;
-  }
-}
-
-.panel-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin-bottom: 12px;
-}
-
-.panel-title {
-  font-weight: 600;
-  font-size: 15px;
-}
-
-.detail-header {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 12px;
-  margin-bottom: 16px;
-  padding-bottom: 12px;
-  border-bottom: 1px solid var(--border-color, #f0f0f0);
-}
-
-.detail-header-main {
-  min-width: 0;
-  flex: 1;
-}
-
-.detail-title {
-  margin: 6px 0 4px;
-  font-size: 16px;
-  font-weight: 600;
-  color: var(--text-primary, #111827);
-  line-height: 1.35;
-  word-break: break-word;
-}
-
-.detail-sub {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px 12px;
-  font-size: 12px;
-  color: var(--text-muted, #9ca3af);
-
-  .model-chip {
-    color: #6366f1;
-  }
-}
-
-.task-list {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  max-height: calc(100vh - 280px);
-  overflow-y: auto;
-  padding: 2px;
-}
-
-.task-item {
-  padding: 12px;
-  border-radius: 10px;
-  cursor: pointer;
-  transition: all 0.15s;
-  border: 1px solid transparent;
-  margin-bottom: 0;
-
-  &:hover {
-    background: #f5f7fa;
-  }
-
-  &.active {
-    background: #ebf5ff;
-    border-color: rgba(22, 119, 255, 0.25);
-  }
-}
-
-.task-item-top {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 6px;
-
-  .status-tag {
-    margin: 0;
-    font-size: 12px;
-  }
-
-  .task-item-actions {
-    display: flex;
-    align-items: center;
-    gap: 2px;
-  }
-
-  .task-time {
-    font-size: 11px;
-    color: var(--text-muted);
-  }
-
-  .task-del-btn,
-  .task-retry-btn,
-  .task-pause-btn {
-    opacity: 0;
-    transition: opacity 0.15s;
-    width: 24px;
-    height: 24px;
-    min-width: 24px;
-    padding: 0;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-  }
-
-  .task-retry-btn {
-    color: var(--primary-color, #1677ff);
-  }
-
-  .task-pause-btn {
-    color: var(--warning-color, #f59e0b);
-  }
-}
-
-.task-item:hover .task-del-btn,
-.task-item:hover .task-retry-btn,
-.task-item:hover .task-pause-btn,
-.task-item.active .task-del-btn,
-.task-item.active .task-retry-btn,
-.task-item.active .task-pause-btn {
-  opacity: 1;
-}
-
-.task-title {
-  font-size: 13px;
-  font-weight: 500;
-  line-height: 1.4;
-  display: -webkit-box;
-  -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
-  margin-bottom: 6px;
-  color: var(--text-primary, #111827);
-}
-
-.task-meta {
-  margin-top: 6px;
-  display: flex;
-  gap: 8px;
-  flex-wrap: wrap;
-  font-size: 11px;
-  color: var(--text-muted);
-
-  .model-chip {
-    max-width: 120px;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-    color: #6366f1;
-  }
-}
-
-.task-step {
-  margin-top: 6px;
-  font-size: 12px;
-  color: var(--text-secondary);
-}
-
-.task-timing-line {
-  margin-top: 4px;
-  font-size: 11px;
-  color: #6366f1;
-}
-
-.dur-chip {
-  color: #0f766e;
-}
-
-.progress-block {
-  margin-bottom: 16px;
-  padding: 12px 14px;
-  border-radius: 12px;
-  background: #f8fafc;
-  border: 1px solid #e5e7eb;
-}
-
-.progress-hint {
-  margin-top: 12px;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  font-size: 13px;
-  color: var(--text-secondary);
-}
-
-.pause-policy-hint {
-  margin-top: 12px;
-}
-
-.timing-strip {
-  margin-top: 12px;
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-}
-
-.timing-chip {
-  font-size: 12px;
-  color: #4b5563;
-  background: #fff;
-  border: 1px solid #e5e7eb;
-  border-radius: 999px;
-  padding: 2px 10px;
-
-  b {
-    color: #4f46e5;
-    font-weight: 600;
-  }
-}
-
-.timing-panel {
-  margin-bottom: 16px;
-  padding: 14px 16px;
-  border-radius: 12px;
-  border: 1px solid #e5e7eb;
-  background: #fff;
-}
-
-.timing-panel-title {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  font-size: 13px;
-  font-weight: 600;
-  color: #111827;
-  margin-bottom: 12px;
-}
-
-.timing-total {
-  font-weight: 500;
-  color: #6366f1;
-  font-size: 12px;
-}
-
-.timing-bars {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-}
-
-.timing-bar-label {
-  display: flex;
-  justify-content: space-between;
-  font-size: 12px;
-  color: #6b7280;
-  margin-bottom: 4px;
-}
-
-.timing-bar-ms {
-  color: #111827;
-  font-weight: 500;
-}
-
-.timing-bar-track {
-  height: 8px;
-  border-radius: 999px;
-  background: #f3f4f6;
-  overflow: hidden;
-}
-
-.timing-bar-fill {
-  height: 100%;
-  border-radius: 999px;
-  background: #818cf8;
-
-  &.plan {
-    background: linear-gradient(90deg, #6366f1, #8b5cf6);
-  }
-  &.asset {
-    background: linear-gradient(90deg, #0ea5e9, #38bdf8);
-  }
-  &.render {
-    background: linear-gradient(90deg, #10b981, #34d399);
-  }
-}
-
-.timing-meta {
-  margin-top: 12px;
-  display: flex;
-  gap: 16px;
-  flex-wrap: wrap;
-  font-size: 12px;
-  color: #9ca3af;
-}
-
-.fail-alert {
-  margin-bottom: 16px;
-}
-
-.retry-hint {
-  margin: 0 0 12px;
-  font-size: 13px;
-  color: #6b7280;
-  line-height: 1.55;
-}
-
-.retry-prompt {
-  margin-bottom: 12px;
-
-  .muted {
-    font-size: 12px;
-    color: #9ca3af;
-  }
-
-  .prompt-text {
-    margin-top: 4px;
-    padding: 8px 10px;
-    background: #f9fafb;
-    border-radius: 8px;
-    border: 1px solid #f0f0f0;
-    font-size: 13px;
-    color: #374151;
-    max-height: 96px;
-    overflow: auto;
-    white-space: pre-wrap;
-    word-break: break-word;
-  }
-}
-
-.retry-model-row {
-  margin-bottom: 10px;
-
-  .opt-label {
-    font-size: 13px;
-    font-weight: 500;
-    color: #374151;
-  }
-}
-
-.retry-actions {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  margin-top: 4px;
-}
-
-.detail-grid {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-}
-
-.detail-row {
-  display: grid;
-  grid-template-columns: 100px 1fr;
-  gap: 8px;
-  font-size: 13px;
-
-  .k {
-    color: var(--text-muted);
-  }
-
-  .v {
-    color: var(--text-primary);
-    word-break: break-word;
-  }
-
-  .prompt-text {
-    white-space: pre-wrap;
-  }
-
-  .error {
-    color: #b91c1c;
-  }
-}
-
-.player-box {
-  margin-top: 20px;
-  padding-top: 16px;
-  border-top: 1px solid var(--border-color);
-}
-
-.player {
-  width: 100%;
-  max-height: 480px;
-  background: #0f172a;
-  border-radius: 12px;
-}
-
-.player-loading {
-  min-height: 200px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: #0f172a;
-  border-radius: 12px;
-  color: #e2e8f0;
-
-  &.muted {
-    color: #94a3b8;
-    font-size: 13px;
-  }
-}
-
-.player-actions {
-  margin-top: 10px;
-  display: flex;
-  gap: 8px;
-}
-
-.steps-visual {
-  margin-top: 24px;
-  padding-top: 16px;
-  border-top: 1px solid var(--border-color);
-}
-
-.storyboard-box {
-  margin-top: 20px;
-}
-
-.json-pre {
-  background: #0f172a;
-  color: #e2e8f0;
-  border-radius: 8px;
-  padding: 12px 14px;
-  font-size: 12px;
-  max-height: 320px;
-  overflow: auto;
-  line-height: 1.5;
-}
-</style>
+<style lang="scss" scoped src="./aigen-ui.scss"></style>

@@ -56,6 +56,7 @@ export const aigenApi = {
 
   /**
    * 拉取成片为 Blob（带 Authorization，供 video 标签播放）。
+   * 强制 type=video/mp4，避免浏览器对错误 MIME 只播画面不播声。
    */
   async fetchOutputBlob(taskId: string): Promise<Blob> {
     const token = localStorage.getItem('okx_auth_token') || ''
@@ -68,6 +69,7 @@ export const aigenApi = {
       const text = await res.text()
       throw new Error(text || `下载失败 HTTP ${res.status}`)
     }
-    return res.blob()
+    const buf = await res.arrayBuffer()
+    return new Blob([buf], { type: 'video/mp4' })
   }
 }

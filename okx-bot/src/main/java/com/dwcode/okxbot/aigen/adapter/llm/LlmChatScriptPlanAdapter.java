@@ -128,11 +128,12 @@ public class LlmChatScriptPlanAdapter implements ScriptPlanPort {
                 3. meta.language=%s, meta.fps=%d, meta.width=%d, meta.height=%d
                 4. scenes 2～8 个；每场 type 只能是: %s
                 5. 每场必须有 id、type、narration（口播，中文口语）、props
-                6. title 场 props 含 title/subtitle；bullets 场 props 含 heading 与 items 数组；outro 场 props 含 title/cta
-                7. 总时长约 %d 秒；可给 durationInFrames，系统会再规范化
-                8. 不要输出任何 http(s) URL 或文件路径
-                9. audio 与 subtitles 可省略
-                JSON 结构示例字段: version, meta{title,language,templateId,fps,width,height,durationInFrames}, style{theme,primaryColor}, scenes[{id,type,startFrame,durationInFrames,narration,props}]
+                6. title 场 props 含 title/subtitle；bullets 场 props 含 heading 与 items；outro 场 props 含 title/cta
+                7. items 必须是字符串数组，例如 ["要点一","要点二"]，禁止 [{text:"..."}] 对象数组
+                8. 总时长约 %d 秒；可给 durationInFrames，系统会再规范化
+                9. 不要输出任何 http(s) URL 或文件路径
+                10. audio 与 subtitles 可省略
+                JSON 结构示例字段: version, meta{title,language,templateId,fps,width,height,durationInFrames}, style{theme,primaryColor}, scenes[{id,type,startFrame,durationInFrames,narration,props{title,subtitle,heading,items,cta}}]
                 """.formatted(
                 cmd.getTemplateId(),
                 cmd.getLanguage() != null ? cmd.getLanguage() : "zh",

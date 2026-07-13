@@ -187,5 +187,8 @@ async def transcribe(
 if __name__ == "__main__":
     import uvicorn
 
-    # port 必须是 int；传字符串会导致 uvicorn 启动日志 TypeError，看起来像“跑不起来”
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    # 可由环境变量覆盖（Spring Boot 托管启动时也会设 WHISPER_*）
+    host = os.getenv("WHISPER_HOST", "0.0.0.0")
+    port = int(os.getenv("WHISPER_PORT", "8000"))
+    # port 必须是 int；传字符串会导致 uvicorn 启动日志 TypeError
+    uvicorn.run(app, host=host, port=port)
