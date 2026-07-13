@@ -100,6 +100,7 @@
       <ModelManageModal
         v-if="auth.isSuperAdmin"
         v-model:open="modelManageOpen"
+        capability="chat"
         @changed="onModelsChanged"
       />
 

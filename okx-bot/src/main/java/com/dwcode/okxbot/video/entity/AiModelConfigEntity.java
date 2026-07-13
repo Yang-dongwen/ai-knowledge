@@ -30,6 +30,27 @@ public class AiModelConfigEntity {
     /** 前端展示名称 */
     private String modelName;
 
+    /**
+     * 能力类型：chat（对话/润色/分镜）| image（文生图）。
+     * 缺省 chat，兼容旧数据。
+     */
+    private String capability;
+
+    /** 生图 GenAI 完整 invoke URL（capability=image 时使用） */
+    private String invokeUrl;
+
+    /** 生图默认步数 */
+    private Integer defaultSteps;
+
+    /** 生图最大步数 */
+    private Integer maxSteps;
+
+    /**
+     * 生图协议：nvidia-flux | nvidia-qwen | nvidia-openai-images。
+     * 空则按 modelId / invokeUrl 推断。
+     */
+    private String protocol;
+
     /** 是否启用 1/0 */
     private Integer enabled;
 

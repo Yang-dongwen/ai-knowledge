@@ -37,8 +37,10 @@ export const videoApi = {
 
   // ---------- 模型配置管理（数据库） ----------
 
-  listModelConfigs(): Promise<{ data: AiModelConfig[] }> {
-    return request.get('/v1/video/model-configs')
+  listModelConfigs(capability?: string): Promise<{ data: AiModelConfig[] }> {
+    return request.get('/v1/video/model-configs', {
+      params: capability ? { capability } : {}
+    })
   },
 
   listProviders(): Promise<{ data: AiProviderOption[] }> {

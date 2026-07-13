@@ -168,6 +168,7 @@ import {
   SwapOutlined,
   RobotOutlined,
   VideoCameraOutlined,
+  PictureOutlined,
   FundOutlined,
   ToolOutlined,
   SyncOutlined,
@@ -211,7 +212,7 @@ const TRADING_KEYS = new Set([
   'ai-chat'
 ])
 
-const TOOLS_KEYS = new Set(['video-extract', 'video-generate'])
+const TOOLS_KEYS = new Set(['video-extract', 'video-generate', 'image-generate'])
 
 /** 系统管理（仅超级管理员） */
 const ADMIN_KEYS = new Set(['user-manage'])
@@ -223,11 +224,10 @@ const ALL_MENU_GROUPS: MenuGroup[] = [
   {
     key: 'tools',
     title: 'AI 工具',
-    description: '视频内容提取与智能生成',
+    description: '视频提取、视频生成与文生图',
     icon: markRaw(ToolOutlined),
     accent: '#7C3AED',
     accentSoft: '#F3E8FF',
-    // 条目少时用单列卡片，避免两列挤在窄浮层里难看
     cols: 1,
     children: [
       {
@@ -245,6 +245,14 @@ const ALL_MENU_GROUPS: MenuGroup[] = [
         icon: markRaw(RobotOutlined),
         iconBg: '#EEF2FF',
         iconColor: '#4F46E5'
+      },
+      {
+        key: 'image-generate',
+        title: 'AI 文生图',
+        description: '提示词驱动，NVIDIA FLUX 生成图片',
+        icon: markRaw(PictureOutlined),
+        iconBg: '#ECFDF5',
+        iconColor: '#059669'
       }
     ]
   },

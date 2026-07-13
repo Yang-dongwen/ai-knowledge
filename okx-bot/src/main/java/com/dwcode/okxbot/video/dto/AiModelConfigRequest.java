@@ -21,6 +21,25 @@ public class AiModelConfigRequest {
     @NotBlank(message = "modelName 不能为空")
     private String modelName;
 
+    /**
+     * 能力：chat | image，默认 chat。
+     */
+    private String capability = "chat";
+
+    /** 生图 invoke URL（image 必填） */
+    private String invokeUrl;
+
+    /** 生图默认步数 */
+    private Integer defaultSteps;
+
+    /** 生图最大步数 */
+    private Integer maxSteps;
+
+    /**
+     * 生图协议：nvidia-flux | nvidia-qwen | nvidia-openai-images（可选，空则自动推断）
+     */
+    private String protocol;
+
     /** 是否启用，默认 true */
     private Boolean enabled = true;
 

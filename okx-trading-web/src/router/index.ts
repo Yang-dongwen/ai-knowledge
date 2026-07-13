@@ -98,6 +98,12 @@ const routes: RouteRecordRaw[] = [
         name: 'VideoGenerate',
         component: () => import('@/views/video-generate/index.vue'),
         meta: { title: 'AI 视频生成', group: 'tools' }
+      },
+      {
+        path: 'image-generate',
+        name: 'ImageGenerate',
+        component: () => import('@/views/image-generate/index.vue'),
+        meta: { title: 'AI 文生图', group: 'tools' }
       }
     ]
   }

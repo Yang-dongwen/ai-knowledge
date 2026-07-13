@@ -233,6 +233,13 @@ export interface AiModelConfig {
   providerName?: string
   modelId: string
   modelName: string
+  /** chat | image */
+  capability?: string
+  invokeUrl?: string | null
+  defaultSteps?: number | null
+  maxSteps?: number | null
+  /** nvidia-flux | nvidia-qwen | nvidia-openai-images */
+  protocol?: string | null
   enabled: boolean
   sortOrder: number
   remark?: string | null
@@ -244,6 +251,12 @@ export interface AiModelConfigRequest {
   provider: string
   modelId: string
   modelName: string
+  /** chat | image，默认 chat */
+  capability?: string
+  invokeUrl?: string
+  defaultSteps?: number
+  maxSteps?: number
+  protocol?: string
   enabled?: boolean
   sortOrder?: number
   remark?: string
@@ -329,3 +342,96 @@ export interface AigenTemplate {
   minDurationSec?: number
   maxDurationSec?: number
 }
+
+/* ---------- AI 文生图 ---------- */
+
+export type ImgGenTaskStatus =
+  | 'PENDING'
+  | 'PROMPT_ENHANCING'
+  | 'GENERATING'
+  | 'SUCCESS'
+  | 'FAILED'
+  | 'CANCELLED'
+  | 'PAUSED'
+
+export interface ImgGenCreateOptions {
+  aspectRatio?: string
+  n?: number
+  seed?: number | null
+  steps?: number
+  /** 生图模型 ID（imggen.flux.models[].id） */
+  imageModel?: string
+  imageProvider?: string
+  enhancePrompt?: boolean
+  /** 润色用 Chat 模型 */
+  llmProvider?: string
+  llmModel?: string
+  negativePrompt?: string
+}
+
+export interface ImgGenImageModel {
+  id: string
+  name: string
+  provider?: string
+  invokeUrl?: string
+  defaultSteps?: number
+  maxSteps?: number
+  protocol?: string
+  description?: string
+  defaultModel?: boolean
+}
+
+export interface ImgGenCreateRequest {
+  prompt: string
+  negativePrompt?: string
+  options?: ImgGenCreateOptions
+}
+
+export interface ImgGenImageFile {
+  index: number
+  path?: string | null
+  mediaUrl?: string | null
+  width?: number | null
+  height?: number | null
+  seed?: number | null
+}
+
+export interface ImgGenTaskItem {
+  id: string
+  title?: string | null
+  prompt: string
+  enhancedPrompt?: string | null
+  negativePrompt?: string | null
+  status: ImgGenTaskStatus | string
+  currentStep?: string | null
+  progress?: number | null
+  provider?: string | null
+  model?: string | null
+  aspectRatio?: string | null
+  width?: number | null
+  height?: number | null
+  steps?: number | null
+  n?: number | null
+  seed?: number | null
+  enhanceEnabled?: boolean | null
+  llmProvider?: string | null
+  llmModel?: string | null
+  errorMessage?: string | null
+  outputAvailable?: boolean | null
+  images?: ImgGenImageFile[] | null
+  enhanceDurationMs?: number | null
+  generateDurationMs?: number | null
+  totalDurationMs?: number | null
+  startedAt?: string | null
+  finishedAt?: string | null
+  createdAt?: string | null
+  updatedAt?: string | null
+}
+
+export interface ImgGenTaskPage {
+  items: ImgGenTaskItem[]
+  total: number
+  page: number
+  size: number
+}
+

@@ -347,21 +347,26 @@ CREATE TABLE IF NOT EXISTS email_code (
     INDEX idx_created_at (created_at)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='邮箱验证码表';
 
--- 17. 可配置 LLM 模型表（替代 yml 中 providers.*.models）
+-- 17. 可配置 AI 模型表（chat 对话 + image 文生图，替代 yml models 列表）
 CREATE TABLE IF NOT EXISTS ai_model_config (
     id BIGINT NOT NULL COMMENT '主键',
     provider VARCHAR(64) NOT NULL COMMENT '供应商标识，对应 ai.providers 的 key',
     model_id VARCHAR(128) NOT NULL COMMENT 'API模型ID',
     model_name VARCHAR(128) NOT NULL COMMENT '展示名称',
+    capability VARCHAR(32) NOT NULL DEFAULT 'chat' COMMENT '能力 chat | image',
+    invoke_url VARCHAR(512) NULL COMMENT '生图 GenAI URL（image 用）',
+    default_steps INT NULL COMMENT '生图默认步数',
+    max_steps INT NULL COMMENT '生图最大步数',
+    protocol VARCHAR(64) NULL COMMENT '生图协议 nvidia-flux|nvidia-qwen|nvidia-openai-images',
     enabled TINYINT NOT NULL DEFAULT 1 COMMENT '是否启用 1是 0否',
     sort_order INT NOT NULL DEFAULT 0 COMMENT '排序，越小越靠前',
     remark VARCHAR(255) COMMENT '备注',
     created_at DATETIME(3) NOT NULL COMMENT '创建时间',
     updated_at DATETIME(3) NOT NULL COMMENT '更新时间',
     PRIMARY KEY (id),
-    UNIQUE KEY uk_provider_model (provider, model_id),
-    INDEX idx_enabled_sort (enabled, sort_order)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='LLM模型配置表';
+    UNIQUE KEY uk_provider_model_cap (provider, model_id, capability),
+    INDEX idx_cap_enabled_sort (capability, enabled, sort_order)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='AI模型配置表（chat/image）';
 
 
 -- 18. AI 视频生成任务表（Phase 0）
@@ -404,3 +409,43 @@ CREATE TABLE IF NOT EXISTS aigen_task (
     INDEX idx_aigen_status (status),
     INDEX idx_aigen_template (template_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='AI视频生成任务';
+
+
+-- 19. AI 文生图任务表
+CREATE TABLE IF NOT EXISTS imggen_task (
+    id                    BIGINT         NOT NULL COMMENT '主键 snowflake',
+    user_id               BIGINT         NOT NULL COMMENT '所属用户',
+    title                 VARCHAR(256)            COMMENT '标题',
+    prompt                TEXT           NOT NULL COMMENT '用户原始提示词',
+    enhanced_prompt       TEXT                    COMMENT '润色后提示词',
+    negative_prompt       VARCHAR(1024)           COMMENT '负向提示词',
+    status                VARCHAR(32)    NOT NULL DEFAULT 'PENDING' COMMENT '状态',
+    current_step          VARCHAR(128)            COMMENT '当前步骤说明',
+    progress              INT            NOT NULL DEFAULT 0 COMMENT '0-100',
+    provider              VARCHAR(64)             COMMENT '生图供应商 key',
+    model                 VARCHAR(128)            COMMENT '生图模型路径',
+    aspect_ratio          VARCHAR(16)             COMMENT '1:1 / 16:9 / 9:16',
+    width                 INT                     COMMENT '像素宽',
+    height                INT                     COMMENT '像素高',
+    steps                 INT                     COMMENT '扩散步数',
+    n                     INT            DEFAULT 1 COMMENT '张数',
+    seed                  BIGINT         NULL     COMMENT '随机种子',
+    enhance_enabled       TINYINT        DEFAULT 0 COMMENT '是否启用 prompt 润色',
+    llm_provider          VARCHAR(64)             COMMENT '润色用 LLM 供应商',
+    llm_model             VARCHAR(128)            COMMENT '润色用 LLM 模型',
+    result_json           LONGTEXT                COMMENT '多图元数据 JSON',
+    work_dir              VARCHAR(1024),
+    cover_path            VARCHAR(1024)           COMMENT '封面/首图绝对路径',
+    error_message         TEXT,
+    provider_request_id   VARCHAR(128),
+    enhance_duration_ms   BIGINT,
+    generate_duration_ms  BIGINT,
+    total_duration_ms     BIGINT,
+    started_at            DATETIME(3),
+    finished_at           DATETIME(3),
+    created_at            DATETIME(3)    NOT NULL,
+    updated_at            DATETIME(3)    NOT NULL,
+    PRIMARY KEY (id),
+    INDEX idx_imggen_user_created (user_id, created_at),
+    INDEX idx_imggen_status (status)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='AI文生图任务';

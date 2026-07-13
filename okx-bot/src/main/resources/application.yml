@@ -191,6 +191,31 @@ aigen:
     node-path: node                   # 或 node.exe 绝对路径
     startup-timeout-seconds: 180      # 首次 bundle 可能较慢
 
+# AI 文生图（NVIDIA FLUX）
+# mock-pipeline=true 时全 mock；false 时按 steps 切换
+imggen:
+  enabled: true
+  work-dir: ./data/imggen
+  max-concurrent-tasks: 2
+  mock-pipeline: false
+  mock-step-delay-ms: 400
+  cleanup-on-delete: true
+  max-n: 4
+  steps:
+    enhance: real     # off | real | mock — 用户勾选「Prompt 润色」时生效；real=LlmChatClient
+    generate: real    # real=NVIDIA FLUX；mock=本地渐变假图
+  prompt-enhance:
+    fallback-on-error: true
+    provider:         # 空则 ai.default-provider
+    model: ""
+  flux:
+    # 生图模型请在 DB 表 ai_model_config（capability=image）维护；此处仅 Adapter 兜底
+    provider-key: nvidia
+    invoke-url: https://ai.api.nvidia.com/v1/genai/black-forest-labs/flux.1-schnell
+    model-path: black-forest-labs/flux.1-schnell
+    default-steps: 4
+    timeout-seconds: 180
+
 logging:
   level:
     root: INFO

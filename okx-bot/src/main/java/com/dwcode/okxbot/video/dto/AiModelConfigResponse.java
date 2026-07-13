@@ -15,6 +15,13 @@ public class AiModelConfigResponse {
     private String providerName;
     private String modelId;
     private String modelName;
+    /** chat | image */
+    private String capability;
+    private String invokeUrl;
+    private Integer defaultSteps;
+    private Integer maxSteps;
+    /** nvidia-flux | nvidia-qwen | nvidia-openai-images */
+    private String protocol;
     private Boolean enabled;
     private Integer sortOrder;
     private String remark;

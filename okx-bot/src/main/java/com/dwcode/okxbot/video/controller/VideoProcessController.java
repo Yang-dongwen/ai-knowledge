@@ -74,10 +74,12 @@ public class VideoProcessController {
 
     /**
      * 管理列表：全部模型配置（含禁用）。
+     * @param capability 可选 chat | image；空=全部
      */
     @GetMapping("/model-configs")
-    public ApiResult<List<AiModelConfigResponse>> listModelConfigs() {
-        return ApiResult.ok(aiModelConfigService.listAll());
+    public ApiResult<List<AiModelConfigResponse>> listModelConfigs(
+            @RequestParam(required = false) String capability) {
+        return ApiResult.ok(aiModelConfigService.listAll(capability));
     }
 
     /**
