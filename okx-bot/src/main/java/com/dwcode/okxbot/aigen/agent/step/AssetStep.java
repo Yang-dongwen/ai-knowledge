@@ -91,7 +91,7 @@ public class AssetStep implements PipelineStep {
             String relGuess = "assets/audio/" + scene.getId() + ".mp3";
             Path outGuess = storageService.resolveAsset(ctx.getWorkDir(), relGuess);
 
-            log.info("TTS 场景 {}/{}: sceneId={}", i, total, scene.getId());
+            log.info("TTS 场景 {}/{}: sceneId={}, chars={}", i, total, scene.getId(), narration.length());
             TtsResult result = ttsPort.synthesize(TtsCommand.builder()
                     .sceneId(scene.getId())
                     .text(narration)
@@ -114,6 +114,16 @@ public class AssetStep implements PipelineStep {
             tr.setDurationMs(result.getDurationMs());
             tr.setMock(result.isMock());
             tracks.add(tr);
+
+            // 场景间轻微间隔，降低微软 Edge-TTS 连发限流概率
+            if (i < total) {
+                try {
+                    Thread.sleep(250);
+                } catch (InterruptedException ie) {
+                    Thread.currentThread().interrupt();
+                    throw ie;
+                }
+            }
         }
         sb.getAudio().setTracks(tracks);
 
