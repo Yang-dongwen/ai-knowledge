@@ -194,28 +194,10 @@ const form = reactive({
 })
 
 const protocolOptions = [
-  { value: 'nvidia-flux', label: 'nvidia-flux（FLUX 云端 GenAI）' },
-  {
-    value: 'nvidia-qwen',
-    label: 'nvidia-qwen（Qwen → /v1/images/generations）'
-  },
-  {
-    value: 'nvidia-openai-images',
-    label: 'nvidia-openai-images（OpenAI Images 兼容）'
-  },
-  {
-    value: 'nvidia-qwen-infer',
-    label: 'nvidia-qwen-infer（自托管 /v1/infer）'
-  }
+  { value: 'nvidia-flux', label: 'nvidia-flux（NVIDIA FLUX 云端 GenAI）' }
 ]
 
 const invokePlaceholder = computed(() => {
-  if (form.protocol === 'nvidia-qwen' || form.protocol === 'nvidia-openai-images') {
-    return 'http://127.0.0.1:8000/v1/images/generations（自托管 NIM；勿用 /v1/genai/qwen/...）'
-  }
-  if (form.protocol === 'nvidia-qwen-infer') {
-    return 'http://127.0.0.1:8000/v1/infer'
-  }
   return 'https://ai.api.nvidia.com/v1/genai/black-forest-labs/flux.1-schnell'
 })
 
@@ -256,11 +238,8 @@ function shortUrl(u?: string | null) {
   return u.slice(0, 18) + '…' + u.slice(-14)
 }
 
-function inferProtocol(modelId?: string | null, invokeUrl?: string | null) {
-  const m = (modelId || '').toLowerCase()
-  const u = (invokeUrl || '').toLowerCase()
-  if (u.includes('images/generations') || u.includes('/v1/images')) return 'nvidia-openai-images'
-  if (m.includes('qwen') || u.includes('qwen')) return 'nvidia-qwen'
+function inferProtocol(_modelId?: string | null, _invokeUrl?: string | null) {
+  // 系统仅支持 NVIDIA FLUX 云端 GenAI
   return 'nvidia-flux'
 }
 

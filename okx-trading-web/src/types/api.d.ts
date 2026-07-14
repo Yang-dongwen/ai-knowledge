@@ -238,7 +238,7 @@ export interface AiModelConfig {
   invokeUrl?: string | null
   defaultSteps?: number | null
   maxSteps?: number | null
-  /** nvidia-flux | nvidia-qwen | nvidia-openai-images */
+  /** 当前仅 nvidia-flux */
   protocol?: string | null
   enabled: boolean
   sortOrder: number

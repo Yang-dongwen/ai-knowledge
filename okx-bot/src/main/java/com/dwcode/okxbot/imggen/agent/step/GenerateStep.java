@@ -6,6 +6,7 @@ import com.dwcode.okxbot.imggen.port.ImageAsset;
 import com.dwcode.okxbot.imggen.port.ImageGenCommand;
 import com.dwcode.okxbot.imggen.port.ImageGenPort;
 import com.dwcode.okxbot.imggen.port.ImageGenResult;
+import com.dwcode.okxbot.imggen.util.AspectRatioMapper;
 import com.dwcode.okxbot.video.service.AiModelConfigService;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
@@ -63,9 +64,7 @@ public class GenerateStep implements PipelineStep {
         String modelId = task.getModel();
         String providerKey = task.getProvider();
         String invokeUrl = null;
-        String protocol = null;
         int defaultSteps = 4;
-        // 真出图：从库表解析 invokeUrl / protocol；mock 时 adapter 不依赖 URL
         boolean mockGen = properties.isMockPipeline()
                 || "mock".equalsIgnoreCase(properties.getSteps().getGenerate());
         if (!mockGen) {
@@ -73,12 +72,20 @@ public class GenerateStep implements PipelineStep {
             modelId = cfg.getModelId();
             providerKey = cfg.getProvider();
             invokeUrl = cfg.getInvokeUrl();
-            protocol = cfg.getProtocol();
             if (cfg.getDefaultSteps() != null && cfg.getDefaultSteps() > 0) {
                 defaultSteps = cfg.getDefaultSteps();
             }
-        } else {
-            protocol = "mock";
+        }
+
+        String aspect = task.getAspectRatio() != null ? task.getAspectRatio() : "1:1";
+        AspectRatioMapper.Size size = AspectRatioMapper.map(aspect);
+        if (task.getWidth() == null || task.getHeight() == null
+                || task.getWidth() != size.width() || task.getHeight() != size.height()) {
+            log.info("校正分辨率: taskId={} aspect={} {}x{} → {}x{}",
+                    task.getId(), aspect, task.getWidth(), task.getHeight(),
+                    size.width(), size.height());
+            task.setWidth(size.width());
+            task.setHeight(size.height());
         }
 
         ImageGenCommand cmd = ImageGenCommand.builder()
@@ -87,10 +94,9 @@ public class GenerateStep implements PipelineStep {
                 .negativePrompt(task.getNegativePrompt())
                 .modelId(modelId)
                 .providerKey(providerKey)
-                .protocol(protocol)
                 .invokeUrl(invokeUrl)
-                .width(task.getWidth() != null ? task.getWidth() : 1024)
-                .height(task.getHeight() != null ? task.getHeight() : 1024)
+                .width(size.width())
+                .height(size.height())
                 .steps(task.getSteps() != null ? task.getSteps() : defaultSteps)
                 .n(task.getN() != null ? task.getN() : 1)
                 .seed(task.getSeed())

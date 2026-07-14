@@ -357,7 +357,7 @@ CREATE TABLE IF NOT EXISTS ai_model_config (
     invoke_url VARCHAR(512) NULL COMMENT '生图 GenAI URL（image 用）',
     default_steps INT NULL COMMENT '生图默认步数',
     max_steps INT NULL COMMENT '生图最大步数',
-    protocol VARCHAR(64) NULL COMMENT '生图协议 nvidia-flux|nvidia-qwen|nvidia-openai-images',
+    protocol VARCHAR(64) NULL COMMENT '生图协议，当前仅 nvidia-flux',
     enabled TINYINT NOT NULL DEFAULT 1 COMMENT '是否启用 1是 0否',
     sort_order INT NOT NULL DEFAULT 0 COMMENT '排序，越小越靠前',
     remark VARCHAR(255) COMMENT '备注',

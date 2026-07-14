@@ -1,11 +1,9 @@
 package com.dwcode.okxbot.imggen.config;
 
 import com.dwcode.okxbot.chat.config.AiProperties;
-import com.dwcode.okxbot.imggen.adapter.CompositeImageGenPort;
 import com.dwcode.okxbot.imggen.adapter.flux.NvidiaFluxImageAdapter;
 import com.dwcode.okxbot.imggen.adapter.llm.LlmPromptEnhanceAdapter;
 import com.dwcode.okxbot.imggen.adapter.mock.MockImageGenAdapter;
-import com.dwcode.okxbot.imggen.adapter.qwen.NvidiaQwenImageAdapter;
 import com.dwcode.okxbot.imggen.port.ImageGenPort;
 import com.dwcode.okxbot.imggen.port.PromptEnhancePort;
 import com.dwcode.okxbot.video.client.LlmChatClient;
@@ -24,34 +22,16 @@ public class ImgGenBeanConfig {
     }
 
     @Bean
-    public MockImageGenAdapter mockImageGenAdapter(ImgGenProperties props) {
-        return new MockImageGenAdapter(props);
-    }
-
-    @Bean
-    public NvidiaFluxImageAdapter nvidiaFluxImageAdapter(ImgGenProperties props,
-                                                         AiProperties aiProperties,
-                                                         ObjectMapper objectMapper) {
-        return new NvidiaFluxImageAdapter(props, aiProperties, objectMapper);
-    }
-
-    @Bean
-    public NvidiaQwenImageAdapter nvidiaQwenImageAdapter(ImgGenProperties props,
-                                                         AiProperties aiProperties,
-                                                         ObjectMapper objectMapper) {
-        return new NvidiaQwenImageAdapter(props, aiProperties, objectMapper);
-    }
-
-    @Bean
     public ImageGenPort imageGenPort(ImgGenProperties props,
-                                     MockImageGenAdapter mock,
-                                     NvidiaFluxImageAdapter flux,
-                                     NvidiaQwenImageAdapter qwen) {
-        if (props.isMockPipeline() || "mock".equalsIgnoreCase(props.getSteps().getGenerate())) {
+                                     AiProperties aiProperties,
+                                     ObjectMapper objectMapper) {
+        boolean mock = props.isMockPipeline()
+                || "mock".equalsIgnoreCase(props.getSteps().getGenerate());
+        if (mock) {
             log.info("ImgGen ImageGenPort mode=mock");
-            return mock;
+            return new MockImageGenAdapter(props);
         }
-        log.info("ImgGen ImageGenPort mode=composite (flux + qwen + openai-images)");
-        return new CompositeImageGenPort(flux, qwen, mock);
+        log.info("ImgGen ImageGenPort mode=nvidia-flux url={}", props.getFlux().getInvokeUrl());
+        return new NvidiaFluxImageAdapter(props, aiProperties, objectMapper);
     }
 }

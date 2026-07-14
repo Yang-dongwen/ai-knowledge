@@ -12,7 +12,7 @@ public class ImgGenImageModelResponse {
     private String invokeUrl;
     private int defaultSteps;
     private int maxSteps;
-    /** nvidia-flux | nvidia-qwen | nvidia-openai-images */
+    /** 预留：当前仅支持 NVIDIA FLUX GenAI（nvidia-flux） */
     private String protocol;
     private String description;
     private boolean defaultModel;
