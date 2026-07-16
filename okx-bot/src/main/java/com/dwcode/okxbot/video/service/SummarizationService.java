@@ -1,7 +1,9 @@
 package com.dwcode.okxbot.video.service;
 
-import com.dwcode.okxbot.common.exception.BusinessException;
-import com.dwcode.okxbot.video.client.LlmChatClient;
+import com.dwcode.okxbot.common.ai.LlmCallOptions;
+import com.dwcode.okxbot.common.ai.LlmChatClient;
+import com.dwcode.okxbot.common.ai.LlmContentHelper;
+import com.dwcode.okxbot.video.config.VideoProperties;
 import com.dwcode.okxbot.video.dto.*;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -15,8 +17,9 @@ import java.util.Locale;
 
 /**
  * 内容总结与 repurpose 脚本生成服务。
- *
- * 通过 {@link LlmChatClient} 调用 LLM，要求结构化 JSON 输出。
+ * <p>
+ * Phase B：请求侧开启 {@code response_format=json_object}，解析优先 ObjectMapper 直转
+ * {@link VideoSummaryPart}，失败再走字段级宽松解析。
  */
 @Slf4j
 @Service
@@ -25,11 +28,12 @@ public class SummarizationService {
 
     private static final String SYSTEM_PROMPT = """
             你是专业的视频内容分析师，擅长从字幕中提取核心要点，并生成适合自媒体二次创作的内容。
-            你必须只输出合法 JSON，不要包含 markdown 代码围栏，不要输出 JSON 以外的解释文字。
+            你必须只输出合法 JSON 对象，不要包含 markdown 代码围栏，不要输出 JSON 以外的解释文字。
             """;
 
     private final LlmChatClient llmChatClient;
     private final ObjectMapper objectMapper;
+    private final VideoProperties videoProperties;
 
     /**
      * 基于转录结果生成结构化摘要。
@@ -49,7 +53,15 @@ public class SummarizationService {
                 title, llmProvider, llmModel,
                 transcription.getText() != null ? transcription.getText().length() : 0);
 
-        String raw = llmChatClient.chat(SYSTEM_PROMPT, userPrompt, llmProvider, llmModel);
+        LlmCallOptions options = LlmCallOptions.builder()
+                .temperature(videoProperties.getLlm().getTemperature())
+                .maxTokens(videoProperties.getLlm().getMaxTokens())
+                .maxRetries(videoProperties.getLlm().getMaxRetries())
+                .timeoutSeconds(180)
+                .responseFormat("json_object")
+                .build();
+
+        String raw = llmChatClient.chat(SYSTEM_PROMPT, userPrompt, llmProvider, llmModel, options);
         VideoSummaryPart part = parseSummaryJson(raw);
 
         if (!extractMindMap) {
@@ -86,7 +98,6 @@ public class SummarizationService {
             segmentsText.append(transcription.getText());
         }
 
-        // 控制 prompt 长度，过长截断中间保留头尾
         String transcriptBody = segmentsText.toString();
         final int maxChars = 24000;
         if (transcriptBody.length() > maxChars) {
@@ -132,7 +143,26 @@ public class SummarizationService {
     }
 
     private VideoSummaryPart parseSummaryJson(String raw) {
-        String json = extractJson(raw);
+        String json = LlmContentHelper.extractJsonObjectOrRaw(raw);
+        // Phase B：优先 POJO 直转
+        try {
+            VideoSummaryPart direct = objectMapper.readValue(json, VideoSummaryPart.class);
+            if (direct != null) {
+                if (direct.getKeyPoints() == null) {
+                    direct.setKeyPoints(new ArrayList<>());
+                }
+                if (direct.getChapters() == null) {
+                    direct.setChapters(new ArrayList<>());
+                }
+                if (!direct.getKeyPoints().isEmpty() || !direct.getChapters().isEmpty()
+                        || direct.getMindMapMarkdown() != null || direct.getRepurposeScript() != null) {
+                    return direct;
+                }
+            }
+        } catch (Exception e) {
+            log.debug("VideoSummaryPart 直转失败，改字段级解析: {}", e.getMessage());
+        }
+
         try {
             JsonNode root = objectMapper.readTree(json);
             VideoSummaryPart part = new VideoSummaryPart();
@@ -170,39 +200,15 @@ public class SummarizationService {
             }
             return part;
         } catch (Exception e) {
-            log.error("解析 LLM 总结 JSON 失败, raw={}", truncate(raw, 500), e);
-            // 兜底：把原文塞进 repurposeScript，避免整任务失败
+            log.error("解析 LLM 总结 JSON 失败, raw={}", LlmContentHelper.truncate(raw, 500), e);
             VideoSummaryPart fallback = new VideoSummaryPart();
             KeyPointDto kp = new KeyPointDto();
             kp.setTimestamp("00:00:00");
             kp.setPoint("模型未返回合法 JSON，已保留原文摘要片段");
             fallback.getKeyPoints().add(kp);
-            fallback.setRepurposeScript(truncate(raw, 2000));
+            fallback.setRepurposeScript(LlmContentHelper.truncate(raw, 2000));
             return fallback;
         }
-    }
-
-    /**
-     * 从可能带 ```json 围栏的文本中提取 JSON 对象。
-     */
-    private String extractJson(String raw) {
-        if (raw == null || raw.isBlank()) {
-            throw new BusinessException("LLM 返回为空");
-        }
-        String text = raw.trim();
-        if (text.startsWith("```")) {
-            int firstNl = text.indexOf('\n');
-            int lastFence = text.lastIndexOf("```");
-            if (firstNl > 0 && lastFence > firstNl) {
-                text = text.substring(firstNl + 1, lastFence).trim();
-            }
-        }
-        int start = text.indexOf('{');
-        int end = text.lastIndexOf('}');
-        if (start >= 0 && end > start) {
-            return text.substring(start, end + 1);
-        }
-        return text;
     }
 
     static String formatTimestamp(double seconds) {
@@ -217,12 +223,5 @@ public class SummarizationService {
             return String.format("%02d:%02d:%02d", h, m, s);
         }
         return String.format("%02d:%02d", m, s);
-    }
-
-    private static String truncate(String text, int max) {
-        if (text == null) {
-            return "";
-        }
-        return text.length() <= max ? text : text.substring(0, max) + "...";
     }
 }

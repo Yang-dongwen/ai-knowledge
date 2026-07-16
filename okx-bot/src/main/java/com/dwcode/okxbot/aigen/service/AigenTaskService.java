@@ -64,12 +64,47 @@ public class AigenTaskService {
                 ? request.getOptions()
                 : new AigenCreateOptions();
 
-        String templateId = blankToNull(request.getTemplateId());
-        if (templateId == null) {
-            templateId = TemplateRegistry.KNOWLEDGE_CARDS;
+        String pipelineMode = blankToNull(options.getPipelineMode());
+        if (pipelineMode == null) {
+            pipelineMode = blankToNull(aigenProperties.getDefaultPipelineMode());
         }
-        if (!templateRegistry.exists(templateId)) {
-            throw new BusinessException(400, "不支持的模板: " + templateId);
+        if (pipelineMode == null) {
+            pipelineMode = "visual";
+        }
+        pipelineMode = pipelineMode.toLowerCase();
+        if (!"visual".equals(pipelineMode) && !"template".equals(pipelineMode)) {
+            throw new BusinessException(400, "pipelineMode 仅支持 visual / template");
+        }
+
+        String templateId = blankToNull(request.getTemplateId());
+        if ("visual".equals(pipelineMode)) {
+            if (templateId == null) {
+                templateId = TemplateRegistry.VISUAL_TIMELINE;
+            }
+        } else {
+            if (templateId == null) {
+                templateId = TemplateRegistry.KNOWLEDGE_CARDS;
+            }
+            if (!templateRegistry.exists(templateId)) {
+                throw new BusinessException(400, "不支持的模板: " + templateId);
+            }
+        }
+
+        String audioMode = blankToNull(options.getAudioMode());
+        if (audioMode == null) {
+            audioMode = aigenProperties.getVisual().getDefaultAudioMode();
+        }
+        if (audioMode == null) {
+            audioMode = "bgm_only";
+        }
+        audioMode = audioMode.toLowerCase();
+        if (!Set.of("none", "bgm_only", "tts").contains(audioMode)) {
+            throw new BusinessException(400, "audioMode 仅支持 none / bgm_only / tts");
+        }
+
+        String stylePreset = blankToNull(options.getStylePreset());
+        if (stylePreset == null) {
+            stylePreset = aigenProperties.getVisual().getDefaultStylePreset();
         }
 
         String aspect = blankToNull(options.getAspectRatio());
@@ -134,12 +169,40 @@ public class AigenTaskService {
             }
         }
 
+        // visual 出图模型（与文生图共用 capability=image）
+        String imageProvider = blankToNull(options.getImageProvider());
+        String imageModel = blankToNull(options.getImageModel());
+        boolean needRealImage = "visual".equals(pipelineMode)
+                && !aigenProperties.isMockPipeline()
+                && !"mock".equalsIgnoreCase(aigenProperties.getSteps().getAsset());
+        if (needRealImage) {
+            var imgCfg = aiModelConfigService.requireEnabledImageModel(imageProvider, imageModel);
+            imageProvider = imgCfg.getProvider();
+            imageModel = imgCfg.getModelId();
+        } else if ("visual".equals(pipelineMode)) {
+            // mock 出图：允许空，落库占位
+            if (imageProvider == null) {
+                imageProvider = blankToNull(aigenProperties.getVisual().getImageProviderKey());
+            }
+            if (imageProvider == null) {
+                imageProvider = "nvidia";
+            }
+            if (imageModel == null) {
+                imageModel = "mock-image";
+            }
+        }
+
         AigenTaskEntity entity = new AigenTaskEntity();
         entity.setUserId(SecurityUtils.requireCurrentUserId());
         entity.setPrompt(prompt);
         entity.setTitle(deriveTitle(prompt));
         entity.setNegativePrompt(blankToNull(options.getNegativePrompt()));
         entity.setTemplateId(templateId);
+        entity.setPipelineMode(pipelineMode);
+        entity.setAudioMode(audioMode);
+        entity.setStylePreset(stylePreset);
+        entity.setShotCount(0);
+        entity.setAssetDoneCount(0);
         entity.setStatus(AigenTaskStatus.PENDING.name());
         entity.setCurrentStep("排队中");
         entity.setProgress(0);
@@ -151,13 +214,15 @@ public class AigenTaskService {
         entity.setStyleJson(blankToNull(options.getStyleJson()));
         entity.setLlmProvider(llmProvider);
         entity.setLlmModel(llmModel);
+        entity.setImageProvider(imageProvider);
+        entity.setImageModel(imageModel);
         entity.setCreatedAt(LocalDateTime.now());
         entity.setUpdatedAt(LocalDateTime.now());
         aigenTaskMapper.insert(entity);
 
-        log.info("创建 aigen 任务: id={}, template={}, duration={}s, mockPipeline={}, llm={}/{}",
-                entity.getId(), templateId, duration, aigenProperties.isMockPipeline(),
-                llmProvider, llmModel);
+        log.info("创建 aigen 任务: id={}, mode={}, template={}, audio={}, duration={}s, llm={}/{}, image={}/{}",
+                entity.getId(), pipelineMode, templateId, audioMode, duration,
+                llmProvider, llmModel, imageProvider, imageModel);
         taskScheduler.notifyPending();
         eventPublisher.publishEntity(entity, AigenTaskEventPublisher.TYPE_CREATED);
         return toResponse(entity);
@@ -307,6 +372,29 @@ public class AigenTaskService {
             } else if (m != null) {
                 entity.setLlmModel(m);
             }
+
+            // visual 出图模型覆盖
+            String ip = blankToNull(request.getImageProvider());
+            String im = blankToNull(request.getImageModel());
+            if (ip != null || im != null) {
+                boolean needRealImage = "visual".equalsIgnoreCase(entity.getPipelineMode())
+                        && !aigenProperties.isMockPipeline()
+                        && !"mock".equalsIgnoreCase(aigenProperties.getSteps().getAsset());
+                if (needRealImage) {
+                    String useP = ip != null ? ip : entity.getImageProvider();
+                    String useM = im != null ? im : entity.getImageModel();
+                    var imgCfg = aiModelConfigService.requireEnabledImageModel(useP, useM);
+                    entity.setImageProvider(imgCfg.getProvider());
+                    entity.setImageModel(imgCfg.getModelId());
+                } else {
+                    if (ip != null) {
+                        entity.setImageProvider(ip);
+                    }
+                    if (im != null) {
+                        entity.setImageModel(im);
+                    }
+                }
+            }
         }
 
         // 清空工作目录中的旧分镜/成片，避免成功任务重跑残留文件
@@ -445,6 +533,11 @@ public class AigenTaskService {
                 .title(e.getTitle())
                 .prompt(e.getPrompt())
                 .templateId(e.getTemplateId())
+                .pipelineMode(e.getPipelineMode() != null ? e.getPipelineMode() : "template")
+                .audioMode(e.getAudioMode())
+                .stylePreset(e.getStylePreset())
+                .shotCount(e.getShotCount())
+                .assetDoneCount(e.getAssetDoneCount())
                 .status(e.getStatus())
                 .currentStep(e.getCurrentStep())
                 .progress(e.getProgress() != null ? e.getProgress() : 0)
@@ -455,6 +548,8 @@ public class AigenTaskService {
                 .bgmId(e.getBgmId())
                 .llmProvider(e.getLlmProvider())
                 .llmModel(e.getLlmModel())
+                .imageProvider(e.getImageProvider())
+                .imageModel(e.getImageModel())
                 // 空串归一，避免 null 被前端当成「字段缺失」而残留旧值
                 .errorMessage(e.getErrorMessage() == null ? "" : e.getErrorMessage())
                 .durationSeconds(e.getDurationSeconds())

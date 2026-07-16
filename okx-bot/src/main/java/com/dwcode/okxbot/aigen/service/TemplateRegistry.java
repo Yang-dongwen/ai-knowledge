@@ -17,10 +17,21 @@ public class TemplateRegistry {
 
     public static final String KNOWLEDGE_CARDS = "knowledge-cards";
     public static final String INSIGHT_COMPARE = "insight-compare";
+    /** Visual Timeline 画面优先模式（非口播模板） */
+    public static final String VISUAL_TIMELINE = "visual-timeline";
 
     private static final Map<String, TemplateDef> DEFS = new LinkedHashMap<>();
 
     static {
+        DEFS.put(VISUAL_TIMELINE, new TemplateDef(
+                VISUAL_TIMELINE,
+                "画面短片 (Visual)",
+                "镜头表 + AI 画面 + 叠字合成（默认无强制口播）",
+                "VisualTimeline",
+                Set.of("visual"),
+                List.of("9:16", "16:9", "1:1"),
+                40, 10, 90
+        ));
         DEFS.put(KNOWLEDGE_CARDS, new TemplateDef(
                 KNOWLEDGE_CARDS,
                 "知识卡片",

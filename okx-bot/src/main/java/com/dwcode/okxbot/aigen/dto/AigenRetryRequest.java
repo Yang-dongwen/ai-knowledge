@@ -11,4 +11,8 @@ public class AigenRetryRequest {
     private String llmProvider;
     /** 可选，覆盖原任务 LLM 模型 */
     private String llmModel;
+    /** 可选，覆盖 visual 出图供应商 */
+    private String imageProvider;
+    /** 可选，覆盖 visual 出图模型 */
+    private String imageModel;
 }

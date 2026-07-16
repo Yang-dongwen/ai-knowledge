@@ -5,12 +5,34 @@ import {
   InsightCompare,
   defaultInsightStoryboard,
 } from "./templates/InsightCompare";
+import {
+  VisualTimeline,
+  defaultShotlist,
+  type ShotlistProps,
+} from "./templates/VisualTimeline";
 import type { Storyboard } from "./types";
 
-const calcMeta = ({ props }: { props: Storyboard }) => {
+const calcMetaStoryboard = ({ props }: { props: Storyboard }) => {
   const meta = props?.meta;
   return {
     durationInFrames: Math.max(30, meta?.durationInFrames || 300),
+    fps: meta?.fps || 30,
+    width: meta?.width || 1080,
+    height: meta?.height || 1920,
+  };
+};
+
+const calcMetaShotlist = ({ props }: { props: ShotlistProps }) => {
+  const meta = props?.meta;
+  let duration = meta?.durationInFrames || 0;
+  if (!duration && props?.shots?.length) {
+    duration = props.shots.reduce(
+      (sum, s) => sum + Math.max(1, s.durationInFrames || 90),
+      0
+    );
+  }
+  return {
+    durationInFrames: Math.max(30, duration || 300),
     fps: meta?.fps || 30,
     width: meta?.width || 1080,
     height: meta?.height || 1920,
@@ -21,8 +43,17 @@ function asStoryboard(props: unknown): Storyboard {
   return (props as Storyboard) || defaultStoryboard;
 }
 
+function asShotlist(props: unknown): ShotlistProps {
+  const p = props as ShotlistProps;
+  if (p?.shots?.length) {
+    return p;
+  }
+  return defaultShotlist;
+}
+
 export const RemotionRoot: React.FC = () => {
   const previewProps = asStoryboard(getInputProps());
+  const previewShotlist = asShotlist(getInputProps());
 
   return (
     <>
@@ -35,7 +66,7 @@ export const RemotionRoot: React.FC = () => {
         height={previewProps.meta?.height || 1920}
         defaultProps={defaultStoryboard}
         calculateMetadata={async ({ props }) =>
-          calcMeta({ props: asStoryboard(props) })
+          calcMetaStoryboard({ props: asStoryboard(props) })
         }
       />
       <Composition
@@ -47,7 +78,19 @@ export const RemotionRoot: React.FC = () => {
         height={defaultInsightStoryboard.meta.height}
         defaultProps={defaultInsightStoryboard}
         calculateMetadata={async ({ props }) =>
-          calcMeta({ props: asStoryboard(props) })
+          calcMetaStoryboard({ props: asStoryboard(props) })
+        }
+      />
+      <Composition
+        id="VisualTimeline"
+        component={VisualTimeline as unknown as React.FC}
+        durationInFrames={previewShotlist.meta?.durationInFrames || 300}
+        fps={previewShotlist.meta?.fps || 30}
+        width={previewShotlist.meta?.width || 1080}
+        height={previewShotlist.meta?.height || 1920}
+        defaultProps={defaultShotlist}
+        calculateMetadata={async ({ props }) =>
+          calcMetaShotlist({ props: asShotlist(props) })
         }
       />
     </>

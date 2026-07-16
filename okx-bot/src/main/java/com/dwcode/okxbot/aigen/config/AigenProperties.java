@@ -28,10 +28,33 @@ public class AigenProperties {
     private int maxDurationSec = 90;
     private int minDurationSec = 5;
 
+    /**
+     * 默认流水线：visual | template
+     */
+    private String defaultPipelineMode = "visual";
+
     private Steps steps = new Steps();
     private Llm llm = new Llm();
     private Tts tts = new Tts();
     private Remotion remotion = new Remotion();
+    private Visual visual = new Visual();
+
+    @Data
+    public static class Visual {
+        private int maxShots = 12;
+        private int minShots = 4;
+        private int imageConcurrency = 2;
+        /** false=单镜出图失败用占位图继续 */
+        private boolean failOnShotError = false;
+        private String defaultAudioMode = "bgm_only";
+        private String defaultStylePreset = "cinematic-dark";
+        private String motionDefault = "ken_burns";
+        private String compositionId = "VisualTimeline";
+        /** 预置 BGM 目录（相对运行目录或绝对路径） */
+        private String bgmDir = "./data/aigen/_bgm";
+        private int imageSteps = 4;
+        private String imageProviderKey = "nvidia";
+    }
 
     @Data
     public static class Steps {

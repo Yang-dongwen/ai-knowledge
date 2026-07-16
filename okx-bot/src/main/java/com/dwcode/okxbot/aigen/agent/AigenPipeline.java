@@ -6,6 +6,7 @@ import com.dwcode.okxbot.aigen.agent.step.PipelineStep;
 import com.dwcode.okxbot.aigen.agent.step.PlanStep;
 import com.dwcode.okxbot.aigen.agent.step.RenderStep;
 import com.dwcode.okxbot.aigen.domain.StoryboardDto;
+import com.dwcode.okxbot.aigen.domain.shot.ShotlistDto;
 import com.dwcode.okxbot.aigen.entity.AigenTaskEntity;
 import com.dwcode.okxbot.aigen.enums.AigenTaskStatus;
 import com.dwcode.okxbot.aigen.event.AigenTaskEventPublisher;
@@ -86,7 +87,11 @@ public class AigenPipeline {
 
             if (task.getStoryboardJson() != null && !task.getStoryboardJson().isBlank()) {
                 try {
-                    ctx.setStoryboard(objectMapper.readValue(task.getStoryboardJson(), StoryboardDto.class));
+                    if (ctx.isVisualMode()) {
+                        ctx.setShotlist(objectMapper.readValue(task.getStoryboardJson(), ShotlistDto.class));
+                    } else {
+                        ctx.setStoryboard(objectMapper.readValue(task.getStoryboardJson(), StoryboardDto.class));
+                    }
                 } catch (Exception ignored) {
                     // ignore
                 }
@@ -306,6 +311,21 @@ public class AigenPipeline {
         }
         if (fromStep.getWorkDir() != null) {
             target.setWorkDir(fromStep.getWorkDir());
+        }
+        if (fromStep.getShotCount() != null) {
+            target.setShotCount(fromStep.getShotCount());
+        }
+        if (fromStep.getAssetDoneCount() != null) {
+            target.setAssetDoneCount(fromStep.getAssetDoneCount());
+        }
+        if (fromStep.getPipelineMode() != null) {
+            target.setPipelineMode(fromStep.getPipelineMode());
+        }
+        if (fromStep.getAudioMode() != null) {
+            target.setAudioMode(fromStep.getAudioMode());
+        }
+        if (fromStep.getStylePreset() != null) {
+            target.setStylePreset(fromStep.getStylePreset());
         }
     }
 

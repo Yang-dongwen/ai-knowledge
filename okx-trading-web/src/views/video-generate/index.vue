@@ -12,14 +12,14 @@
           </a-tooltip>
         </div>
         <p class="page-subtitle">
-          一句话生成分镜 · 配音 · 成片，适合短视频知识科普与口播脚本
+          画面优先短片（镜头表 + AI 画面）或模板口播；音频可选
         </p>
         <div class="pipeline-row">
-          <span class="pipe-chip"><i>1</i>规划分镜</span>
+          <span class="pipe-chip"><i>1</i>规划镜头</span>
           <span class="pipe-sep" />
-          <span class="pipe-chip"><i>2</i>配音素材</span>
+          <span class="pipe-chip"><i>2</i>生成画面</span>
           <span class="pipe-sep" />
-          <span class="pipe-chip"><i>3</i>渲染成片</span>
+          <span class="pipe-chip"><i>3</i>合成成片</span>
         </div>
       </div>
 
@@ -106,14 +106,59 @@
 
       <div class="options-grid">
         <div class="opt">
+          <span class="field-label">生成模式</span>
+          <a-radio-group v-model:value="pipelineMode" button-style="solid" size="middle">
+            <a-radio-button value="visual">画面短片</a-radio-button>
+            <a-radio-button value="template">模板口播</a-radio-button>
+          </a-radio-group>
+        </div>
+        <div v-if="pipelineMode === 'template'" class="opt">
           <span class="field-label">模板</span>
           <a-select
             v-model:value="templateId"
             class="full"
-            :options="templateOptions"
+            :options="templateOptions.filter((o) => o.value !== 'visual-timeline')"
             :loading="templatesLoading"
             placeholder="选择模板"
           />
+        </div>
+        <div v-if="pipelineMode === 'visual'" class="opt">
+          <span class="field-label">音频</span>
+          <a-select
+            v-model:value="audioMode"
+            class="full"
+            :options="audioModeOptions"
+            placeholder="音频模式"
+          />
+        </div>
+        <div v-if="pipelineMode === 'visual'" class="opt">
+          <span class="field-label">风格</span>
+          <a-select
+            v-model:value="stylePreset"
+            class="full"
+            :options="stylePresetOptions"
+            placeholder="风格预设"
+          />
+        </div>
+        <div v-if="pipelineMode === 'visual'" class="opt full-row">
+          <span class="field-label">生图模型</span>
+          <a-select
+            v-model:value="selectedImageKey"
+            class="full"
+            size="large"
+            show-search
+            :options="imageModelOptions"
+            :loading="imageModelsLoading"
+            :filter-option="filterModelOption"
+            placeholder="选择每镜画面所用的生图模型"
+          />
+          <div v-if="!imageModelsLoading && !imageModels.length" class="model-status muted" style="margin-top: 6px">
+            <a-tag color="warning">
+              暂无生图模型
+              <template v-if="auth.isSuperAdmin"> — 请在「模型管理」添加 capability=image（含 invokeUrl）</template>
+              <template v-else> — 请联系管理员配置 image 模型</template>
+            </a-tag>
+          </div>
         </div>
         <div class="opt">
           <span class="field-label">画幅</span>
@@ -152,7 +197,7 @@
             <a-radio-button value="en">English</a-radio-button>
           </a-radio-group>
         </div>
-        <div class="opt">
+        <div v-if="pipelineMode === 'template'" class="opt">
           <span class="field-label">配音音色</span>
           <a-select
             v-model:value="voiceId"
@@ -495,6 +540,14 @@
               <span class="k">LLM 模型</span>
               <span class="v">{{ selected.llmProvider || '—' }} / {{ selected.llmModel || '—' }}</span>
             </div>
+            <div class="detail-row" v-if="selected.imageProvider || selected.imageModel">
+              <span class="k">生图模型</span>
+              <span class="v">{{ selected.imageProvider || '—' }} / {{ selected.imageModel || '—' }}</span>
+            </div>
+            <div class="detail-row" v-if="selected.pipelineMode">
+              <span class="k">生成模式</span>
+              <span class="v">{{ selected.pipelineMode === 'visual' ? '画面短片' : '模板口播' }}</span>
+            </div>
             <div class="detail-row" v-if="selected.errorMessage">
               <span class="k">错误</span>
               <span class="v error">{{ selected.errorMessage }}</span>
@@ -610,19 +663,69 @@ import {
   DownOutlined
 } from '@ant-design/icons-vue'
 import { aigenApi } from '@/api/aigen.api'
+import { imggenApi } from '@/api/imggen.api'
 import { videoApi } from '@/api/video.api'
 import { connectAigenTaskEvents } from '@/api/aigen.events'
 import { useAuthStore } from '@/stores/auth.store'
 import ModelManageModal from '@/views/video-extract/ModelManageModal.vue'
-import type { AigenTaskItem, AigenTemplate, AiProvider } from '@/types/api'
+import type { AigenTaskItem, AigenTemplate, AiProvider, ImgGenImageModel } from '@/types/api'
 
 const auth = useAuthStore()
 
 const prompt = ref('')
+const pipelineMode = ref<'visual' | 'template'>('visual')
 const templateId = ref('knowledge-cards')
+const audioMode = ref('bgm_only')
+const stylePreset = ref('cinematic-dark')
 const aspectRatio = ref('9:16')
 const targetDurationSec = ref(30)
 const language = ref('zh')
+
+const audioModeOptions = [
+  { value: 'none', label: '无音频（纯画面）' },
+  { value: 'bgm_only', label: '仅 BGM（需 data/aigen/_bgm）' },
+  { value: 'tts', label: '口播 TTS（后续增强）' }
+]
+const stylePresetOptions = [
+  { value: 'cinematic-dark', label: '电影暗调' },
+  { value: 'clean-tech', label: '科技干净' },
+  { value: 'vibrant-social', label: '高饱和短视频' },
+  { value: 'soft-knowledge', label: '柔和知识向' }
+]
+
+/** visual 生图模型（与文生图共用 /imggen/models） */
+const imageModels = ref<ImgGenImageModel[]>([])
+const imageModelsLoading = ref(false)
+/** 格式 provider::modelId，与文生图页一致 */
+const selectedImageKey = ref('')
+const imageModelOptions = computed(() =>
+  imageModels.value.map((m) => ({
+    value: `${m.provider || 'nvidia'}::${m.id}`,
+    label: `${m.name || m.id}${m.provider ? ` · ${m.provider}` : ''}`
+  }))
+)
+
+function parseImageKey(key: string): { provider: string; model: string } | null {
+  if (!key || !key.includes('::')) return null
+  const i = key.indexOf('::')
+  return { provider: key.slice(0, i), model: key.slice(i + 2) }
+}
+
+async function loadImageModels() {
+  imageModelsLoading.value = true
+  try {
+    const res = await imggenApi.listImageModels()
+    imageModels.value = res.data || []
+    if (!selectedImageKey.value && imageModels.value.length) {
+      const def = imageModels.value.find((m) => m.defaultModel) || imageModels.value[0]
+      selectedImageKey.value = `${def.provider || 'nvidia'}::${def.id}`
+    }
+  } catch {
+    imageModels.value = []
+  } finally {
+    imageModelsLoading.value = false
+  }
+}
 
 /** 在时长控件上滚轮调节秒数 */
 function onDurationWheel(e: WheelEvent) {
@@ -732,13 +835,17 @@ const currentModelTestStatus = computed<'ok' | 'fail' | 'none'>(() => {
   return 'none'
 })
 
-const canSubmit = computed(
-  () =>
-    prompt.value.trim().length > 0 &&
-    !!selectedModelKey.value &&
-    !submitting.value &&
-    !modelsLoading.value
-)
+const canSubmit = computed(() => {
+  if (!prompt.value.trim() || !selectedModelKey.value || submitting.value || modelsLoading.value) {
+    return false
+  }
+  // 画面短片：真实出图时需要选生图模型
+  if (pipelineMode.value === 'visual') {
+    if (imageModelsLoading.value) return false
+    if (imageModels.value.length > 0 && !selectedImageKey.value) return false
+  }
+  return true
+})
 
 const PAUSE_BOUNDARY_TIP =
   '暂停仅在步骤边界生效：当前「规划 / 素材 / 渲染」会先跑完，再中断并释放并发槽。'
@@ -935,7 +1042,7 @@ async function loadModels() {
 }
 
 async function onModelsChanged() {
-  await loadModels()
+  await Promise.all([loadModels(), loadImageModels()])
 }
 
 async function handleTestModel() {
@@ -1034,6 +1141,9 @@ function mergeFromEvent(data: Record<string, unknown>) {
   if (num('targetDurationSec') != null) patch.targetDurationSec = num('targetDurationSec')
   if (data.llmProvider != null) patch.llmProvider = String(data.llmProvider)
   if (data.llmModel != null) patch.llmModel = String(data.llmModel)
+  if (data.imageProvider != null) patch.imageProvider = String(data.imageProvider)
+  if (data.imageModel != null) patch.imageModel = String(data.imageModel)
+  if (data.pipelineMode != null) patch.pipelineMode = String(data.pipelineMode)
   if (errorMessage !== undefined) patch.errorMessage = errorMessage
   if (num('durationSeconds') != null) patch.durationSeconds = num('durationSeconds')
   if (data.outputAvailable != null) patch.outputAvailable = Boolean(data.outputAvailable)
@@ -1196,18 +1306,36 @@ async function handleSubmit() {
     message.warning('请先选择 LLM 模型')
     return
   }
+  let imageProvider: string | undefined
+  let imageModel: string | undefined
+  if (pipelineMode.value === 'visual') {
+    const img = parseImageKey(selectedImageKey.value)
+    if (imageModels.value.length > 0 && !img) {
+      message.warning('请先选择生图模型')
+      return
+    }
+    if (img) {
+      imageProvider = img.provider
+      imageModel = img.model
+    }
+  }
   submitting.value = true
   try {
     const res = await aigenApi.createTask({
       prompt: prompt.value.trim(),
-      templateId: templateId.value,
+      templateId: pipelineMode.value === 'visual' ? 'visual-timeline' : templateId.value,
       options: {
+        pipelineMode: pipelineMode.value,
+        audioMode: audioMode.value,
+        stylePreset: stylePreset.value,
         language: language.value,
         aspectRatio: aspectRatio.value,
         targetDurationSec: targetDurationSec.value,
-        voiceId: voiceId.value,
+        voiceId: pipelineMode.value === 'template' ? voiceId.value : undefined,
         llmProvider: parsed.provider,
-        llmModel: parsed.model
+        llmModel: parsed.model,
+        imageProvider,
+        imageModel
       }
     })
     const task = res.data
@@ -1497,7 +1625,7 @@ function startPolling() {
 }
 
 onMounted(async () => {
-  await Promise.all([loadTemplates(), loadModels(), loadVoices(), loadTasks()])
+  await Promise.all([loadTemplates(), loadModels(), loadImageModels(), loadVoices(), loadTasks()])
   await maybeAutoLoadVideo()
   ensurePolling()
   sseClose = connectAigenTaskEvents({

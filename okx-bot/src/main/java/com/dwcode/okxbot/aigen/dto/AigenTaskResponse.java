@@ -13,6 +13,11 @@ public class AigenTaskResponse {
     private String title;
     private String prompt;
     private String templateId;
+    private String pipelineMode;
+    private String audioMode;
+    private String stylePreset;
+    private Integer shotCount;
+    private Integer assetDoneCount;
     private String status;
     private String currentStep;
     private Integer progress;
@@ -23,6 +28,8 @@ public class AigenTaskResponse {
     private String bgmId;
     private String llmProvider;
     private String llmModel;
+    private String imageProvider;
+    private String imageModel;
     private String errorMessage;
     private Double durationSeconds;
     private Boolean outputAvailable;

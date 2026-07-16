@@ -40,6 +40,21 @@ public class AiProperties {
     private int maxContextMessages = 20;
 
     /**
+     * Chat 出站引擎（视频提取 / aigen / imggen 润色共用）。
+     * <ul>
+     *   <li>{@code langchain4j} — 默认，经 LangChain4j OpenAiChatModel</li>
+     *   <li>{@code okhttp} — 回滚到手写 OkHttp 实现</li>
+     * </ul>
+     */
+    private String chatEngine = "langchain4j";
+
+    /** 是否 langchain4j 引擎（忽略大小写；其它值均视为 okhttp） */
+    public boolean isLangChain4jChatEngine() {
+        return chatEngine == null || chatEngine.isBlank()
+                || "langchain4j".equalsIgnoreCase(chatEngine.trim());
+    }
+
+    /**
      * 获取指定供应商配置。
      */
     public ProviderConfig getProvider(String key) {

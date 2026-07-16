@@ -66,6 +66,9 @@ okx:
 ai:
   default-provider: nvidia
   max-context-messages: 20
+  # Chat 出站引擎：langchain4j（默认，Phase A）| okhttp（回滚手写客户端）
+  # 影响：视频提取总结、aigen 分镜、imggen 润色、/video/models/test
+  chat-engine: langchain4j
   providers:
     openai:
       name: OpenAI
@@ -151,9 +154,23 @@ aigen:
   cleanup-on-delete: true
   min-duration-sec: 5
   max-duration-sec: 90
+  # visual=画面优先 Timeline；template=口播模板
+  default-pipeline-mode: visual
+  visual:
+    min-shots: 4
+    max-shots: 12
+    image-concurrency: 2
+    fail-on-shot-error: false
+    default-audio-mode: bgm_only
+    default-style-preset: cinematic-dark
+    motion-default: ken_burns
+    composition-id: VisualTimeline
+    bgm-dir: ./data/aigen/_bgm
+    image-steps: 4
+    image-provider-key: nvidia
   steps:
-    plan: real          # real=调 LLM；mock=本地模板分镜
-    asset: real         # real=TTS 配音；mock=无声估时长
+    plan: real          # real=调 LLM；mock=本地模板分镜/mock 导演
+    asset: real         # real=出图或 TTS；mock=占位图/mock 音频
     render: real        # 需 aigen-remotion
   llm:
     provider: nvidia
@@ -162,6 +179,7 @@ aigen:
     max-tokens: 8192
     max-retries: 3
     timeout-seconds: 120
+    # Phase B：auto/json=response_format=json_object；off=关闭（仅文本）
     structured-mode: auto
     max-repair-attempts: 1
     log-prompts: false

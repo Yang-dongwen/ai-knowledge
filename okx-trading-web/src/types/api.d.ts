@@ -289,6 +289,14 @@ export interface AigenCreateOptions {
   llmModel?: string
   negativePrompt?: string
   styleJson?: string
+  /** visual | template */
+  pipelineMode?: string
+  /** none | bgm_only | tts */
+  audioMode?: string
+  stylePreset?: string
+  /** visual 出图模型（capability=image） */
+  imageModel?: string
+  imageProvider?: string
 }
 
 export interface AigenCreateRequest {
@@ -302,6 +310,11 @@ export interface AigenTaskItem {
   title?: string | null
   prompt: string
   templateId: string
+  pipelineMode?: string | null
+  audioMode?: string | null
+  stylePreset?: string | null
+  shotCount?: number | null
+  assetDoneCount?: number | null
   status: AigenTaskStatus | string
   currentStep?: string | null
   progress?: number | null
@@ -312,6 +325,8 @@ export interface AigenTaskItem {
   bgmId?: string | null
   llmProvider?: string | null
   llmModel?: string | null
+  imageProvider?: string | null
+  imageModel?: string | null
   errorMessage?: string | null
   durationSeconds?: number | null
   outputAvailable?: boolean | null

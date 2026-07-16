@@ -6,7 +6,7 @@ import com.dwcode.okxbot.imggen.adapter.llm.LlmPromptEnhanceAdapter;
 import com.dwcode.okxbot.imggen.adapter.mock.MockImageGenAdapter;
 import com.dwcode.okxbot.imggen.port.ImageGenPort;
 import com.dwcode.okxbot.imggen.port.PromptEnhancePort;
-import com.dwcode.okxbot.video.client.LlmChatClient;
+import com.dwcode.okxbot.common.ai.LlmChatClient;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.annotation.Bean;

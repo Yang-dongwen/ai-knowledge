@@ -1,7 +1,7 @@
 package com.dwcode.okxbot.imggen.adapter.llm;
 
 import com.dwcode.okxbot.imggen.port.PromptEnhancePort;
-import com.dwcode.okxbot.video.client.LlmChatClient;
+import com.dwcode.okxbot.common.ai.LlmChatClient;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 

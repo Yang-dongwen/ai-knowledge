@@ -25,6 +25,16 @@ public class AigenTaskEntity {
     private String prompt;
     private String negativePrompt;
     private String templateId;
+    /**
+     * 流水线模式：template（口播模板）| visual（画面优先 Timeline）
+     */
+    private String pipelineMode;
+    /** none | bgm_only | tts */
+    private String audioMode;
+    /** 风格预设，如 cinematic-dark */
+    private String stylePreset;
+    private Integer shotCount;
+    private Integer assetDoneCount;
     /** PENDING / PLANNING / ASSET_GENERATING / RENDERING / SUCCESS / FAILED / CANCELLED */
     private String status;
     private String currentStep;
@@ -40,6 +50,11 @@ public class AigenTaskEntity {
 
     private String llmProvider;
     private String llmModel;
+
+    /** visual 出图：供应商 key（如 nvidia） */
+    private String imageProvider;
+    /** visual 出图：模型 ID（ai_model_config capability=image） */
+    private String imageModel;
 
     private String storyboardJson;
     private String storyboardPath;

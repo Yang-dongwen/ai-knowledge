@@ -54,10 +54,21 @@ public class RemotionHttpRenderAdapter implements VideoRenderPort {
         Path workDir = command.getWorkDir().toAbsolutePath().normalize();
         Path outputPath = workDir.resolve(outputName);
 
-        ObjectNode inputProps = objectMapper.valueToTree(command.getStoryboard());
+        Object source = command.getInputProps() != null
+                ? command.getInputProps()
+                : command.getStoryboard();
+        if (source == null) {
+            throw new BusinessException("渲染 inputProps / storyboard 为空");
+        }
+        ObjectNode inputProps = objectMapper.valueToTree(source);
         // 禁止下发 workDir / 本地绝对路径，避免模板拼 file://
         inputProps.remove("workDir");
-        rewriteAudioTracksToHttp(inputProps, workDir, cfg.getBaseUrl(), command.getStoryboard());
+        if (command.getStoryboard() != null) {
+            rewriteAudioTracksToHttp(inputProps, workDir, cfg.getBaseUrl(), command.getStoryboard());
+        }
+        // Visual Timeline：镜头主视觉相对路径 → HTTP
+        rewriteVisualAssetsToHttp(inputProps, workDir, cfg.getBaseUrl());
+        rewriteShotlistBgmToHttp(inputProps, workDir, cfg.getBaseUrl());
 
         Map<String, Object> body = new HashMap<>();
         body.put("jobId", command.getJobId());
@@ -69,7 +80,8 @@ public class RemotionHttpRenderAdapter implements VideoRenderPort {
         body.put("crf", cfg.getCrf());
 
         String json = objectMapper.writeValueAsString(body);
-        log.info("Remotion 请求音频 tracks: {}", inputProps.path("audio").path("tracks"));
+        log.info("Remotion 请求 composition={}, hasShots={}",
+                command.getCompositionId(), inputProps.has("shots"));
 
         String url = trimSlash(cfg.getBaseUrl()) + "/render";
         Request.Builder rb = new Request.Builder()
@@ -165,6 +177,63 @@ public class RemotionHttpRenderAdapter implements VideoRenderPort {
             t.put("src", http);
             t.put("mock", false);
             log.debug("音频 URL: scene={} -> {}", tr.getSceneId(), http);
+        }
+    }
+
+    /**
+     * shotlist.shots[].visual.assetPath → assetUrl (http media)
+     */
+    private void rewriteVisualAssetsToHttp(ObjectNode inputProps, Path workDir, String remotionBaseUrl) {
+        JsonNode shots = inputProps.get("shots");
+        if (!(shots instanceof ArrayNode arr) || arr.isEmpty()) {
+            return;
+        }
+        String taskId = workDir.getFileName() != null ? workDir.getFileName().toString() : "";
+        String base = trimSlash(remotionBaseUrl) + "/media/" + taskId;
+        for (JsonNode shot : arr) {
+            if (!(shot instanceof ObjectNode shotObj)) {
+                continue;
+            }
+            JsonNode visual = shotObj.get("visual");
+            if (!(visual instanceof ObjectNode vObj)) {
+                continue;
+            }
+            String rel = vObj.path("assetPath").asText(null);
+            if (rel == null || rel.isBlank()) {
+                continue;
+            }
+            rel = rel.replace('\\', '/');
+            if (rel.startsWith("/")) {
+                rel = rel.substring(1);
+            }
+            Path file = workDir.resolve(rel).normalize();
+            if (!file.startsWith(workDir.normalize()) || !Files.isRegularFile(file)) {
+                log.warn("视觉素材不存在，跳过: {}", file);
+                continue;
+            }
+            vObj.put("assetUrl", base + "/" + rel);
+            vObj.put("assetPath", rel);
+        }
+    }
+
+    private void rewriteShotlistBgmToHttp(ObjectNode inputProps, Path workDir, String remotionBaseUrl) {
+        JsonNode audio = inputProps.get("audio");
+        if (!(audio instanceof ObjectNode audioObj)) {
+            return;
+        }
+        String rel = audioObj.path("bgmSrc").asText(null);
+        if (rel == null || rel.isBlank()) {
+            return;
+        }
+        String taskId = workDir.getFileName() != null ? workDir.getFileName().toString() : "";
+        String base = trimSlash(remotionBaseUrl) + "/media/" + taskId;
+        rel = rel.replace('\\', '/');
+        if (rel.startsWith("/")) {
+            rel = rel.substring(1);
+        }
+        Path file = workDir.resolve(rel).normalize();
+        if (Files.isRegularFile(file)) {
+            audioObj.put("bgmUrl", base + "/" + rel);
         }
     }
 
