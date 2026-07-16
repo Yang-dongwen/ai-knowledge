@@ -13,6 +13,8 @@ export type VisualShot = {
   id: string;
   durationInFrames?: number;
   startFrame?: number;
+  audioSrc?: string;
+  audioUrl?: string;
   visual?: {
     type?: string;
     assetUrl?: string;
@@ -70,18 +72,18 @@ const defaultShotlist: ShotlistProps = {
       id: "shot-2",
       durationInFrames: 90,
       startFrame: 90,
-      motion: { type: "ken_burns" },
+      motion: { type: "pan_left" },
       overlay: { layout: "lower-third", title: "镜头二" },
     },
     {
       id: "shot-3",
       durationInFrames: 120,
       startFrame: 180,
-      motion: { type: "static" },
+      motion: { type: "zoom_out" },
       overlay: {
         layout: "bullets-right",
         title: "要点",
-        bullets: ["画面为主", "音频可选", "模板变包装"],
+        bullets: ["画面为主", "音频可选", "单镜可重生"],
       },
     },
   ],
@@ -93,17 +95,39 @@ function gradientCss(seed: number): string {
   return `linear-gradient(145deg, hsl(${a}, 55%, 18%), hsl(${b}, 60%, 32%))`;
 }
 
+function motionTransform(motion: string, frame: number, dur: number): string {
+  const m = (motion || "ken_burns").toLowerCase();
+  if (m === "static") {
+    return "scale(1)";
+  }
+  if (m === "zoom_in" || m === "ken_burns") {
+    const scale = interpolate(frame, [0, dur], [1, 1.14], { extrapolateRight: "clamp" });
+    return `scale(${scale})`;
+  }
+  if (m === "zoom_out") {
+    const scale = interpolate(frame, [0, dur], [1.14, 1], { extrapolateRight: "clamp" });
+    return `scale(${scale})`;
+  }
+  if (m === "pan_left") {
+    const x = interpolate(frame, [0, dur], [4, -4], { extrapolateRight: "clamp" });
+    const scale = interpolate(frame, [0, dur], [1.08, 1.08], { extrapolateRight: "clamp" });
+    return `scale(${scale}) translateX(${x}%)`;
+  }
+  if (m === "pan_right") {
+    const x = interpolate(frame, [0, dur], [-4, 4], { extrapolateRight: "clamp" });
+    const scale = 1.08;
+    return `scale(${scale}) translateX(${x}%)`;
+  }
+  const scale = interpolate(frame, [0, dur], [1, 1.12], { extrapolateRight: "clamp" });
+  return `scale(${scale})`;
+}
+
 const ShotLayer: React.FC<{ shot: VisualShot; index: number }> = ({ shot, index }) => {
   const frame = useCurrentFrame();
   const { durationInFrames } = useVideoConfig();
   const dur = shot.durationInFrames || durationInFrames;
-  const motion = (shot.motion?.type || "ken_burns").toLowerCase();
-  const scale =
-    motion === "ken_burns" || motion === "zoom_in"
-      ? interpolate(frame, [0, dur], [1, 1.12], { extrapolateRight: "clamp" })
-      : motion === "zoom_out"
-        ? interpolate(frame, [0, dur], [1.12, 1], { extrapolateRight: "clamp" })
-        : 1;
+  const motion = shot.motion?.type || "ken_burns";
+  const transform = motionTransform(motion, frame, dur);
 
   const fadeFrames = Math.min(12, Math.floor(dur / 4));
   const opacity = interpolate(
@@ -118,11 +142,12 @@ const ShotLayer: React.FC<{ shot: VisualShot; index: number }> = ({ shot, index 
   const title = shot.overlay?.title;
   const subtitle = shot.overlay?.subtitle;
   const bullets = shot.overlay?.bullets || [];
+  const voice = shot.audioUrl;
 
   return (
     <AbsoluteFill style={{ opacity }}>
       {src ? (
-        <AbsoluteFill style={{ transform: `scale(${scale})`, overflow: "hidden" }}>
+        <AbsoluteFill style={{ transform, overflow: "hidden" }}>
           <Img
             src={src}
             style={{ width: "100%", height: "100%", objectFit: "cover" }}
@@ -132,11 +157,10 @@ const ShotLayer: React.FC<{ shot: VisualShot; index: number }> = ({ shot, index 
         <AbsoluteFill
           style={{
             background: gradientCss(index + 1),
-            transform: `scale(${scale})`,
+            transform,
           }}
         />
       )}
-      {/* 暗角，保证叠字可读 */}
       <AbsoluteFill
         style={{
           background:
@@ -235,6 +259,7 @@ const ShotLayer: React.FC<{ shot: VisualShot; index: number }> = ({ shot, index 
           )}
         </AbsoluteFill>
       )}
+      {voice ? <Audio src={voice} volume={1} /> : null}
     </AbsoluteFill>
   );
 };
@@ -259,7 +284,7 @@ export const VisualTimeline: React.FC<ShotlistProps> = (props) => {
   return (
     <AbsoluteFill style={{ backgroundColor: "#0a0a0f" }}>
       {sequences}
-      {bgm ? <Audio src={bgm} volume={0.35} /> : null}
+      {bgm ? <Audio src={bgm} volume={0.28} /> : null}
     </AbsoluteFill>
   );
 };
