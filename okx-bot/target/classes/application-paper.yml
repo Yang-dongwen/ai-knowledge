@@ -1,9 +1,0 @@
-# 模拟盘环境配置
-okx:
-  base-url: https://www.okx.com
-  simulated: true
-  timeout-seconds: 10
-
-trading:
-  system-status: RUNNING
-  live-enabled: false
