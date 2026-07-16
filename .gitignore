@@ -13,24 +13,37 @@ venv/
 ENV/
 env/
 *.egg-info/
-dist/
 build/
 
-# Java
+# Java build output — never commit
+target/
+**/target/
 *.class
 *.jar
 *.war
-target/
 
-# Node.js
+# Frontend build / deps — never commit
 node_modules/
+**/node_modules/
 dist/
+**/dist/
 .vite/
+**/.vite/
+
+# Project-specific (explicit)
+okx-bot/target/
+okx-trading-web/node_modules/
+okx-trading-web/dist/
+aigen-remotion/node_modules/
+aigen-remotion/dist/
+okx-bot/data/
 
 # IDE
 .idea/
+**/.idea/
 *.iml
 .claude/
+.kiro/
 
 # Logs
 *.log
@@ -38,6 +51,3 @@ dist/
 # OS
 .DS_Store
 Thumbs.db
-# Runtime data
-okx-bot/data/
-
