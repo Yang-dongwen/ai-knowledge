@@ -194,6 +194,9 @@ public class VideoTaskEventPublisher {
         d.put("platform", e.getPlatform());
         d.put("llmProvider", e.getLlmProvider());
         d.put("llmModel", e.getLlmModel());
+        d.put("understandingMode", e.getUnderstandingMode());
+        d.put("omniProvider", e.getOmniProvider());
+        d.put("omniModel", e.getOmniModel());
         d.put("currentStep", e.getCurrentStep());
         d.put("errorMessage", e.getErrorMessage());
         d.put("durationSeconds", e.getDurationSeconds());
@@ -203,8 +206,11 @@ public class VideoTaskEventPublisher {
         d.put("finishedAt", formatTime(e.getFinishedAt()));
         d.put("downloadDurationMs", e.getDownloadDurationMs());
         d.put("transcribeDurationMs", e.getTranscribeDurationMs());
+        d.put("understandDurationMs", e.getUnderstandDurationMs());
         d.put("summarizeDurationMs", e.getSummarizeDurationMs());
         d.put("totalDurationMs", e.getTotalDurationMs());
+        d.put("degraded", e.getDegraded() != null && e.getDegraded() == 1);
+        d.put("degradeReason", e.getDegradeReason());
         return d;
     }
 

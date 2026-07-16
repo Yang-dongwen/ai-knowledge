@@ -123,6 +123,7 @@ public class VideoTaskScheduler {
                         .in(VideoTaskEntity::getStatus,
                                 VideoTaskStatus.DOWNLOADING.name(),
                                 VideoTaskStatus.TRANSCRIBING.name(),
+                                VideoTaskStatus.UNDERSTANDING.name(),
                                 VideoTaskStatus.SUMMARIZING.name())
         );
         return cnt == null ? 0 : cnt.intValue();

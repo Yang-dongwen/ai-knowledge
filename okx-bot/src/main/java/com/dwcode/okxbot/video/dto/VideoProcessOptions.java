@@ -23,4 +23,15 @@ public class VideoProcessOptions {
      * 为空则使用该供应商默认第一个模型。
      */
     private String llmModel;
+
+    /**
+     * 理解模式：audio_only | hybrid | omni_only。
+     * 为空则使用 video.understanding.mode。
+     */
+    private String understandingMode;
+
+    /** 多模态供应商（hybrid/omni_only）；空则用 video.understanding.provider */
+    private String omniProvider;
+    /** 多模态模型 ID；空则用 video.understanding.model */
+    private String omniModel;
 }

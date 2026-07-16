@@ -208,11 +208,10 @@ const TRADING_KEYS = new Set([
   'trades',
   'orders',
   'run-logs',
-  'system-settings',
-  'ai-chat'
+  'system-settings'
 ])
 
-const TOOLS_KEYS = new Set(['video-extract', 'video-generate', 'image-generate'])
+const TOOLS_KEYS = new Set(['video-extract', 'video-generate', 'image-generate', 'ai-chat'])
 
 /** 系统管理（仅超级管理员） */
 const ADMIN_KEYS = new Set(['user-manage'])
@@ -224,12 +223,20 @@ const ALL_MENU_GROUPS: MenuGroup[] = [
   {
     key: 'tools',
     title: 'AI 工具',
-    description: '视频提取、视频生成与文生图',
+    description: '对话、视频提取、视频生成与文生图',
     icon: markRaw(ToolOutlined),
     accent: '#7C3AED',
     accentSoft: '#F3E8FF',
-    cols: 1,
+    cols: 2,
     children: [
+      {
+        key: 'ai-chat',
+        title: 'AI 对话',
+        description: '纯聊天助手，可自由切换模型',
+        icon: markRaw(RobotOutlined),
+        iconBg: '#EDE9FE',
+        iconColor: '#7C3AED'
+      },
       {
         key: 'video-extract',
         title: '视频提取',
@@ -328,14 +335,6 @@ const ALL_MENU_GROUPS: MenuGroup[] = [
         icon: markRaw(ControlOutlined),
         iconBg: '#FFEDD5',
         iconColor: '#EA580C'
-      },
-      {
-        key: 'ai-chat',
-        title: 'AI 助手',
-        description: '交易相关智能对话',
-        icon: markRaw(RobotOutlined),
-        iconBg: '#EDE9FE',
-        iconColor: '#7C3AED'
       }
     ]
   },

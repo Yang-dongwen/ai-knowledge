@@ -1,0 +1,41 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "VisualUnderstandingMapChunk",
+  "type": "object",
+  "required": ["overallVisualSummary"],
+  "properties": {
+    "overallVisualSummary": { "type": "string" },
+    "scenes": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "relativeStartSec": { "type": "number" },
+          "relativeEndSec": { "type": "number" },
+          "description": { "type": "string" }
+        }
+      }
+    },
+    "onScreenTexts": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "relativeSec": { "type": "number" },
+          "text": { "type": "string" }
+        }
+      }
+    },
+    "visualKeyPoints": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "relativeSec": { "type": "number" },
+          "point": { "type": "string" },
+          "source": { "type": "string" }
+        }
+      }
+    }
+  }
+}

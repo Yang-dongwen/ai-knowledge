@@ -14,7 +14,7 @@
           </a-tooltip>
         </div>
         <p class="page-subtitle">
-          粘贴抖音 / B站 / YouTube 链接，自动下载 · 转录 · AI 提炼要点与二创文案
+          粘贴抖音 / B站 / YouTube 链接：下载 · 转录 · 可选画面理解 · AI 提炼要点与二创
         </p>
       </div>
 
@@ -112,6 +112,13 @@
           <a-radio-group v-model:value="options.language" size="small" button-style="solid">
             <a-radio-button value="zh">中文</a-radio-button>
             <a-radio-button value="en">English</a-radio-button>
+          </a-radio-group>
+          <a-divider type="vertical" />
+          <span class="opt-label">理解模式</span>
+          <a-radio-group v-model:value="options.understandingMode" size="small" button-style="solid">
+            <a-radio-button value="audio_only">仅音频</a-radio-button>
+            <a-radio-button value="hybrid">混合(画面+语音)</a-radio-button>
+            <a-radio-button value="omni_only">仅画面</a-radio-button>
           </a-radio-group>
           <a-divider type="vertical" />
           <a-checkbox v-model:checked="options.extractMindMap">思维导图</a-checkbox>
@@ -290,27 +297,35 @@
           <!-- 进度条（处理中） -->
           <div class="progress-block" v-if="isRunning(detail.status)">
             <a-steps
-              :current="statusStepIndex(detail.status)"
+              :current="statusStepIndex(detail.status, detail)"
               size="small"
               :items="stepItemsWithTiming(detail)"
             />
             <div class="progress-hint">
               <a-spin size="small" />
-              <span>{{ detail.currentStep || '处理中…' }} · 下载与转录可能需要几分钟，请稍候</span>
+              <span>{{ detail.currentStep || '处理中…' }} · {{ progressHintExtra(detail) }}</span>
             </div>
             <a-alert
               type="info"
               show-icon
               class="pause-policy-hint"
               message="暂停说明"
-              description="暂停仅在步骤边界生效（下载 / 转录 / 总结之间）。当前步骤会跑完后再中断，不会立即强杀进行中的下载或模型调用。"
+              description="暂停仅在步骤边界生效（下载 / 转录 / 画面理解 / 总结之间）。当前步骤会跑完后再中断；单次 Omni 请求无法中途强杀。"
             />
-            <div class="timing-strip" v-if="hasAnyStepTiming(detail)">
+            <div class="timing-strip" v-if="hasAnyStepTiming(detail) || detail.status === 'UNDERSTANDING'">
               <span class="timing-chip" v-if="detail.downloadDurationMs != null">
                 下载 <b>{{ formatMs(detail.downloadDurationMs) }}</b>
               </span>
               <span class="timing-chip" v-if="detail.transcribeDurationMs != null">
                 转录 <b>{{ formatMs(detail.transcribeDurationMs) }}</b>
+              </span>
+              <span
+                class="timing-chip timing-chip-understand"
+                v-if="detail.understandDurationMs != null || detail.status === 'UNDERSTANDING'"
+              >
+                画面
+                <b v-if="detail.understandDurationMs != null">{{ formatMs(detail.understandDurationMs) }}</b>
+                <b v-else class="timing-running">进行中…</b>
               </span>
               <span class="timing-chip" v-if="detail.summarizeDurationMs != null">
                 总结 <b>{{ formatMs(detail.summarizeDurationMs) }}</b>
@@ -470,6 +485,14 @@
 
           <!-- 成功结果 -->
           <template v-if="detail.status === 'SUCCESS' && detail.result">
+            <a-alert
+              v-if="detail.degraded || detail.result.degraded || detail.result.summary?.degraded"
+              type="warning"
+              show-icon
+              class="fail-alert"
+              message="已降级为纯音频总结"
+              :description="detail.degradeReason || detail.result.degradeReason || detail.result.summary?.degradeReason || '画面理解失败，已使用字幕总结'"
+            />
             <a-tabs v-model:activeKey="activeTab" class="result-tabs">
               <!-- 概览 -->
               <a-tab-pane key="overview" tab="概览">
@@ -515,6 +538,43 @@
                     </div>
                   </div>
                 </div>
+              </a-tab-pane>
+
+              <!-- 画面理解 -->
+              <a-tab-pane key="visual" tab="画面">
+                <div v-if="detail.result.summary?.visualSummary || detail.result.summary?.visualKeyPoints?.length">
+                  <div class="ch-summary" v-if="detail.result.summary?.visualSummary" style="margin-bottom: 12px">
+                    {{ detail.result.summary.visualSummary }}
+                  </div>
+                  <a-tag v-if="detail.result.summary?.partialVisual" color="orange">画面为稀疏采样（partial）</a-tag>
+                  <div class="kp-list" v-if="detail.result.summary?.visualKeyPoints?.length" style="margin-top: 12px">
+                    <div
+                      v-for="(kp, i) in detail.result.summary.visualKeyPoints"
+                      :key="'vk' + i"
+                      class="kp-card"
+                      @click="seekToTimestamp(kp.timestamp)"
+                    >
+                      <div class="kp-index">{{ i + 1 }}</div>
+                      <div class="kp-body">
+                        <a-tag color="geekblue" class="ts-tag">{{ kp.timestamp || '--' }}</a-tag>
+                        <div class="kp-text">{{ kp.point }}</div>
+                      </div>
+                    </div>
+                  </div>
+                  <div v-if="detail.result.summary?.onScreenTexts?.length" style="margin-top: 16px">
+                    <div class="qk-title">屏幕文字 OCR</div>
+                    <div v-for="(t, i) in detail.result.summary.onScreenTexts" :key="'ocr' + i" class="qk-item">
+                      {{ t }}
+                    </div>
+                  </div>
+                  <div v-if="detail.result.summary?.scenes?.length" style="margin-top: 16px">
+                    <div class="qk-title">场景</div>
+                    <div v-for="(s, i) in detail.result.summary.scenes" :key="'sc' + i" class="qk-item">
+                      {{ s }}
+                    </div>
+                  </div>
+                </div>
+                <a-empty v-else description="本次任务无画面理解结果（可能为「仅音频」模式）" />
               </a-tab-pane>
 
               <!-- 核心要点 -->
@@ -664,7 +724,9 @@ const submitting = ref(false)
 const options = reactive({
   language: 'zh',
   extractMindMap: true,
-  generateRepurposeScript: true
+  generateRepurposeScript: true,
+  /** audio_only | hybrid | omni_only */
+  understandingMode: 'audio_only'
 })
 
 /** provider::modelId */
@@ -834,23 +896,25 @@ const pipelineSteps = [
   { key: 'PENDING', name: '排队', icon: '①' },
   { key: 'DOWNLOADING', name: '下载', icon: '②' },
   { key: 'TRANSCRIBING', name: '转录', icon: '③' },
-  { key: 'SUMMARIZING', name: '总结', icon: '④' },
-  { key: 'SUCCESS', name: '完成', icon: '⑤' }
+  { key: 'UNDERSTANDING', name: '画面', icon: '④' },
+  { key: 'SUMMARIZING', name: '总结', icon: '⑤' },
+  { key: 'SUCCESS', name: '完成', icon: '⑥' }
 ]
 
 const STATUS_MAP: Record<string, { label: string; color: string }> = {
   PENDING: { label: '排队中', color: 'default' },
   DOWNLOADING: { label: '下载中', color: 'processing' },
   TRANSCRIBING: { label: '转录中', color: 'purple' },
+  UNDERSTANDING: { label: '理解画面中', color: 'geekblue' },
   SUMMARIZING: { label: '总结中', color: 'cyan' },
   SUCCESS: { label: '已完成', color: 'success' },
   FAILED: { label: '失败', color: 'error' },
   PAUSED: { label: '已暂停', color: 'warning' }
 }
 
-/** 暂停仅在下载/转录/总结步骤边界生效 */
+/** 暂停仅在步骤边界生效 */
 const PAUSE_STEP_BOUNDARY_TIP =
-  '暂停仅在步骤边界生效：当前「下载 / 转录 / 总结」会先跑完，再中断并释放并发槽，不会立即强制停止。'
+  '暂停仅在步骤边界生效：当前「下载 / 转录 / 画面理解 / 总结」会先跑完，再中断并释放并发槽；单次 Omni 请求无法中途强杀。'
 
 function statusMeta(status?: string, task?: VideoTaskItem | null) {
   if (task && isPauseDraining(task)) {
@@ -860,7 +924,13 @@ function statusMeta(status?: string, task?: VideoTaskItem | null) {
 }
 
 function isRunning(status?: string) {
-  return ['PENDING', 'DOWNLOADING', 'TRANSCRIBING', 'SUMMARIZING'].includes(status || '')
+  return [
+    'PENDING',
+    'DOWNLOADING',
+    'TRANSCRIBING',
+    'UNDERSTANDING',
+    'SUMMARIZING'
+  ].includes(status || '')
 }
 
 /** 已点暂停，但当前步骤可能仍在跑（等待边界生效） */
@@ -896,10 +966,49 @@ function needsPoll(task?: VideoTaskItem | null) {
   return isRunning(task.status) || isPauseDraining(task)
 }
 
-function statusStepIndex(status?: string) {
-  const order = ['PENDING', 'DOWNLOADING', 'TRANSCRIBING', 'SUMMARIZING', 'SUCCESS']
+/** 按任务理解模式裁剪步骤：仅音频不展示「画面」；仅画面不展示「转录」 */
+function pipelineStepsFor(task?: VideoTaskItem | null) {
+  const mode = (task?.understandingMode || task?.result?.understandingMode || '').toLowerCase()
+  return pipelineSteps.filter((s) => {
+    if (s.key === 'UNDERSTANDING') {
+      // 未知模式时，有画面耗时或正处于 UNDERSTANDING 则展示
+      if (mode === 'audio_only') return false
+      if (mode === 'hybrid' || mode === 'omni_only') return true
+      return (
+        task?.status === 'UNDERSTANDING' ||
+        task?.understandDurationMs != null ||
+        !!task?.result?.summary?.multimodal
+      )
+    }
+    if (s.key === 'TRANSCRIBING') {
+      if (mode === 'omni_only') return false
+      return true
+    }
+    return true
+  })
+}
+
+function statusStepIndex(status?: string, task?: VideoTaskItem | null) {
+  const order = pipelineStepsFor(task).map((s) => s.key)
   const i = order.indexOf(status || '')
   return i >= 0 ? i : 0
+}
+
+function progressHintExtra(task?: VideoTaskItem | null) {
+  if (!task) return '请稍候'
+  if (task.status === 'UNDERSTANDING') {
+    return '画面理解可能较久（Omni 分片调用），请稍候'
+  }
+  if (task.status === 'TRANSCRIBING') {
+    return '转录可能需要几分钟，请稍候'
+  }
+  if (task.status === 'DOWNLOADING') {
+    return '下载与合并可能需要几分钟，请稍候'
+  }
+  if (task.status === 'SUMMARIZING') {
+    return '正在生成章节 / 导图 / 二创…'
+  }
+  return '请稍候'
 }
 
 function platformLabel(p?: string | null) {
@@ -941,6 +1050,7 @@ function hasAnyStepTiming(task: VideoTaskItem) {
   return (
     task.downloadDurationMs != null ||
     task.transcribeDurationMs != null ||
+    task.understandDurationMs != null ||
     task.summarizeDurationMs != null ||
     task.totalDurationMs != null
   )
@@ -953,6 +1063,9 @@ function timingRows(task: VideoTaskItem) {
   }
   if (task.transcribeDurationMs != null) {
     rows.push({ key: 'transcribe', label: '转录', ms: task.transcribeDurationMs })
+  }
+  if (task.understandDurationMs != null) {
+    rows.push({ key: 'understand', label: '画面', ms: task.understandDurationMs })
   }
   if (task.summarizeDurationMs != null) {
     rows.push({ key: 'summarize', label: '总结', ms: task.summarizeDurationMs })
@@ -971,6 +1084,7 @@ function timingTooltip(task: VideoTaskItem) {
   const parts: string[] = []
   if (task.downloadDurationMs != null) parts.push(`下载 ${formatMs(task.downloadDurationMs)}`)
   if (task.transcribeDurationMs != null) parts.push(`转录 ${formatMs(task.transcribeDurationMs)}`)
+  if (task.understandDurationMs != null) parts.push(`画面 ${formatMs(task.understandDurationMs)}`)
   if (task.summarizeDurationMs != null) parts.push(`总结 ${formatMs(task.summarizeDurationMs)}`)
   if (task.totalDurationMs != null) parts.push(`合计 ${formatMs(task.totalDurationMs)}`)
   return parts.join(' · ') || ''
@@ -980,12 +1094,19 @@ function stepItemsWithTiming(task: VideoTaskItem) {
   const map: Record<string, number | null | undefined> = {
     DOWNLOADING: task.downloadDurationMs,
     TRANSCRIBING: task.transcribeDurationMs,
+    UNDERSTANDING: task.understandDurationMs,
     SUMMARIZING: task.summarizeDurationMs
   }
-  return pipelineSteps.map((s) => {
+  return pipelineStepsFor(task).map((s) => {
     const ms = map[s.key]
-    const title = ms != null ? `${s.name} ${formatMs(ms)}` : s.name
-    return { title }
+    if (ms != null) {
+      return { title: `${s.name} ${formatMs(ms)}` }
+    }
+    // 当前进行中的步骤标出「进行中」，避免灰色像未启用
+    if (task.status === s.key && s.key !== 'PENDING') {
+      return { title: `${s.name} · 进行中` }
+    }
+    return { title: s.name }
   })
 }
 
@@ -1097,7 +1218,8 @@ async function handleSubmit() {
         extractMindMap: options.extractMindMap,
         generateRepurposeScript: options.generateRepurposeScript,
         llmProvider: parsed.provider,
-        llmModel: parsed.model
+        llmModel: parsed.model,
+        understandingMode: options.understandingMode
       }
     })
     message.success('任务已提交，后台处理中')
@@ -2237,6 +2359,32 @@ onUnmounted(() => {
     font-weight: 600;
     margin-left: 2px;
   }
+
+  &.timing-chip-understand {
+    border-color: #93c5fd;
+    background: #eff6ff;
+    color: #1d4ed8;
+
+    b {
+      color: #1e40af;
+    }
+
+    .timing-running {
+      color: #2563eb;
+      font-weight: 600;
+      animation: pulse-soft 1.2s ease-in-out infinite;
+    }
+  }
+}
+
+@keyframes pulse-soft {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.55;
+  }
 }
 
 .timing-panel {
@@ -2301,6 +2449,10 @@ onUnmounted(() => {
 
       &.transcribe {
         background: linear-gradient(90deg, #a78bfa, #7c3aed);
+      }
+
+      &.understand {
+        background: linear-gradient(90deg, #38bdf8, #2563eb);
       }
 
       &.summarize {

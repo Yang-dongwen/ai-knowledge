@@ -14,5 +14,7 @@ public class ShotDto {
     private ShotTransition transition = new ShotTransition();
     private ShotOverlay overlay = new ShotOverlay();
     private String narration;
+    /** 相对任务目录：assets/audio/shot-1.mp3（visual TTS） */
+    private String audioSrc;
     private String notes;
 }

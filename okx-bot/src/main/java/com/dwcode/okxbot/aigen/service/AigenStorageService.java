@@ -40,6 +40,7 @@ public class AigenStorageService {
         Files.createDirectories(dir);
         Files.createDirectories(dir.resolve("assets").resolve("audio"));
         Files.createDirectories(dir.resolve("assets").resolve("images"));
+        Files.createDirectories(dir.resolve("assets").resolve("visual"));
         Files.createDirectories(dir.resolve("logs"));
         return dir;
     }

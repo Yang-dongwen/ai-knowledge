@@ -13,4 +13,10 @@ public class VideoRetryRequest {
 
     /** 可选，覆盖原任务 LLM 模型 */
     private String llmModel;
+
+    /** 可选，覆盖理解模式 */
+    private String understandingMode;
+
+    private String omniProvider;
+    private String omniModel;
 }

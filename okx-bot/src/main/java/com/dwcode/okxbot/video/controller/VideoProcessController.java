@@ -54,11 +54,17 @@ public class VideoProcessController {
     // ---------- LLM 模型（任务选择：仅启用 + 有 api-key 的供应商） ----------
 
     /**
-     * 可用 LLM 模型列表（数据库 enabled=1，按供应商分组）。
+     * 可用模型列表（数据库 enabled=1，按供应商分组）。
+     *
+     * @param capability 可选 chat（默认）| image | video_omni
      */
     @GetMapping("/models")
-    public ApiResult<List<Map<String, Object>>> listModels() {
-        return ApiResult.ok(aiModelConfigService.listEnabledGroupedByProvider());
+    public ApiResult<List<Map<String, Object>>> listModels(
+            @RequestParam(required = false) String capability) {
+        if (capability == null || capability.isBlank()) {
+            return ApiResult.ok(aiModelConfigService.listEnabledGroupedByProvider());
+        }
+        return ApiResult.ok(aiModelConfigService.listEnabledGroupedByProvider(capability));
     }
 
     /**
@@ -74,7 +80,7 @@ public class VideoProcessController {
 
     /**
      * 管理列表：全部模型配置（含禁用）。
-     * @param capability 可选 chat | image；空=全部
+     * @param capability 可选 chat | image | video_omni；空=全部
      */
     @GetMapping("/model-configs")
     public ApiResult<List<AiModelConfigResponse>> listModelConfigs(

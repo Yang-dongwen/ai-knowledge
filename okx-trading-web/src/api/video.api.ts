@@ -22,9 +22,11 @@ export const videoApi = {
     return request.post('/v1/video/process', data)
   },
 
-  /** 可用 LLM 模型列表 */
-  listModels(): Promise<{ data: AiProvider[] }> {
-    return request.get('/v1/video/models')
+  /** 可用模型列表（capability 默认 chat；可传 video_omni） */
+  listModels(capability?: string): Promise<{ data: AiProvider[] }> {
+    return request.get('/v1/video/models', {
+      params: capability ? { capability } : {}
+    })
   },
 
   /**
@@ -95,7 +97,13 @@ export const videoApi = {
    */
   retryTask(
     taskId: string,
-    body?: { llmProvider?: string; llmModel?: string }
+    body?: {
+      llmProvider?: string
+      llmModel?: string
+      understandingMode?: string
+      omniProvider?: string
+      omniModel?: string
+    }
   ): Promise<{ data: VideoTaskItem }> {
     return request.post(`/v1/video/tasks/${taskId}/retry`, body || {})
   },

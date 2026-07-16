@@ -7,19 +7,17 @@ import com.dwcode.okxbot.aigen.domain.SceneDto;
 import com.dwcode.okxbot.aigen.domain.StoryboardDto;
 import com.dwcode.okxbot.aigen.domain.shot.ShotDto;
 import com.dwcode.okxbot.aigen.domain.shot.ShotlistDto;
+import com.dwcode.okxbot.aigen.entity.AigenTaskEntity;
 import com.dwcode.okxbot.aigen.enums.AigenTaskStatus;
+import com.dwcode.okxbot.aigen.event.AigenTaskEventPublisher;
+import com.dwcode.okxbot.aigen.mapper.AigenTaskMapper;
 import com.dwcode.okxbot.aigen.port.TtsCommand;
 import com.dwcode.okxbot.aigen.port.TtsPort;
 import com.dwcode.okxbot.aigen.port.TtsResult;
 import com.dwcode.okxbot.aigen.service.AigenStorageService;
 import com.dwcode.okxbot.aigen.service.StoryboardNormalizeService;
-import com.dwcode.okxbot.aigen.service.VisualPlaceholderImageService;
-import com.dwcode.okxbot.imggen.config.ImgGenProperties;
-import com.dwcode.okxbot.imggen.port.ImageGenCommand;
-import com.dwcode.okxbot.imggen.port.ImageGenPort;
-import com.dwcode.okxbot.imggen.port.ImageGenResult;
+import com.dwcode.okxbot.aigen.service.VisualShotAssetService;
 import com.dwcode.okxbot.imggen.util.AspectRatioMapper;
-import com.dwcode.okxbot.video.service.AiModelConfigService;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -28,14 +26,20 @@ import org.springframework.stereotype.Component;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
+import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
 
 /**
  * 素材步骤：
  * - template：TTS 配音
- * - visual：每镜主视觉出图 + 可选 BGM 拷贝
+ * - visual：每镜主视觉（可并行）+ 可选 BGM / TTS
  */
 @Slf4j
 @Component
@@ -43,14 +47,13 @@ import java.util.Locale;
 public class AssetStep implements PipelineStep {
 
     private final TtsPort ttsPort;
-    private final ImageGenPort imageGenPort;
     private final AigenStorageService storageService;
     private final StoryboardNormalizeService normalizeService;
-    private final VisualPlaceholderImageService placeholderImageService;
+    private final VisualShotAssetService visualShotAssetService;
     private final ObjectMapper objectMapper;
     private final AigenProperties aigenProperties;
-    private final ImgGenProperties imgGenProperties;
-    private final AiModelConfigService aiModelConfigService;
+    private final AigenTaskMapper aigenTaskMapper;
+    private final AigenTaskEventPublisher eventPublisher;
 
     @Override
     public String name() {
@@ -91,73 +94,191 @@ public class AssetStep implements PipelineStep {
             throw new IllegalStateException("shotlist 为空，无法生成画面");
         }
 
-        // NVIDIA FLUX 仅允许固定宽高（见 AspectRatioMapper），不能用视频分辨率 1080x1920 直接缩放
-        String aspect = list.getMeta() != null && list.getMeta().getAspectRatio() != null
-                ? list.getMeta().getAspectRatio()
-                : (ctx.getTask().getAspectRatio() != null ? ctx.getTask().getAspectRatio() : "9:16");
-        AspectRatioMapper.Size fluxSize = AspectRatioMapper.map(aspect);
-        int[] imgSize = new int[]{fluxSize.width(), fluxSize.height()};
-        log.info("visual 出图尺寸: aspect={} → {}x{} (FLUX 允许值)", aspect, imgSize[0], imgSize[1]);
-
-        Path visualDir = ctx.getWorkDir().resolve("assets").resolve("visual");
-        Files.createDirectories(visualDir);
+        AspectRatioMapper.Size fluxSize = visualShotAssetService.resolveFluxSize(ctx.getTask(), list);
+        int total = list.getShots().size();
+        int concurrency = Math.max(1, aigenProperties.getVisual().getImageConcurrency());
+        log.info("visual 出图尺寸: {}x{}, shots={}, concurrency={}",
+                fluxSize.width(), fluxSize.height(), total, concurrency);
 
         boolean mockAsset = aigenProperties.isMockPipeline()
                 || "mock".equalsIgnoreCase(aigenProperties.getSteps().getAsset());
+        boolean enhance = ctx.getTask().getEnhanceImagePrompt() != null
+                && ctx.getTask().getEnhanceImagePrompt() == 1;
 
-        int done = 0;
-        int total = list.getShots().size();
-        for (ShotDto shot : list.getShots()) {
-            if (ctx.getCancelCheck() != null && ctx.getCancelCheck().getAsBoolean()) {
-                throw new InterruptedException("cancelled");
-            }
-            String shotId = shot.getId() != null ? shot.getId() : ("shot-" + (done + 1));
-            Path outFile = visualDir.resolve(shotId + ".jpg");
-            String rel = "assets/visual/" + shotId + ".jpg";
-            String prompt = shot.getVisual() != null ? shot.getVisual().getPrompt() : null;
-            String title = shot.getOverlay() != null ? shot.getOverlay().getTitle() : shotId;
+        publishProgress(ctx, "正在生成画面 0/" + total, 30, 0);
 
-            try {
-                if (mockAsset || prompt == null || prompt.isBlank()
-                        || (shot.getVisual() != null && !"ai_image".equalsIgnoreCase(shot.getVisual().getType()))) {
-                    placeholderImageService.writeGradientJpeg(outFile, imgSize[0], imgSize[1],
-                            title != null ? title : shotId, done + 1);
-                    if (shot.getVisual() != null && (shot.getVisual().getType() == null
-                            || "ai_image".equalsIgnoreCase(shot.getVisual().getType()))) {
-                        // keep type
+        // —— 并行出图（有界线程池）——
+        AtomicInteger done = new AtomicInteger(0);
+        AtomicReference<Exception> firstError = new AtomicReference<>();
+        ExecutorService pool = Executors.newFixedThreadPool(
+                Math.min(concurrency, total),
+                r -> {
+                    Thread t = new Thread(r, "aigen-visual-img");
+                    t.setDaemon(true);
+                    return t;
+                });
+        try {
+            List<CompletableFuture<Void>> futures = new ArrayList<>();
+            List<ShotDto> shots = list.getShots();
+            for (int i = 0; i < shots.size(); i++) {
+                final int index = i;
+                final ShotDto shot = shots.get(i);
+                futures.add(CompletableFuture.runAsync(() -> {
+                    try {
+                        if (ctx.getCancelCheck() != null && ctx.getCancelCheck().getAsBoolean()) {
+                            throw new InterruptedException("cancelled");
+                        }
+                        if (firstError.get() != null) {
+                            return;
+                        }
+                        visualShotAssetService.materializeShotImage(
+                                ctx.getTask(), ctx.getWorkDir(), shot, fluxSize,
+                                index + 1, mockAsset, enhance);
+                        int d = done.incrementAndGet();
+                        int progress = 30 + (int) (35.0 * d / total);
+                        publishProgress(ctx, "正在生成画面 " + d + "/" + total, progress, d);
+                        log.info("画面完成: taskId={} shot={}/{} id={}",
+                                ctx.getTaskId(), d, total, shot.getId());
+                    } catch (Exception e) {
+                        firstError.compareAndSet(null, e);
+                        throw new RuntimeException(e);
                     }
-                } else {
-                    generateRealImage(ctx, shot, outFile, imgSize[0], imgSize[1], prompt, done);
-                }
-                if (shot.getVisual() == null) {
-                    shot.setVisual(new com.dwcode.okxbot.aigen.domain.shot.ShotVisual());
-                }
-                shot.getVisual().setAssetPath(rel);
-            } catch (Exception e) {
-                log.warn("镜头出图失败 shotId={}: {}", shotId, e.getMessage());
-                if (aigenProperties.getVisual().isFailOnShotError()) {
-                    throw e;
-                }
-                placeholderImageService.writeGradientJpeg(outFile, imgSize[0], imgSize[1],
-                        title != null ? title : shotId, done + 1);
-                if (shot.getVisual() == null) {
-                    shot.setVisual(new com.dwcode.okxbot.aigen.domain.shot.ShotVisual());
-                }
-                shot.getVisual().setAssetPath(rel);
-                shot.getVisual().setType("gradient");
+                }, pool));
             }
-            done++;
-            ctx.getTask().setAssetDoneCount(done);
-            ctx.getTask().setCurrentStep("正在生成画面 " + done + "/" + total);
-            ctx.getTask().setProgress(30 + (int) (40.0 * done / total));
+            try {
+                CompletableFuture.allOf(futures.toArray(new CompletableFuture[0])).join();
+            } catch (Exception joinEx) {
+                // 展开 completionException
+            }
+            Exception err = firstError.get();
+            if (err != null) {
+                if (err instanceof InterruptedException ie) {
+                    Thread.currentThread().interrupt();
+                    throw ie;
+                }
+                if (err.getMessage() != null
+                        && (err.getMessage().contains("cancelled") || err.getMessage().contains("paused"))) {
+                    throw new InterruptedException(err.getMessage());
+                }
+                throw err;
+            }
+        } finally {
+            pool.shutdownNow();
         }
 
+        int imageDone = done.get();
+        String audioMode = list.getAudio() != null && list.getAudio().getMode() != null
+                ? list.getAudio().getMode().toLowerCase(Locale.ROOT)
+                : (ctx.getTask().getAudioMode() != null ? ctx.getTask().getAudioMode().toLowerCase(Locale.ROOT) : "none");
+
         // BGM
-        if (list.getAudio() != null
-                && "bgm_only".equalsIgnoreCase(list.getAudio().getMode())) {
+        if ("bgm_only".equals(audioMode) || "tts_bgm".equals(audioMode)) {
             copyBgmIfPresent(ctx, list);
         }
 
+        // Visual TTS（口播也并行，并发取 min(2, concurrency)）
+        if ("tts".equals(audioMode) || "tts_bgm".equals(audioMode)) {
+            int fps = list.getMeta() != null && list.getMeta().getFps() != null
+                    ? list.getMeta().getFps() : 30;
+            int ttsConcurrency = Math.min(2, Math.max(1, concurrency));
+            publishProgress(ctx, "正在生成口播 0/" + total, 66, imageDone);
+            runParallelTts(ctx, list, fps, total, ttsConcurrency);
+            visualShotAssetService.realignShotlistTimeline(list);
+        }
+
+        persistShotlist(ctx, list, total, imageDone);
+        publishProgress(ctx, "素材已就绪（画面 " + imageDone + "/" + total + "）", 70, imageDone);
+    }
+
+    private void runParallelTts(PipelineContext ctx, ShotlistDto list, int fps,
+                                int total, int concurrency) throws Exception {
+        AtomicInteger done = new AtomicInteger(0);
+        AtomicReference<Exception> firstError = new AtomicReference<>();
+        ExecutorService pool = Executors.newFixedThreadPool(
+                Math.min(concurrency, total),
+                r -> {
+                    Thread t = new Thread(r, "aigen-visual-tts");
+                    t.setDaemon(true);
+                    return t;
+                });
+        try {
+            List<CompletableFuture<Void>> futures = new ArrayList<>();
+            for (ShotDto shot : list.getShots()) {
+                futures.add(CompletableFuture.runAsync(() -> {
+                    try {
+                        if (ctx.getCancelCheck() != null && ctx.getCancelCheck().getAsBoolean()) {
+                            throw new InterruptedException("cancelled");
+                        }
+                        if (firstError.get() != null) {
+                            return;
+                        }
+                        visualShotAssetService.synthesizeShotNarration(
+                                ctx.getTask(), ctx.getWorkDir(), shot, fps);
+                        int d = done.incrementAndGet();
+                        int progress = 66 + (int) (4.0 * d / total);
+                        publishProgress(ctx, "正在生成口播 " + d + "/" + total, progress, null);
+                    } catch (Exception e) {
+                        firstError.compareAndSet(null, e);
+                        throw new RuntimeException(e);
+                    }
+                }, pool));
+            }
+            try {
+                CompletableFuture.allOf(futures.toArray(new CompletableFuture[0])).join();
+            } catch (Exception ignored) {
+                // firstError
+            }
+            Exception err = firstError.get();
+            if (err != null) {
+                if (err instanceof InterruptedException ie) {
+                    Thread.currentThread().interrupt();
+                    throw ie;
+                }
+                throw err;
+            }
+        } finally {
+            pool.shutdownNow();
+        }
+    }
+
+    /**
+     * 每镜进度：写库 + SSE，让前端能看到「画面 n/m」。
+     */
+    private void publishProgress(PipelineContext ctx, String step, int progress, Integer assetDone) {
+        AigenTaskEntity task = ctx.getTask();
+        if (task == null || task.getId() == null) {
+            return;
+        }
+        synchronized (task) {
+            try {
+                task.setCurrentStep(step);
+                task.setProgress(Math.min(99, Math.max(0, progress)));
+                if (assetDone != null) {
+                    task.setAssetDoneCount(assetDone);
+                }
+                task.setUpdatedAt(LocalDateTime.now());
+                // 只更新进度相关列，避免并行线程互相覆盖大字段
+                AigenTaskEntity patch = new AigenTaskEntity();
+                patch.setId(task.getId());
+                patch.setCurrentStep(task.getCurrentStep());
+                patch.setProgress(task.getProgress());
+                patch.setAssetDoneCount(task.getAssetDoneCount());
+                patch.setUpdatedAt(task.getUpdatedAt());
+                if (task.getImageProvider() != null) {
+                    patch.setImageProvider(task.getImageProvider());
+                }
+                if (task.getImageModel() != null) {
+                    patch.setImageModel(task.getImageModel());
+                }
+                aigenTaskMapper.updateById(patch);
+                eventPublisher.publishEntity(task, AigenTaskEventPublisher.TYPE_STATUS);
+            } catch (Exception e) {
+                log.debug("素材进度推送失败: {}", e.getMessage());
+            }
+        }
+    }
+
+    private void persistShotlist(PipelineContext ctx, ShotlistDto list, int total, int done) throws Exception {
         String json = objectMapper.writerWithDefaultPrettyPrinter().writeValueAsString(list);
         Path sbPath = ctx.getWorkDir().resolve("shotlist.json");
         Files.writeString(sbPath, json);
@@ -174,104 +295,15 @@ public class AssetStep implements PipelineStep {
         ctx.setShotlist(list);
     }
 
-    private void generateRealImage(PipelineContext ctx, ShotDto shot, Path outFile,
-                                   int width, int height, String prompt, int index) throws Exception {
-        Path tmpOut = ctx.getWorkDir().resolve("assets").resolve("visual").resolve("_tmp_" + index);
-        Files.createDirectories(tmpOut);
-
-        // 优先任务级选择（前端可选）；否则库表第一个 image 模型；再退回 yml flux
-        String provider = ctx.getTask().getImageProvider();
-        String modelId = ctx.getTask().getImageModel();
-        String invokeUrl = null;
-        int steps = Math.max(1, aigenProperties.getVisual().getImageSteps());
-        try {
-            var cfg = aiModelConfigService.requireEnabledImageModel(provider, modelId);
-            provider = cfg.getProvider();
-            modelId = cfg.getModelId();
-            invokeUrl = cfg.getInvokeUrl();
-            if (cfg.getDefaultSteps() != null && cfg.getDefaultSteps() > 0) {
-                steps = cfg.getDefaultSteps();
-            }
-            // 回写任务，保证详情展示与下次重试一致
-            ctx.getTask().setImageProvider(provider);
-            ctx.getTask().setImageModel(modelId);
-        } catch (Exception e) {
-            log.warn("任务级生图模型解析失败，回退 imggen.flux 配置: {}", e.getMessage());
-            if (provider == null || provider.isBlank()) {
-                provider = aigenProperties.getVisual().getImageProviderKey();
-            }
-            if (provider == null || provider.isBlank()) {
-                provider = "nvidia";
-            }
-            if (modelId == null || modelId.isBlank()) {
-                modelId = imgGenProperties.getFlux() != null
-                        ? imgGenProperties.getFlux().getDefaultModel() : "flux.1-schnell";
-            }
-            invokeUrl = imgGenProperties.getFlux() != null
-                    ? imgGenProperties.getFlux().getInvokeUrl() : null;
-        }
-
-        String neg = shot.getVisual() != null ? shot.getVisual().getNegativePrompt() : null;
-        if (neg == null || neg.isBlank()) {
-            neg = "text, watermark, logo, blurry, low quality";
-        }
-        log.info("visual 出图: shot={} model={}/{} {}x{} steps={}",
-                shot.getId(), provider, modelId, width, height, steps);
-        ImageGenCommand cmd = ImageGenCommand.builder()
-                .taskId(String.valueOf(ctx.getTaskId()))
-                .prompt(prompt)
-                .negativePrompt(neg)
-                .modelId(modelId)
-                .providerKey(provider)
-                .invokeUrl(invokeUrl)
-                .width(width)
-                .height(height)
-                .steps(steps)
-                .n(1)
-                .seed(shot.getVisual() != null ? shot.getVisual().getSeed() : null)
-                .workDir(ctx.getWorkDir())
-                .outputsDir(tmpOut)
-                .build();
-        ImageGenResult result = imageGenPort.generate(cmd);
-        if (result.getImages() == null || result.getImages().isEmpty()) {
-            throw new IllegalStateException("出图结果为空");
-        }
-        Path generated = tmpOut.resolve(Path.of(result.getImages().get(0).getRelativePath()).getFileName().toString());
-        // ImageAsset relativePath is like outputs/img-01.jpg relative to workDir of imggen - but we set outputsDir=tmpOut
-        // relativePath is "outputs/img-01.jpg" from flux adapter - actually "outputs/" + name relative to workDir
-        // Looking at NvidiaFluxImageAdapter - relativePath is "outputs/" + name and file is outDir.resolve(name)
-        // outDir is outputsDir = tmpOut, so file is tmpOut/img-01.jpg, relativePath is outputs/img-01.jpg - inconsistent!
-        // Actually: Path file = outDir.resolve(name) where outDir = cmd.getOutputsDir() = tmpOut
-        // relativePath = "outputs/" + name - so wrong path. Looking again:
-        // assets.add(... relativePath("outputs/" + name) ...)
-        // file is outDir.resolve(name) = tmpOut/img-01.jpg
-        // So we should list tmpOut for jpg/png
-        Path found = null;
-        try (var stream = Files.list(tmpOut)) {
-            found = stream.filter(p -> {
-                String n = p.getFileName().toString().toLowerCase(Locale.ROOT);
-                return n.endsWith(".jpg") || n.endsWith(".jpeg") || n.endsWith(".png");
-            }).findFirst().orElse(null);
-        }
-        if (found == null || !Files.isRegularFile(found)) {
-            // try relative from workDir
-            Path alt = ctx.getWorkDir().resolve(result.getImages().get(0).getRelativePath());
-            if (Files.isRegularFile(alt)) {
-                found = alt;
-            }
-        }
-        if (found == null) {
-            throw new IllegalStateException("找不到生成的图片文件");
-        }
-        Files.copy(found, outFile, StandardCopyOption.REPLACE_EXISTING);
-    }
-
     private void copyBgmIfPresent(PipelineContext ctx, ShotlistDto list) {
         try {
             Path bgmDir = Path.of(aigenProperties.getVisual().getBgmDir()).toAbsolutePath().normalize();
             if (!Files.isDirectory(bgmDir)) {
                 log.info("BGM 目录不存在，跳过: {}", bgmDir);
                 return;
+            }
+            if (list.getAudio() == null) {
+                list.setAudio(new com.dwcode.okxbot.aigen.domain.shot.ShotlistAudio());
             }
             String bgmId = list.getAudio().getBgmId();
             if (bgmId == null || bgmId.isBlank()) {
@@ -295,7 +327,7 @@ public class AssetStep implements PipelineStep {
                 }
             }
             if (src == null) {
-                log.info("未找到预置 BGM 文件，纯画面出片");
+                log.info("未找到预置 BGM 文件");
                 return;
             }
             Path audioDir = ctx.getWorkDir().resolve("assets").resolve("audio");

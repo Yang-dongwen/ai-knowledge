@@ -23,7 +23,7 @@ public class AigenCreateOptions {
      * template | visual；空则用 aigen.default-pipeline-mode
      */
     private String pipelineMode;
-    /** none | bgm_only | tts（visual 模式） */
+    /** none | bgm_only | tts | tts_bgm（visual 模式） */
     private String audioMode;
     /** 风格预设 cinematic-dark / clean-tech / … */
     private String stylePreset;
@@ -35,4 +35,6 @@ public class AigenCreateOptions {
     private String imageModel;
     /** visual 出图供应商 key（可选，与 imageModel 组合定位） */
     private String imageProvider;
+    /** VT-1.5：出图前用 LLM 润色画面 prompt */
+    private Boolean enhanceImagePrompt;
 }

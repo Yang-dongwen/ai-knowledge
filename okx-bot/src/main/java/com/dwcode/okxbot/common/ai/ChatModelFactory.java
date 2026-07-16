@@ -5,7 +5,9 @@ import com.dwcode.okxbot.chat.config.AiProperties.ProviderConfig;
 import com.dwcode.okxbot.common.exception.BusinessException;
 import com.dwcode.okxbot.video.config.VideoProperties;
 import dev.langchain4j.model.chat.ChatModel;
+import dev.langchain4j.model.chat.StreamingChatModel;
 import dev.langchain4j.model.openai.OpenAiChatModel;
+import dev.langchain4j.model.openai.OpenAiStreamingChatModel;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
@@ -14,7 +16,7 @@ import java.time.Duration;
 import java.util.Map;
 
 /**
- * 按供应商 / 模型动态构建 LangChain4j {@link ChatModel}。
+ * 按供应商 / 模型动态构建 LangChain4j {@link ChatModel} / {@link StreamingChatModel}。
  * <p>
  * 不注册全局单例 ChatModel，以支持任务级 provider/model 与测试短超时。
  * 密钥与 base-url 复用 {@link AiProperties}（与 chat / 三工具共用）。
@@ -37,6 +39,17 @@ public class ChatModelFactory {
     public ChatModel create(String providerKey, String modelId, LlmCallOptions options) {
         ResolvedLlm target = resolve(providerKey, modelId);
         return build(target.providerKey(), target.provider(), target.modelId(), options);
+    }
+
+    /**
+     * 构建流式 ChatModel（AI 对话 SSE 用）。
+     * <p>
+     * {@link LlmCallOptions#getTimeoutSeconds()} 映射为 HTTP connect/read 超时；
+     * 对流式读而言即为「两次数据之间」的空闲超时，不是整段回复总时长。
+     */
+    public StreamingChatModel createStreaming(String providerKey, String modelId, LlmCallOptions options) {
+        ResolvedLlm target = resolve(providerKey, modelId);
+        return buildStreaming(target.providerKey(), target.provider(), target.modelId(), options);
     }
 
     /**
@@ -117,6 +130,42 @@ public class ChatModelFactory {
 
         if (responseFormat != null) {
             // 如 json_object：强制模型输出 JSON（Phase B 结构化场景）
+            builder.responseFormat(responseFormat);
+        }
+        return builder.build();
+    }
+
+    private StreamingChatModel buildStreaming(String providerKey,
+                                              ProviderConfig provider,
+                                              String modelId,
+                                              LlmCallOptions options) {
+        LlmCallOptions opts = options != null ? options : LlmCallOptions.builder().build();
+        double temperature = opts.getTemperature() != null
+                ? opts.getTemperature()
+                : videoProperties.getLlm().getTemperature();
+        int maxTokens = opts.getMaxTokens() != null
+                ? opts.getMaxTokens()
+                : videoProperties.getLlm().getMaxTokens();
+        int timeoutSec = opts.getTimeoutSeconds() != null
+                ? Math.max(1, opts.getTimeoutSeconds())
+                : 180;
+
+        String baseUrl = normalizeOpenAiBaseUrl(provider.getBaseUrl());
+        String responseFormat = blankToNull(opts.getResponseFormat());
+        log.info("构建 StreamingChatModel: engine=langchain4j, provider={}, model={}, baseUrl={}, idleReadTimeout={}s",
+                providerKey, modelId, baseUrl, timeoutSec);
+
+        // timeout → connectTimeout + readTimeout；流式场景 readTimeout = 空闲无数据超时
+        var builder = OpenAiStreamingChatModel.builder()
+                .baseUrl(baseUrl)
+                .apiKey(provider.getApiKey())
+                .modelName(modelId)
+                .temperature(temperature)
+                .maxTokens(maxTokens)
+                .timeout(Duration.ofSeconds(timeoutSec))
+                .returnThinking(true);
+
+        if (responseFormat != null) {
             builder.responseFormat(responseFormat);
         }
         return builder.build();

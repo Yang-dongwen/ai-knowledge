@@ -12,6 +12,7 @@ import org.springframework.core.io.Resource;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.multipart.MultipartFile;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 import java.util.List;
@@ -53,6 +54,53 @@ public class AigenTaskController {
     @GetMapping("/tasks/{taskId}/storyboard")
     public ApiResult<Map<String, Object>> storyboard(@PathVariable Long taskId) {
         return ApiResult.ok(aigenTaskService.getStoryboard(taskId));
+    }
+
+    /**
+     * VT-1.5：镜头摘要列表（缩略图元数据）。
+     */
+    @GetMapping("/tasks/{taskId}/shots")
+    public ApiResult<List<AigenShotSummary>> listShots(@PathVariable Long taskId) {
+        return ApiResult.ok(aigenTaskService.listShots(taskId));
+    }
+
+    /**
+     * VT-1.5：单镜主视觉图片流。
+     */
+    @GetMapping("/tasks/{taskId}/shots/{shotId}/image")
+    public ResponseEntity<Resource> shotImage(
+            @PathVariable Long taskId,
+            @PathVariable String shotId) {
+        return aigenTaskService.openShotImage(taskId, shotId);
+    }
+
+    /**
+     * VT-1.5：单镜重生图；默认重渲染成片。
+     */
+    @PostMapping("/tasks/{taskId}/shots/{shotId}/regenerate")
+    public ApiResult<AigenTaskResponse> regenerateShot(
+            @PathVariable Long taskId,
+            @PathVariable String shotId,
+            @RequestParam(required = false) Boolean enhance,
+            @RequestParam(required = false, defaultValue = "true") Boolean reRender) {
+        log.info("单镜重生: taskId={}, shotId={}, enhance={}, reRender={}",
+                taskId, shotId, enhance, reRender);
+        return ApiResult.ok(aigenTaskService.regenerateShot(taskId, shotId, enhance, reRender));
+    }
+
+    /**
+     * VT-1.5：上传用户图替换镜头画面。
+     */
+    @PostMapping(value = "/tasks/{taskId}/shots/{shotId}/image",
+            consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    public ApiResult<AigenShotSummary> uploadShotImage(
+            @PathVariable Long taskId,
+            @PathVariable String shotId,
+            @RequestParam("file") MultipartFile file,
+            @RequestParam(required = false, defaultValue = "true") Boolean reRender) {
+        log.info("上传镜头图: taskId={}, shotId={}, size={}",
+                taskId, shotId, file != null ? file.getSize() : 0);
+        return ApiResult.ok(aigenTaskService.uploadShotImage(taskId, shotId, file, reRender));
     }
 
     /**

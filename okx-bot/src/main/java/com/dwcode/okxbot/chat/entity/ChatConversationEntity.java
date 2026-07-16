@@ -8,7 +8,7 @@ import lombok.Data;
 import java.time.LocalDateTime;
 
 /**
- * AI 对话会话实体。
+ * AI 对话会话实体（按用户隔离空间）。
  */
 @Data
 @TableName("chat_conversation")
@@ -17,6 +17,10 @@ public class ChatConversationEntity {
     @JsonSerialize(using = ToStringSerializer.class)
     @TableId(type = IdType.ASSIGN_ID)
     private Long id;
+
+    /** 所属用户 ID（多租户隔离） */
+    @JsonSerialize(using = ToStringSerializer.class)
+    private Long userId;
 
     private String title;
 

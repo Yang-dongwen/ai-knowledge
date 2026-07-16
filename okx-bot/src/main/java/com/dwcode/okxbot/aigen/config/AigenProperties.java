@@ -54,6 +54,8 @@ public class AigenProperties {
         private String bgmDir = "./data/aigen/_bgm";
         private int imageSteps = 4;
         private String imageProviderKey = "nvidia";
+        /** 默认是否润色出图 prompt */
+        private boolean defaultEnhanceImagePrompt = false;
     }
 
     @Data

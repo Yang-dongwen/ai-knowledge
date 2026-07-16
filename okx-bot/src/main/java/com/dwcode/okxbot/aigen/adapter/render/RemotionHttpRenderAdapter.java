@@ -66,9 +66,10 @@ public class RemotionHttpRenderAdapter implements VideoRenderPort {
         if (command.getStoryboard() != null) {
             rewriteAudioTracksToHttp(inputProps, workDir, cfg.getBaseUrl(), command.getStoryboard());
         }
-        // Visual Timeline：镜头主视觉相对路径 → HTTP
+        // Visual Timeline：镜头主视觉 / 口播 / BGM 相对路径 → HTTP
         rewriteVisualAssetsToHttp(inputProps, workDir, cfg.getBaseUrl());
         rewriteShotlistBgmToHttp(inputProps, workDir, cfg.getBaseUrl());
+        rewriteShotAudioToHttp(inputProps, workDir, cfg.getBaseUrl());
 
         Map<String, Object> body = new HashMap<>();
         body.put("jobId", command.getJobId());
@@ -234,6 +235,35 @@ public class RemotionHttpRenderAdapter implements VideoRenderPort {
         Path file = workDir.resolve(rel).normalize();
         if (Files.isRegularFile(file)) {
             audioObj.put("bgmUrl", base + "/" + rel);
+        }
+    }
+
+    /** shots[].audioSrc → audioUrl */
+    private void rewriteShotAudioToHttp(ObjectNode inputProps, Path workDir, String remotionBaseUrl) {
+        JsonNode shots = inputProps.get("shots");
+        if (!(shots instanceof ArrayNode arr) || arr.isEmpty()) {
+            return;
+        }
+        String taskId = workDir.getFileName() != null ? workDir.getFileName().toString() : "";
+        String base = trimSlash(remotionBaseUrl) + "/media/" + taskId;
+        for (JsonNode shot : arr) {
+            if (!(shot instanceof ObjectNode shotObj)) {
+                continue;
+            }
+            String rel = shotObj.path("audioSrc").asText(null);
+            if (rel == null || rel.isBlank()) {
+                continue;
+            }
+            rel = rel.replace('\\', '/');
+            if (rel.startsWith("/")) {
+                rel = rel.substring(1);
+            }
+            Path file = workDir.resolve(rel).normalize();
+            if (!file.startsWith(workDir.normalize()) || !Files.isRegularFile(file)) {
+                continue;
+            }
+            shotObj.put("audioUrl", base + "/" + rel);
+            shotObj.put("audioSrc", rel);
         }
     }
 

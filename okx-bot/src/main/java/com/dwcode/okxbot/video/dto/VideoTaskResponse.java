@@ -19,6 +19,10 @@ public class VideoTaskResponse {
     private String llmProvider;
     /** 本任务 LLM 模型 */
     private String llmModel;
+    /** 理解模式 */
+    private String understandingMode;
+    private String omniProvider;
+    private String omniModel;
     private String currentStep;
     private String errorMessage;
     private Double durationSeconds;
@@ -34,10 +38,14 @@ public class VideoTaskResponse {
     private Long downloadDurationMs;
     /** 转录步骤耗时 ms */
     private Long transcribeDurationMs;
+    /** 画面理解耗时 ms */
+    private Long understandDurationMs;
     /** 总结步骤耗时 ms */
     private Long summarizeDurationMs;
     /** 全流程总耗时 ms */
     private Long totalDurationMs;
+    private Boolean degraded;
+    private String degradeReason;
     /** 成功时包含完整结果（详情查询） */
     private VideoSummaryResponse result;
 }

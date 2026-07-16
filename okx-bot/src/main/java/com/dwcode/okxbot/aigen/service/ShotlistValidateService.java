@@ -18,7 +18,7 @@ public class ShotlistValidateService {
     private static final Set<String> VISUAL_TYPES = Set.of("ai_image", "solid", "gradient", "user_image", "ai_video");
     private static final Set<String> MOTION_TYPES = Set.of("static", "ken_burns", "zoom_in", "zoom_out", "pan_left", "pan_right");
     private static final Set<String> LAYOUTS = Set.of("none", "hook-center", "lower-third", "bullets-right", "caption");
-    private static final Set<String> AUDIO_MODES = Set.of("none", "bgm_only", "tts");
+    private static final Set<String> AUDIO_MODES = Set.of("none", "bgm_only", "tts", "tts_bgm");
 
     private final AigenProperties aigenProperties;
 

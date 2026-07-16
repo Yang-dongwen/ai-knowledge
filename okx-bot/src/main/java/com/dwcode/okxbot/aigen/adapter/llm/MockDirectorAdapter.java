@@ -43,6 +43,7 @@ public class MockDirectorAdapter implements DirectorPort {
                 o.setBullets(List.of("要点 A", "要点 B", "要点 C"));
             }
             s.setOverlay(o);
+            s.setNarration(titles[i] + "。" + topic + "，请看这一镜。");
             list.getShots().add(s);
         }
 

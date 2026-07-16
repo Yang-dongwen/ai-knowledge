@@ -49,6 +49,8 @@ public class VideoProperties {
     private Whisper whisper = new Whisper();
     private Llm llm = new Llm();
     private Download download = new Download();
+    /** 多模态画面理解（默认 audio_only 兼容现网） */
+    private Understanding understanding = new Understanding();
 
     @Data
     public static class Whisper {
@@ -158,5 +160,61 @@ public class VideoProperties {
          * true 时在分辨率限制内尽量选 progressive / 已合并流。
          */
         private boolean preferMerged = true;
+    }
+
+    /**
+     * 多模态视频理解配置。
+     * 代码默认 mode=audio_only；go-live 改为 hybrid。
+     */
+    @Data
+    public static class Understanding {
+        /** audio_only | hybrid | omni_only */
+        private String mode = "audio_only";
+        /** true 时走 Mock，不调云端 Omni */
+        private boolean mock = false;
+        private String provider = "nvidia";
+        private String model = "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning";
+        /** auto | nvidia-omni-chat | frame-vlm | mock */
+        private String protocol = "auto";
+        private int timeoutSeconds = 600;
+        private int writeTimeoutSeconds = 120;
+        private int maxRetries = 4;
+        private long retryBackoffMs = 3000;
+        private int maxRequestVideoSeconds = 120;
+        private int shortMaxSeconds = 90;
+        private int mediumMaxSeconds = 600;
+        private int chunkSeconds = 90;
+        private int sampleStrideSeconds = 60;
+        private int sampleWindowSeconds = 20;
+        private int targetHeight = 480;
+        private int targetFps = 2;
+        private int maxChunksPerTask = 20;
+        private long maxUploadBytes = 20_971_520L;
+        private double payloadHeadroom = 0.7;
+        private int reencodeMaxAttempts = 3;
+        private int chunkConcurrency = 1;
+        private boolean requireTranscript = true;
+        private boolean fallbackToAudio = true;
+        private boolean fallbackFrameVlm = true;
+        private boolean cleanupChunks = true;
+        private boolean enableThinking = false;
+        private int thinkingTokenBudget = 1024;
+        private int hybridMaxDurationSeconds = 1800;
+        private int omniMaxDurationSeconds = 1800;
+        /** reject | force_audio */
+        private String onOmniTooLong = "reject";
+        private boolean stripAudioOnVisualChunks = true;
+        private int mapMaxTokens = 4096;
+        private double temperature = 0.2;
+        /** ASR digest：短于此字符数则零次 Map LLM */
+        private int digestSingleWindowChars = 8000;
+        private int digestWindowChars = 4500;
+        /** FrameSample */
+        private double frameIntervalSeconds = 2.0;
+        private int frameMaxPerChunk = 8;
+        private int frameMaxEdge = 768;
+        private int frameJpegQuality = 85;
+        private int frameMaxImagesPerCall = 8;
+        private boolean frameIncludeAsrWindowText = true;
     }
 }

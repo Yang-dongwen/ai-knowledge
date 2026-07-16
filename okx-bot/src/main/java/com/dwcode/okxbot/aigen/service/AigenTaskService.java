@@ -4,15 +4,21 @@ import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.dwcode.okxbot.aigen.agent.AigenTaskScheduler;
 import com.dwcode.okxbot.aigen.config.AigenProperties;
+import com.dwcode.okxbot.aigen.domain.shot.ShotDto;
+import com.dwcode.okxbot.aigen.domain.shot.ShotlistDto;
 import com.dwcode.okxbot.aigen.dto.*;
 import com.dwcode.okxbot.aigen.entity.AigenTaskEntity;
 import com.dwcode.okxbot.aigen.enums.AigenTaskStatus;
 import com.dwcode.okxbot.aigen.event.AigenTaskEventPublisher;
 import com.dwcode.okxbot.aigen.mapper.AigenTaskMapper;
+import com.dwcode.okxbot.aigen.port.RenderCommand;
+import com.dwcode.okxbot.aigen.port.RenderResult;
+import com.dwcode.okxbot.aigen.port.VideoRenderPort;
 import com.dwcode.okxbot.auth.security.SecurityUtils;
 import com.dwcode.okxbot.chat.config.AiProperties;
 import com.dwcode.okxbot.chat.config.AiProperties.ProviderConfig;
 import com.dwcode.okxbot.common.exception.BusinessException;
+import com.dwcode.okxbot.imggen.util.AspectRatioMapper;
 import com.dwcode.okxbot.video.service.AiModelConfigService;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
@@ -23,12 +29,15 @@ import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Service;
+import org.springframework.web.multipart.MultipartFile;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
+import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import java.util.stream.Collectors;
@@ -53,6 +62,8 @@ public class AigenTaskService {
     private final TemplateRegistry templateRegistry;
     private final AiProperties aiProperties;
     private final AiModelConfigService aiModelConfigService;
+    private final VisualShotAssetService visualShotAssetService;
+    private final VideoRenderPort videoRenderPort;
 
     public AigenTaskResponse create(AigenCreateRequest request) {
         String prompt = request.getPrompt().trim();
@@ -98,8 +109,8 @@ public class AigenTaskService {
             audioMode = "bgm_only";
         }
         audioMode = audioMode.toLowerCase();
-        if (!Set.of("none", "bgm_only", "tts").contains(audioMode)) {
-            throw new BusinessException(400, "audioMode 仅支持 none / bgm_only / tts");
+        if (!Set.of("none", "bgm_only", "tts", "tts_bgm").contains(audioMode)) {
+            throw new BusinessException(400, "audioMode 仅支持 none / bgm_only / tts / tts_bgm");
         }
 
         String stylePreset = blankToNull(options.getStylePreset());
@@ -216,6 +227,10 @@ public class AigenTaskService {
         entity.setLlmModel(llmModel);
         entity.setImageProvider(imageProvider);
         entity.setImageModel(imageModel);
+        boolean enhanceImg = Boolean.TRUE.equals(options.getEnhanceImagePrompt())
+                || (options.getEnhanceImagePrompt() == null
+                && aigenProperties.getVisual().isDefaultEnhanceImagePrompt());
+        entity.setEnhanceImagePrompt(enhanceImg ? 1 : 0);
         entity.setCreatedAt(LocalDateTime.now());
         entity.setUpdatedAt(LocalDateTime.now());
         aigenTaskMapper.insert(entity);
@@ -512,6 +527,257 @@ public class AigenTaskService {
         }
     }
 
+    // ---------- VT-1.5 镜头级 API ----------
+
+    public List<AigenShotSummary> listShots(Long taskId) {
+        AigenTaskEntity entity = requireOwnedTask(taskId);
+        ShotlistDto list = loadShotlist(entity);
+        if (list.getShots() == null) {
+            return List.of();
+        }
+        Path workDir = resolveWorkDir(entity);
+        List<AigenShotSummary> out = new ArrayList<>();
+        for (ShotDto s : list.getShots()) {
+            out.add(toShotSummary(workDir, s));
+        }
+        return out;
+    }
+
+    public ResponseEntity<Resource> openShotImage(Long taskId, String shotId) {
+        AigenTaskEntity entity = requireOwnedTask(taskId);
+        ShotlistDto list = loadShotlist(entity);
+        ShotDto shot = findShot(list, shotId);
+        Path workDir = resolveWorkDir(entity);
+        if (shot.getVisual() == null || shot.getVisual().getAssetPath() == null) {
+            throw new BusinessException(404, "镜头尚无画面文件");
+        }
+        Path path = workDir.resolve(shot.getVisual().getAssetPath()).normalize();
+        if (!path.startsWith(workDir.normalize()) || !Files.isRegularFile(path)) {
+            throw new BusinessException(404, "镜头图片不存在");
+        }
+        String name = path.getFileName().toString().toLowerCase(Locale.ROOT);
+        MediaType mt = name.endsWith(".png") ? MediaType.IMAGE_PNG
+                : name.endsWith(".webp") ? MediaType.parseMediaType("image/webp")
+                : MediaType.IMAGE_JPEG;
+        return ResponseEntity.ok()
+                .contentType(mt)
+                .header(HttpHeaders.CONTENT_DISPOSITION, "inline; filename=\"" + path.getFileName() + "\"")
+                .body(new FileSystemResource(path));
+    }
+
+    /**
+     * 单镜重生图（可选润色）；默认完成后重渲染整片。
+     */
+    public AigenTaskResponse regenerateShot(Long taskId, String shotId, Boolean enhance, Boolean reRender) {
+        AigenTaskEntity entity = requireOwnedTask(taskId);
+        requireVisualTerminal(entity);
+        ShotlistDto list = loadShotlist(entity);
+        ShotDto shot = findShot(list, shotId);
+        Path workDir = resolveWorkDir(entity);
+        try {
+            AspectRatioMapper.Size size = visualShotAssetService.resolveFluxSize(entity, list);
+            boolean mock = aigenProperties.isMockPipeline()
+                    || "mock".equalsIgnoreCase(aigenProperties.getSteps().getAsset());
+            boolean doEnhance = enhance != null ? enhance
+                    : (entity.getEnhanceImagePrompt() != null && entity.getEnhanceImagePrompt() == 1);
+            // 强制按 ai_image 重生（覆盖 user_image）
+            if (shot.getVisual() != null) {
+                shot.getVisual().setType("ai_image");
+            }
+            visualShotAssetService.materializeShotImage(
+                    entity, workDir, shot, size, 1, mock, doEnhance);
+            persistShotlistEntity(entity, list, workDir);
+
+            boolean doRender = reRender == null || reRender;
+            if (doRender && !aigenProperties.isMockPipeline()
+                    && !"mock".equalsIgnoreCase(aigenProperties.getSteps().getRender())) {
+                renderVisualNow(entity, list, workDir);
+            }
+            entity.setUpdatedAt(LocalDateTime.now());
+            aigenTaskMapper.updateById(entity);
+            eventPublisher.publishEntity(entity, AigenTaskEventPublisher.TYPE_STATUS);
+            return toResponse(entity);
+        } catch (BusinessException e) {
+            throw e;
+        } catch (Exception e) {
+            throw new BusinessException("单镜重生失败: " + e.getMessage());
+        }
+    }
+
+    /**
+     * 上传用户图替换某镜主视觉。
+     */
+    public AigenShotSummary uploadShotImage(Long taskId, String shotId, MultipartFile file, Boolean reRender) {
+        AigenTaskEntity entity = requireOwnedTask(taskId);
+        requireVisualTerminal(entity);
+        if (file == null || file.isEmpty()) {
+            throw new BusinessException(400, "请上传图片文件");
+        }
+        String ct = file.getContentType() != null ? file.getContentType() : "";
+        if (!ct.startsWith("image/") && !looksLikeImageName(file.getOriginalFilename())) {
+            throw new BusinessException(400, "仅支持图片文件");
+        }
+        ShotlistDto list = loadShotlist(entity);
+        ShotDto shot = findShot(list, shotId);
+        Path workDir = resolveWorkDir(entity);
+        try {
+            visualShotAssetService.saveUserImage(workDir, shot, file.getBytes(), file.getOriginalFilename());
+            persistShotlistEntity(entity, list, workDir);
+            boolean doRender = reRender == null || reRender;
+            if (doRender && !aigenProperties.isMockPipeline()
+                    && !"mock".equalsIgnoreCase(aigenProperties.getSteps().getRender())) {
+                renderVisualNow(entity, list, workDir);
+            }
+            entity.setUpdatedAt(LocalDateTime.now());
+            aigenTaskMapper.updateById(entity);
+            eventPublisher.publishEntity(entity, AigenTaskEventPublisher.TYPE_STATUS);
+            return toShotSummary(workDir, shot);
+        } catch (BusinessException e) {
+            throw e;
+        } catch (Exception e) {
+            throw new BusinessException("上传镜头图失败: " + e.getMessage());
+        }
+    }
+
+    private void requireVisualTerminal(AigenTaskEntity entity) {
+        if (!"visual".equalsIgnoreCase(entity.getPipelineMode())) {
+            throw new BusinessException(400, "仅画面短片模式支持镜头操作");
+        }
+        String st = entity.getStatus();
+        if (!AigenTaskStatus.SUCCESS.name().equals(st)
+                && !AigenTaskStatus.FAILED.name().equals(st)
+                && !AigenTaskStatus.PAUSED.name().equals(st)) {
+            throw new BusinessException(400, "仅成功/失败/暂停的任务可编辑镜头，当前: " + st);
+        }
+        if (entity.getStoryboardJson() == null || entity.getStoryboardJson().isBlank()) {
+            throw new BusinessException(400, "镜头表尚未生成");
+        }
+    }
+
+    private ShotlistDto loadShotlist(AigenTaskEntity entity) {
+        try {
+            return objectMapper.readValue(entity.getStoryboardJson(), ShotlistDto.class);
+        } catch (Exception e) {
+            throw new BusinessException(400, "解析镜头表失败: " + e.getMessage());
+        }
+    }
+
+    private ShotDto findShot(ShotlistDto list, String shotId) {
+        if (list.getShots() == null) {
+            throw new BusinessException(404, "镜头不存在: " + shotId);
+        }
+        return list.getShots().stream()
+                .filter(s -> shotId != null && shotId.equals(s.getId()))
+                .findFirst()
+                .orElseThrow(() -> new BusinessException(404, "镜头不存在: " + shotId));
+    }
+
+    private Path resolveWorkDir(AigenTaskEntity entity) {
+        if (entity.getWorkDir() != null && !entity.getWorkDir().isBlank()) {
+            Path p = Path.of(entity.getWorkDir()).toAbsolutePath().normalize();
+            if (Files.isDirectory(p)) {
+                return p;
+            }
+        }
+        return storageService.resolveTaskDir(String.valueOf(entity.getId()));
+    }
+
+    private void persistShotlistEntity(AigenTaskEntity entity, ShotlistDto list, Path workDir) throws Exception {
+        String json = objectMapper.writerWithDefaultPrettyPrinter().writeValueAsString(list);
+        Path sbPath = workDir.resolve("shotlist.json");
+        Files.writeString(sbPath, json);
+        Files.writeString(workDir.resolve("storyboard.json"), json);
+        entity.setStoryboardJson(json);
+        entity.setStoryboardPath(sbPath.toAbsolutePath().toString());
+        entity.setShotCount(list.getShots() != null ? list.getShots().size() : 0);
+        if (list.getMeta() != null && list.getMeta().getDurationInFrames() != null
+                && list.getMeta().getFps() != null && list.getMeta().getFps() > 0) {
+            entity.setDurationSeconds(
+                    list.getMeta().getDurationInFrames() / (double) list.getMeta().getFps());
+        }
+    }
+
+    private void renderVisualNow(AigenTaskEntity entity, ShotlistDto list, Path workDir) throws Exception {
+        String compositionId = aigenProperties.getVisual().getCompositionId();
+        if (compositionId == null || compositionId.isBlank()) {
+            compositionId = "VisualTimeline";
+        }
+        entity.setStatus(AigenTaskStatus.RENDERING.name());
+        entity.setCurrentStep("正在重新合成视频…");
+        entity.setProgress(85);
+        aigenTaskMapper.updateById(entity);
+        eventPublisher.publishEntity(entity, AigenTaskEventPublisher.TYPE_STATUS);
+
+        long t0 = System.currentTimeMillis();
+        RenderResult result = videoRenderPort.render(RenderCommand.builder()
+                .jobId(String.valueOf(entity.getId()))
+                .compositionId(compositionId)
+                .inputProps(list)
+                .workDir(workDir)
+                .outputFileName("output.mp4")
+                .build());
+        if (!result.isSuccess()) {
+            entity.setStatus(AigenTaskStatus.FAILED.name());
+            entity.setCurrentStep("重渲失败");
+            entity.setErrorMessage(result.getError() != null ? result.getError() : "渲染失败");
+            aigenTaskMapper.updateById(entity);
+            throw new BusinessException(entity.getErrorMessage());
+        }
+        if (result.getOutputAbsolutePath() != null) {
+            Path out = Path.of(result.getOutputAbsolutePath());
+            if (Files.isRegularFile(out)) {
+                entity.setOutputPath(out.toAbsolutePath().toString());
+                entity.setOutputSizeBytes(Files.size(out));
+            }
+        }
+        entity.setRenderDurationMs(System.currentTimeMillis() - t0);
+        entity.setStatus(AigenTaskStatus.SUCCESS.name());
+        entity.setCurrentStep("生成完成");
+        entity.setProgress(100);
+        entity.setErrorMessage("");
+        entity.setFinishedAt(LocalDateTime.now());
+    }
+
+    private AigenShotSummary toShotSummary(Path workDir, ShotDto s) {
+        boolean img = false;
+        if (s.getVisual() != null && s.getVisual().getAssetPath() != null) {
+            Path p = workDir.resolve(s.getVisual().getAssetPath()).normalize();
+            img = Files.isRegularFile(p);
+        }
+        boolean audio = false;
+        if (s.getAudioSrc() != null) {
+            Path p = workDir.resolve(s.getAudioSrc()).normalize();
+            audio = Files.isRegularFile(p);
+        }
+        String prompt = s.getVisual() != null ? s.getVisual().getPrompt() : null;
+        String preview = prompt;
+        if (preview != null && preview.length() > 80) {
+            preview = preview.substring(0, 80) + "…";
+        }
+        return AigenShotSummary.builder()
+                .id(s.getId())
+                .order(s.getOrder())
+                .durationSec(s.getDurationSec())
+                .title(s.getOverlay() != null ? s.getOverlay().getTitle() : null)
+                .visualType(s.getVisual() != null ? s.getVisual().getType() : null)
+                .assetPath(s.getVisual() != null ? s.getVisual().getAssetPath() : null)
+                .imageAvailable(img)
+                .audioSrc(s.getAudioSrc())
+                .audioAvailable(audio)
+                .motionType(s.getMotion() != null ? s.getMotion().getType() : null)
+                .layout(s.getOverlay() != null ? s.getOverlay().getLayout() : null)
+                .promptPreview(preview)
+                .build();
+    }
+
+    private static boolean looksLikeImageName(String name) {
+        if (name == null) {
+            return false;
+        }
+        String n = name.toLowerCase(Locale.ROOT);
+        return n.endsWith(".jpg") || n.endsWith(".jpeg") || n.endsWith(".png") || n.endsWith(".webp");
+    }
+
     private AigenTaskEntity requireOwnedTask(Long taskId) {
         AigenTaskEntity entity = aigenTaskMapper.selectById(taskId);
         if (entity == null) {
@@ -550,6 +816,7 @@ public class AigenTaskService {
                 .llmModel(e.getLlmModel())
                 .imageProvider(e.getImageProvider())
                 .imageModel(e.getImageModel())
+                .enhanceImagePrompt(e.getEnhanceImagePrompt() != null && e.getEnhanceImagePrompt() == 1)
                 // 空串归一，避免 null 被前端当成「字段缺失」而残留旧值
                 .errorMessage(e.getErrorMessage() == null ? "" : e.getErrorMessage())
                 .durationSeconds(e.getDurationSeconds())

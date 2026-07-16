@@ -194,11 +194,17 @@ public class AigenTaskEventPublisher {
         d.put("status", e.getStatus());
         d.put("currentStep", e.getCurrentStep());
         d.put("progress", e.getProgress() != null ? e.getProgress() : 0);
+        d.put("pipelineMode", e.getPipelineMode());
+        d.put("audioMode", e.getAudioMode());
+        d.put("shotCount", e.getShotCount());
+        d.put("assetDoneCount", e.getAssetDoneCount());
         d.put("language", e.getLanguage());
         d.put("aspectRatio", e.getAspectRatio());
         d.put("targetDurationSec", e.getTargetDurationSec());
         d.put("llmProvider", e.getLlmProvider());
         d.put("llmModel", e.getLlmModel());
+        d.put("imageProvider", e.getImageProvider());
+        d.put("imageModel", e.getImageModel());
         // 空串而非 null，配合全局 non_null 序列化，保证前端能清掉旧错误
         d.put("errorMessage", e.getErrorMessage() == null ? "" : e.getErrorMessage());
         d.put("durationSeconds", e.getDurationSeconds());

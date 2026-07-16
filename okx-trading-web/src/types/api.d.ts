@@ -80,6 +80,8 @@ export interface ChatMessage {
 
 export interface ChatConversation {
   id: string
+  /** 所属用户（后端隔离字段；前端一般只展示自己的列表） */
+  userId?: string
   title: string
   provider: string
   model: string
@@ -120,6 +122,10 @@ export interface VideoProcessOptions {
   llmProvider?: string
   /** LLM 模型 ID */
   llmModel?: string
+  /** audio_only | hybrid | omni_only */
+  understandingMode?: string
+  omniProvider?: string
+  omniModel?: string
 }
 
 export interface VideoProcessRequest {
@@ -143,6 +149,15 @@ export interface VideoSummaryPart {
   chapters: ChapterItem[]
   mindMapMarkdown?: string | null
   repurposeScript?: string | null
+  visualSummary?: string | null
+  visualKeyPoints?: KeyPointItem[] | null
+  onScreenTexts?: string[] | null
+  scenes?: string[] | null
+  multimodal?: boolean | null
+  understandingMode?: string | null
+  partialVisual?: boolean | null
+  degraded?: boolean | null
+  degradeReason?: string | null
 }
 
 export interface TranscriptionSegment {
@@ -164,6 +179,9 @@ export interface VideoSummaryResult {
   title: string
   duration?: number | null
   sourceUrl: string
+  understandingMode?: string | null
+  degraded?: boolean | null
+  degradeReason?: string | null
   summary: VideoSummaryPart
   transcription: TranscriptionResult
 }
@@ -172,6 +190,7 @@ export type VideoTaskStatus =
   | 'PENDING'
   | 'DOWNLOADING'
   | 'TRANSCRIBING'
+  | 'UNDERSTANDING'
   | 'SUMMARIZING'
   | 'SUCCESS'
   | 'FAILED'
@@ -185,6 +204,9 @@ export interface VideoTaskItem {
   platform?: string | null
   llmProvider?: string | null
   llmModel?: string | null
+  understandingMode?: string | null
+  omniProvider?: string | null
+  omniModel?: string | null
   currentStep?: string | null
   errorMessage?: string | null
   durationSeconds?: number | null
@@ -198,10 +220,13 @@ export interface VideoTaskItem {
   downloadDurationMs?: number | null
   /** 转录步骤耗时 ms */
   transcribeDurationMs?: number | null
+  understandDurationMs?: number | null
   /** 总结步骤耗时 ms */
   summarizeDurationMs?: number | null
   /** 全流程总耗时 ms */
   totalDurationMs?: number | null
+  degraded?: boolean | null
+  degradeReason?: string | null
   result?: VideoSummaryResult | null
 }
 
@@ -291,12 +316,14 @@ export interface AigenCreateOptions {
   styleJson?: string
   /** visual | template */
   pipelineMode?: string
-  /** none | bgm_only | tts */
+  /** none | bgm_only | tts | tts_bgm */
   audioMode?: string
   stylePreset?: string
   /** visual 出图模型（capability=image） */
   imageModel?: string
   imageProvider?: string
+  /** VT-1.5 出图前润色 prompt */
+  enhanceImagePrompt?: boolean
 }
 
 export interface AigenCreateRequest {
@@ -327,6 +354,7 @@ export interface AigenTaskItem {
   llmModel?: string | null
   imageProvider?: string | null
   imageModel?: string | null
+  enhanceImagePrompt?: boolean | null
   errorMessage?: string | null
   durationSeconds?: number | null
   outputAvailable?: boolean | null

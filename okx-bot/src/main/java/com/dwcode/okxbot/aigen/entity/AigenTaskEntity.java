@@ -29,7 +29,7 @@ public class AigenTaskEntity {
      * 流水线模式：template（口播模板）| visual（画面优先 Timeline）
      */
     private String pipelineMode;
-    /** none | bgm_only | tts */
+    /** none | bgm_only | tts | tts_bgm */
     private String audioMode;
     /** 风格预设，如 cinematic-dark */
     private String stylePreset;
@@ -55,6 +55,8 @@ public class AigenTaskEntity {
     private String imageProvider;
     /** visual 出图：模型 ID（ai_model_config capability=image） */
     private String imageModel;
+    /** VT-1.5：出图前润色 prompt（0/1） */
+    private Integer enhanceImagePrompt;
 
     private String storyboardJson;
     private String storyboardPath;

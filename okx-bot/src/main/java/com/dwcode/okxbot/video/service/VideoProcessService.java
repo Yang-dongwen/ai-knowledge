@@ -11,6 +11,7 @@ import com.dwcode.okxbot.common.ai.LlmChatClient;
 import com.dwcode.okxbot.video.config.VideoProperties;
 import com.dwcode.okxbot.video.dto.*;
 import com.dwcode.okxbot.video.entity.VideoTaskEntity;
+import com.dwcode.okxbot.video.enums.UnderstandingMode;
 import com.dwcode.okxbot.video.enums.VideoTaskStatus;
 import com.dwcode.okxbot.video.event.VideoTaskEventPublisher;
 import com.dwcode.okxbot.video.mapper.VideoTaskMapper;
@@ -93,6 +94,40 @@ public class VideoProcessService {
             }
         }
 
+        UnderstandingMode mode = UnderstandingMode.from(
+                options.getUnderstandingMode() != null
+                        ? options.getUnderstandingMode()
+                        : videoProperties.getUnderstanding().getMode());
+        String omniProvider = blankToNull(options.getOmniProvider());
+        String omniModel = blankToNull(options.getOmniModel());
+        if (mode.needsOmni()) {
+            if (omniProvider == null) {
+                omniProvider = blankToNull(videoProperties.getUnderstanding().getProvider());
+            }
+            if (omniModel == null) {
+                omniModel = blankToNull(videoProperties.getUnderstanding().getModel());
+            }
+            if (!videoProperties.getUnderstanding().isMock()) {
+                if (omniProvider == null) {
+                    throw new BusinessException("多模态模式需要 omniProvider 或配置 video.understanding.provider");
+                }
+                ProviderConfig opc = aiProperties.getProvider(omniProvider);
+                if (opc == null || opc.getApiKey() == null || opc.getApiKey().isEmpty()) {
+                    throw new BusinessException("多模态供应商不可用或未配置 api-key: " + omniProvider);
+                }
+                if (omniModel == null) {
+                    omniModel = aiModelConfigService.firstEnabledModelId(
+                            omniProvider, AiModelConfigService.CAP_VIDEO_OMNI);
+                }
+                if (omniModel == null) {
+                    omniModel = blankToNull(videoProperties.getUnderstanding().getModel());
+                }
+                if (omniModel == null) {
+                    throw new BusinessException("未配置可用 video_omni 模型，请在模型管理添加或配置 yml model");
+                }
+            }
+        }
+
         VideoTaskEntity entity = new VideoTaskEntity();
         entity.setUserId(SecurityUtils.requireCurrentUserId());
         entity.setSourceUrl(request.getUrl().trim());
@@ -100,16 +135,21 @@ public class VideoProcessService {
         entity.setStatus(VideoTaskStatus.PENDING.name());
         entity.setCurrentStep("排队中");
         entity.setLanguage(options.getLanguage() != null ? options.getLanguage() : "zh");
+        entity.setUnderstandingMode(mode.wireValue());
         entity.setLlmProvider(llmProvider);
         entity.setLlmModel(llmModel);
+        entity.setOmniProvider(omniProvider);
+        entity.setOmniModel(omniModel);
         entity.setExtractMindMap(Boolean.FALSE.equals(options.getExtractMindMap()) ? 0 : 1);
         entity.setGenerateRepurposeScript(Boolean.FALSE.equals(options.getGenerateRepurposeScript()) ? 0 : 1);
+        entity.setDegraded(0);
         entity.setCreatedAt(LocalDateTime.now());
         entity.setUpdatedAt(LocalDateTime.now());
         videoTaskMapper.insert(entity);
 
-        log.info("创建视频任务: taskId={}, platform={}, llm={}/{}, url={}",
-                entity.getId(), entity.getPlatform(), llmProvider, llmModel, entity.getSourceUrl());
+        log.info("创建视频任务: taskId={}, platform={}, mode={}, llm={}/{}, omni={}/{}, url={}",
+                entity.getId(), entity.getPlatform(), mode.wireValue(),
+                llmProvider, llmModel, omniProvider, omniModel, entity.getSourceUrl());
         // 进入排队，由调度器按并发槽位启动
         taskScheduler.notifyPending();
         eventPublisher.publishEntity(entity, VideoTaskEventPublisher.TYPE_CREATED);
@@ -132,6 +172,7 @@ public class VideoProcessService {
         String status = entity.getStatus();
         if (!VideoTaskStatus.DOWNLOADING.name().equals(status)
                 && !VideoTaskStatus.TRANSCRIBING.name().equals(status)
+                && !VideoTaskStatus.UNDERSTANDING.name().equals(status)
                 && !VideoTaskStatus.SUMMARIZING.name().equals(status)
                 && !VideoTaskStatus.PENDING.name().equals(status)) {
             throw new BusinessException(400, "仅排队中或进行中的任务可暂停，当前状态: " + status);
@@ -204,6 +245,17 @@ public class VideoProcessService {
             } else if (m != null) {
                 entity.setLlmModel(m);
             }
+            if (request.getUnderstandingMode() != null && !request.getUnderstandingMode().isBlank()) {
+                entity.setUnderstandingMode(UnderstandingMode.from(request.getUnderstandingMode()).wireValue());
+            }
+            String op = blankToNull(request.getOmniProvider());
+            String om = blankToNull(request.getOmniModel());
+            if (op != null) {
+                entity.setOmniProvider(op);
+            }
+            if (om != null) {
+                entity.setOmniModel(om);
+            }
         }
 
         storageService.deleteTaskDir(String.valueOf(taskId));
@@ -218,13 +270,18 @@ public class VideoProcessService {
         entity.setAudioPath(null);
         entity.setTranscriptionPath(null);
         entity.setSummaryPath(null);
+        entity.setVisualPath(null);
         entity.setTranscriptionJson(null);
         entity.setSummaryJson(null);
+        entity.setVisualJson(null);
         entity.setResultJson(null);
         entity.setDownloadDurationMs(null);
         entity.setTranscribeDurationMs(null);
+        entity.setUnderstandDurationMs(null);
         entity.setSummarizeDurationMs(null);
         entity.setTotalDurationMs(null);
+        entity.setDegraded(0);
+        entity.setDegradeReason(null);
         entity.setStartedAt(null);
         entity.setFinishedAt(null);
         entity.setUpdatedAt(LocalDateTime.now());
@@ -443,6 +500,9 @@ public class VideoProcessService {
                 .platform(entity.getPlatform())
                 .llmProvider(entity.getLlmProvider())
                 .llmModel(entity.getLlmModel())
+                .understandingMode(entity.getUnderstandingMode())
+                .omniProvider(entity.getOmniProvider())
+                .omniModel(entity.getOmniModel())
                 .currentStep(entity.getCurrentStep())
                 .errorMessage(entity.getErrorMessage())
                 .durationSeconds(entity.getDurationSeconds())
@@ -454,8 +514,11 @@ public class VideoProcessService {
                 .startedAt(formatTime(entity.getStartedAt()))
                 .downloadDurationMs(entity.getDownloadDurationMs())
                 .transcribeDurationMs(entity.getTranscribeDurationMs())
+                .understandDurationMs(entity.getUnderstandDurationMs())
                 .summarizeDurationMs(entity.getSummarizeDurationMs())
-                .totalDurationMs(entity.getTotalDurationMs());
+                .totalDurationMs(entity.getTotalDurationMs())
+                .degraded(entity.getDegraded() != null && entity.getDegraded() == 1)
+                .degradeReason(entity.getDegradeReason());
 
         if (includeResult
                 && VideoTaskStatus.SUCCESS.name().equals(entity.getStatus())

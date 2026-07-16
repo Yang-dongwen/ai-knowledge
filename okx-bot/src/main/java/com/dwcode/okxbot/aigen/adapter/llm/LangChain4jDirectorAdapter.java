@@ -131,6 +131,15 @@ public class LangChain4jDirectorAdapter implements DirectorPort {
         return b.build();
     }
 
+    private static String narrationRule(String audioMode) {
+        String m = audioMode != null ? audioMode.trim().toLowerCase() : "";
+        if ("tts".equals(m) || "tts_bgm".equals(m)) {
+            return "当前需要口播：每镜必须填 narration（中文口语，完整句子，禁止空字符串）；"
+                    + "可与 overlay 标题呼应，但 narration 不能省略";
+        }
+        return "当前无强制口播：narration 可省略；若填写须为中文";
+    }
+
     private String buildSystem(DirectorCommand cmd) {
         int minS = aigenProperties.getVisual().getMinShots();
         int maxS = aigenProperties.getVisual().getMaxShots();
@@ -143,6 +152,7 @@ public class LangChain4jDirectorAdapter implements DirectorPort {
                   "audio":{"mode":"%s"},
                   "shots":[{
                     "id":"shot-1","durationSec":3.5,
+                    "narration":"中文口播，口语化，15～40字",
                     "visual":{"type":"ai_image","prompt":"English cinematic image prompt, no text in image"},
                     "motion":{"type":"ken_burns"},
                     "transition":{"type":"crossfade","durationFrames":12},
@@ -153,10 +163,11 @@ public class LangChain4jDirectorAdapter implements DirectorPort {
                 1. shots 数量 %d～%d，总时长约 %d 秒
                 2. visual.type 默认 ai_image；prompt 必须是英文画面描述，禁止 http URL
                 3. overlay.layout 只能是: none, hook-center, lower-third, bullets-right, caption
-                4. motion.type: static 或 ken_burns
+                4. motion.type: static 或 ken_burns 或 pan_left 或 pan_right 或 zoom_in 或 zoom_out
                 5. 中文叠字简短有力；画面 prompt 丰富具体
                 6. 叙事建议：钩子 → 展开 → 对比/洞察 → 收束
                 7. 不要输出 audio 文件路径；audio.mode 保持为 %s
+                8. %s
                 风格预设 %s：据此调整画面与叠字语气。
                 """.formatted(
                 cmd.getLanguage() != null ? cmd.getLanguage() : "zh",
@@ -167,6 +178,7 @@ public class LangChain4jDirectorAdapter implements DirectorPort {
                 minS, maxS,
                 cmd.getTargetDurationSec(),
                 cmd.getAudioMode() != null ? cmd.getAudioMode() : "bgm_only",
+                narrationRule(cmd.getAudioMode()),
                 cmd.getStylePreset() != null ? cmd.getStylePreset() : "cinematic-dark"
         );
     }

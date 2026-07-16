@@ -10,6 +10,8 @@ public enum VideoTaskStatus {
     DOWNLOADING,
     /** 转录中 */
     TRANSCRIBING,
+    /** 多模态画面理解中 */
+    UNDERSTANDING,
     /** LLM 总结中 */
     SUMMARIZING,
     /** 成功 */
@@ -24,6 +26,7 @@ public enum VideoTaskStatus {
     }
 
     public boolean isRunning() {
-        return this == DOWNLOADING || this == TRANSCRIBING || this == SUMMARIZING;
+        return this == DOWNLOADING || this == TRANSCRIBING
+                || this == UNDERSTANDING || this == SUMMARIZING;
     }
 }

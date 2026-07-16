@@ -73,6 +73,10 @@ public class StorageService {
         return resolveTaskDir(taskId).resolve("summary.json");
     }
 
+    public Path resolveVisualPath(String taskId) {
+        return resolveTaskDir(taskId).resolve("visual_understanding.json");
+    }
+
     /**
      * 将对象序列化为 JSON 文件。
      *

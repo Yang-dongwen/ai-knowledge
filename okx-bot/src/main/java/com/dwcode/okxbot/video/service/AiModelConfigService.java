@@ -24,7 +24,7 @@ import java.util.stream.Collectors;
 
 /**
  * AI 模型配置服务（数据库驱动）。
- * capability=chat：对话/润色/分镜；capability=image：文生图。
+ * capability=chat：对话/润色/分镜；capability=image：文生图；capability=video_omni：视频多模态。
  */
 @Slf4j
 @Service
@@ -33,6 +33,7 @@ public class AiModelConfigService {
 
     public static final String CAP_CHAT = "chat";
     public static final String CAP_IMAGE = "image";
+    public static final String CAP_VIDEO_OMNI = "video_omni";
 
     private static final DateTimeFormatter DT_FMT = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
 
@@ -42,7 +43,7 @@ public class AiModelConfigService {
     /**
      * 管理列表：全部模型（含禁用）；可按 capability 过滤。
      *
-     * @param capability 空=全部；chat / image
+     * @param capability 空=全部；chat / image / video_omni
      */
     public List<AiModelConfigResponse> listAll(String capability) {
         LambdaQueryWrapper<AiModelConfigEntity> q = new LambdaQueryWrapper<AiModelConfigEntity>()
@@ -283,6 +284,15 @@ public class AiModelConfigService {
                 protocol = null;
             }
             entity.setProtocol(protocol);
+        } else if (CAP_VIDEO_OMNI.equals(capability)) {
+            entity.setInvokeUrl(null);
+            entity.setDefaultSteps(null);
+            entity.setMaxSteps(null);
+            String protocol = request.getProtocol() != null ? request.getProtocol().trim() : "nvidia-omni-chat";
+            if (protocol.isBlank()) {
+                protocol = "nvidia-omni-chat";
+            }
+            entity.setProtocol(protocol);
         } else {
             entity.setInvokeUrl(null);
             entity.setDefaultSteps(null);
@@ -334,6 +344,8 @@ public class AiModelConfigService {
     private void applyCapabilityFilter(LambdaQueryWrapper<AiModelConfigEntity> q, String capability) {
         if (CAP_IMAGE.equals(capability)) {
             q.eq(AiModelConfigEntity::getCapability, CAP_IMAGE);
+        } else if (CAP_VIDEO_OMNI.equals(capability)) {
+            q.eq(AiModelConfigEntity::getCapability, CAP_VIDEO_OMNI);
         } else if (CAP_CHAT.equals(capability)) {
             q.and(w -> w.isNull(AiModelConfigEntity::getCapability)
                     .or().eq(AiModelConfigEntity::getCapability, "")
@@ -356,11 +368,11 @@ public class AiModelConfigService {
             return required ? CAP_CHAT : null;
         }
         String c = raw.trim().toLowerCase(Locale.ROOT);
-        if (CAP_CHAT.equals(c) || CAP_IMAGE.equals(c)) {
+        if (CAP_CHAT.equals(c) || CAP_IMAGE.equals(c) || CAP_VIDEO_OMNI.equals(c)) {
             return c;
         }
         if (required) {
-            throw new BusinessException(400, "capability 仅支持 chat 或 image");
+            throw new BusinessException(400, "capability 仅支持 chat、image 或 video_omni");
         }
         return null;
     }

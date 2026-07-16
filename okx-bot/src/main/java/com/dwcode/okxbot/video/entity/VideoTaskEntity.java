@@ -41,11 +41,20 @@ public class VideoTaskEntity {
     /** 语言 */
     private String language;
 
+    /** 理解模式 audio_only / hybrid / omni_only */
+    private String understandingMode;
+
     /** 本任务使用的 LLM 供应商（ai.providers key） */
     private String llmProvider;
 
     /** 本任务使用的 LLM 模型 ID */
     private String llmModel;
+
+    /** 多模态供应商 */
+    private String omniProvider;
+
+    /** 多模态模型 ID */
+    private String omniModel;
 
     /** 是否提取思维导图 1/0 */
     private Integer extractMindMap;
@@ -68,11 +77,17 @@ public class VideoTaskEntity {
     /** 摘要 JSON 文件路径（文件系统副本） */
     private String summaryPath;
 
+    /** 视觉理解 JSON 文件路径 */
+    private String visualPath;
+
     /** 转录 JSON（带时间戳完整文字，便于前端展示与搜索） */
     private String transcriptionJson;
 
     /** AI 核心内容 JSON（keyPoints/chapters/mindMap/repurpose） */
     private String summaryJson;
+
+    /** 视觉理解 JSON */
+    private String visualJson;
 
     /** 完整结构化结果 JSON（含元数据 + summary + transcription） */
     private String resultJson;
@@ -80,11 +95,20 @@ public class VideoTaskEntity {
     /** 错误信息 */
     private String errorMessage;
 
+    /** 是否降级成功（Omni 失败回退音频）1/0 */
+    private Integer degraded;
+
+    /** 降级原因 */
+    private String degradeReason;
+
     /** 下载步骤耗时（毫秒） */
     private Long downloadDurationMs;
 
     /** 转录步骤耗时（毫秒） */
     private Long transcribeDurationMs;
+
+    /** 画面理解步骤耗时（毫秒） */
+    private Long understandDurationMs;
 
     /** 总结步骤耗时（毫秒） */
     private Long summarizeDurationMs;

@@ -7,7 +7,7 @@ import java.util.List;
 
 @Data
 public class ShotlistAudio {
-    /** none | bgm_only | tts */
+    /** none | bgm_only | tts | tts_bgm */
     private String mode = "none";
     private String bgmId;
     /** 相对任务目录，如 assets/audio/bgm.mp3 */

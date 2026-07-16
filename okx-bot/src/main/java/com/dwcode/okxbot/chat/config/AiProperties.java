@@ -40,6 +40,16 @@ public class AiProperties {
     private int maxContextMessages = 20;
 
     /**
+     * 聊天模型「无输出」空闲超时（秒）。
+     * <ul>
+     *   <li>流式：从请求开始 / 上一次 token 起，连续该秒数没有任何输出才强制中断；
+     *       持续有 token 输出时不受总时长限制。</li>
+     *   <li>非流式：整次读超时。</li>
+     * </ul>
+     */
+    private int responseTimeoutSeconds = 20;
+
+    /**
      * Chat 出站引擎（视频提取 / aigen / imggen 润色共用）。
      * <ul>
      *   <li>{@code langchain4j} — 默认，经 LangChain4j OpenAiChatModel</li>

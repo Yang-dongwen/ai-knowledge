@@ -166,16 +166,18 @@ CREATE TABLE IF NOT EXISTS trade_fill (
     UNIQUE KEY uk_okx_trade_id (okx_trade_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='成交记录表';
 
--- 9. AI 对话会话表
+-- 9. AI 对话会话表（按用户隔离）
 CREATE TABLE IF NOT EXISTS chat_conversation (
     id BIGINT NOT NULL COMMENT '主键',
+    user_id BIGINT NOT NULL COMMENT '所属用户ID',
     title VARCHAR(255) NOT NULL DEFAULT '新对话' COMMENT '会话标题',
     provider VARCHAR(64) COMMENT '供应商标识',
     model VARCHAR(128) COMMENT '模型ID',
     created_at DATETIME(3) NOT NULL COMMENT '创建时间',
     updated_at DATETIME(3) NOT NULL COMMENT '更新时间',
     PRIMARY KEY (id),
-    INDEX idx_updated_at (updated_at)
+    INDEX idx_updated_at (updated_at),
+    INDEX idx_chat_user_updated (user_id, updated_at)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='AI对话会话表';
 
 -- 10. AI 对话消息表
@@ -285,11 +287,14 @@ CREATE TABLE IF NOT EXISTS video_task (
     source_url VARCHAR(1024) NOT NULL COMMENT '源视频URL',
     title VARCHAR(512) COMMENT '视频标题',
     platform VARCHAR(32) COMMENT '平台 douyin/bilibili/youtube/xiaohongshu/other',
-    status VARCHAR(32) NOT NULL DEFAULT 'PENDING' COMMENT '状态 PENDING/DOWNLOADING/TRANSCRIBING/SUMMARIZING/SUCCESS/FAILED',
+    status VARCHAR(32) NOT NULL DEFAULT 'PENDING' COMMENT '状态含 UNDERSTANDING',
     current_step VARCHAR(128) COMMENT '当前步骤说明',
     language VARCHAR(16) DEFAULT 'zh' COMMENT '语言',
+    understanding_mode VARCHAR(32) DEFAULT 'audio_only' COMMENT 'audio_only/hybrid/omni_only',
     llm_provider VARCHAR(64) COMMENT 'LLM供应商标识',
     llm_model VARCHAR(128) COMMENT 'LLM模型ID',
+    omni_provider VARCHAR(64) COMMENT '多模态供应商',
+    omni_model VARCHAR(128) COMMENT '多模态模型ID',
     extract_mind_map TINYINT NOT NULL DEFAULT 1 COMMENT '是否提取思维导图 1是 0否',
     generate_repurpose_script TINYINT NOT NULL DEFAULT 1 COMMENT '是否生成repurpose脚本 1是 0否',
     duration_seconds DOUBLE COMMENT '视频时长(秒)',
@@ -297,12 +302,17 @@ CREATE TABLE IF NOT EXISTS video_task (
     audio_path VARCHAR(1024) COMMENT '本地音频路径',
     transcription_path VARCHAR(1024) COMMENT '转录JSON文件路径',
     summary_path VARCHAR(1024) COMMENT '摘要JSON文件路径',
+    visual_path VARCHAR(1024) COMMENT '视觉理解JSON路径',
     transcription_json LONGTEXT COMMENT '转录结果JSON(带时间戳)',
     summary_json LONGTEXT COMMENT 'AI核心内容JSON',
+    visual_json LONGTEXT COMMENT '视觉理解JSON',
     result_json LONGTEXT COMMENT '完整结构化结果JSON',
     error_message TEXT COMMENT '错误信息',
+    degraded TINYINT DEFAULT 0 COMMENT '是否降级成功',
+    degrade_reason VARCHAR(512) COMMENT '降级原因',
     download_duration_ms BIGINT COMMENT '下载步骤耗时(毫秒)',
     transcribe_duration_ms BIGINT COMMENT '转录步骤耗时(毫秒)',
+    understand_duration_ms BIGINT COMMENT '画面理解耗时(毫秒)',
     summarize_duration_ms BIGINT COMMENT '总结步骤耗时(毫秒)',
     total_duration_ms BIGINT COMMENT '全流程总耗时(毫秒)',
     started_at DATETIME(3) COMMENT '开始处理时间',
@@ -353,7 +363,7 @@ CREATE TABLE IF NOT EXISTS ai_model_config (
     provider VARCHAR(64) NOT NULL COMMENT '供应商标识，对应 ai.providers 的 key',
     model_id VARCHAR(128) NOT NULL COMMENT 'API模型ID',
     model_name VARCHAR(128) NOT NULL COMMENT '展示名称',
-    capability VARCHAR(32) NOT NULL DEFAULT 'chat' COMMENT '能力 chat | image',
+    capability VARCHAR(32) NOT NULL DEFAULT 'chat' COMMENT '能力 chat | image | video_omni',
     invoke_url VARCHAR(512) NULL COMMENT '生图 GenAI URL（image 用）',
     default_steps INT NULL COMMENT '生图默认步数',
     max_steps INT NULL COMMENT '生图最大步数',

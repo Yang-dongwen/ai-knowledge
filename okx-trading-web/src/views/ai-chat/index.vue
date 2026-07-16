@@ -36,43 +36,83 @@
 
       <!-- 右侧聊天区域 -->
       <div class="chat-main">
-        <div class="chat-header" v-if="activeConversationId">
+        <div class="chat-header">
           <div class="chat-header-left">
-            <span class="chat-title">AI 交易助手</span>
+            <span class="chat-title">AI 对话</span>
             <a-select
               v-model:value="selectedModelKey"
               class="model-select"
               size="small"
+              placeholder="选择模型"
+              :disabled="isLoading || availableProviders.length === 0"
               @change="handleModelChange"
             >
-              <a-select-option v-for="provider in availableProviders" :key="provider.key">
-                <a-select-opt-group>
-                  <template #label>{{ provider.name }}</template>
-                  <a-select-option
-                    v-for="model in provider.models"
-                    :key="`${provider.key}::${model.id}`"
-                    :value="`${provider.key}::${model.id}`"
-                  >
-                    {{ model.name }}
-                  </a-select-option>
-                </a-select-opt-group>
-              </a-select-option>
-              <template #placeholder>
-                选择模型
-              </template>
+              <a-select-opt-group
+                v-for="provider in availableProviders"
+                :key="provider.key"
+                :label="provider.name"
+              >
+                <a-select-option
+                  v-for="model in provider.models"
+                  :key="`${provider.key}::${model.id}`"
+                  :value="`${provider.key}::${model.id}`"
+                >
+                  {{ model.name }}
+                </a-select-option>
+              </a-select-opt-group>
             </a-select>
+            <a-button
+              size="small"
+              class="header-action-btn"
+              :loading="testingModel"
+              :disabled="!selectedModelKey || isLoading"
+              @click="handleTestModel"
+            >
+              <template #icon><ExperimentOutlined /></template>
+              测试
+            </a-button>
+            <a-button
+              v-if="auth.isSuperAdmin"
+              size="small"
+              class="header-action-btn"
+              @click="modelManageOpen = true"
+            >
+              <template #icon><SettingOutlined /></template>
+              模型管理
+            </a-button>
           </div>
-          <span class="chat-hint">基于当前账户数据和市场信息，为您提供交易建议与分析</span>
+          <div class="chat-header-right">
+            <a-tag v-if="testingModel" color="processing">测试中…</a-tag>
+            <a-tag v-else-if="modelTestStatus === 'ok'" color="success">
+              ✓ 可用{{ modelTestLatency != null ? ` · ${modelTestLatency}ms` : '' }}
+            </a-tag>
+            <a-tag v-else-if="modelTestStatus === 'fail'" color="error" :title="modelTestError || undefined">
+              不可用
+            </a-tag>
+            <span class="chat-hint">纯聊天 · 可切换模型</span>
+          </div>
         </div>
+
+        <ModelManageModal
+          v-if="auth.isSuperAdmin"
+          v-model:open="modelManageOpen"
+          capability="chat"
+          @changed="onModelsChanged"
+        />
 
         <!-- 消息列表 -->
         <div class="chat-messages" ref="messagesRef">
           <div v-if="!activeConversationId" class="chat-welcome">
             <RobotOutlined class="welcome-icon" />
-            <div class="welcome-title">OKX 交易 AI 助手</div>
-            <div class="welcome-desc">点击「新对话」或从左侧选择会话开始聊天</div>
+            <div class="welcome-title">AI 对话</div>
+            <div class="welcome-desc">通用聊天助手，不绑定交易或账户数据</div>
             <div class="welcome-notice" v-if="availableProviders.length === 0">
-              ⚠️ 未检测到可用的 AI 模型，请在后端配置 API Key
+              <template v-if="auth.isSuperAdmin">
+                ⚠️ 暂无可用 Chat 模型 — 请点击右上角「模型管理」添加，并确认 yml 中配置了 api-key
+              </template>
+              <template v-else>
+                ⚠️ 暂无可用 Chat 模型 — 请联系超级管理员配置
+              </template>
             </div>
             <div class="welcome-prompts">
               <div
@@ -102,17 +142,34 @@
                 </div>
               </div>
               <div class="message-body">
-                <div class="message-role">{{ msg.role === 'assistant' ? 'AI 助手' : '我' }}</div>
+                <div class="message-role">{{ msg.role === 'assistant' ? 'AI' : '我' }}</div>
                 <div class="message-content" v-html="renderContent(msg.content, msg.role)"></div>
-                <div class="message-time">{{ formatChatTime(msg.timestamp) }}</div>
+                <div class="message-footer">
+                  <span class="message-time">{{ formatChatTime(msg.timestamp) }}</span>
+                  <button
+                    v-if="msg.content"
+                    type="button"
+                    class="msg-copy-btn"
+                    :class="{ copied: copiedId === msg.id }"
+                    @click="copyMessage(msg)"
+                    :title="copiedId === msg.id ? '已复制' : '复制消息'"
+                  >
+                    <CheckOutlined v-if="copiedId === msg.id" />
+                    <CopyOutlined v-else />
+                    <span class="msg-copy-label">{{ copiedId === msg.id ? '已复制' : '复制' }}</span>
+                  </button>
+                </div>
               </div>
             </div>
-            <div v-if="isLoading && messages.length > 0 && messages[messages.length - 1].role === 'assistant' && !messages[messages.length - 1].content" class="message-item assistant typing-wrapper">
+            <div
+              v-if="isLoading && messages.length > 0 && messages[messages.length - 1].role === 'assistant' && !messages[messages.length - 1].content"
+              class="message-item assistant typing-wrapper"
+            >
               <div class="message-avatar">
                 <div class="avatar-ai"><RobotOutlined /></div>
               </div>
               <div class="message-body">
-                <div class="message-role">AI 助手</div>
+                <div class="message-role">AI</div>
                 <div class="message-content typing-indicator">
                   <span></span><span></span><span></span>
                 </div>
@@ -121,21 +178,21 @@
           </template>
         </div>
 
-        <!-- 输入区域 -->
-        <div class="chat-input-area" v-if="activeConversationId">
+        <!-- 输入区域：无会话时也可直接发送（自动建会话） -->
+        <div class="chat-input-area">
           <div class="input-wrapper">
             <a-textarea
               v-model:value="inputMessage"
-              :placeholder="isLoading ? 'AI 正在思考中...' : '输入您的问题，按 Enter 发送'"
+              :placeholder="isLoading ? 'AI 正在思考中...' : '输入消息，Enter 发送 · Shift+Enter 换行'"
               :auto-size="{ minRows: 1, maxRows: 4 }"
-              :disabled="isLoading"
-              @pressEnter="handleSend"
+              :disabled="isLoading || availableProviders.length === 0"
+              @keydown.enter="onEnterKey"
               class="chat-input"
             />
             <a-button
               type="primary"
-              :disabled="!inputMessage.trim() || isLoading"
-              @click="handleSend"
+              :disabled="!inputMessage.trim() || isLoading || availableProviders.length === 0"
+              @click="() => handleSend()"
               class="send-btn"
             >
               <SendOutlined />
@@ -148,22 +205,31 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, computed } from 'vue'
+import { ref, onMounted, computed, nextTick } from 'vue'
 import {
   PlusOutlined,
   DeleteOutlined,
   MessageOutlined,
   RobotOutlined,
   UserOutlined,
-  SendOutlined
+  SendOutlined,
+  CopyOutlined,
+  CheckOutlined,
+  SettingOutlined,
+  ExperimentOutlined
 } from '@ant-design/icons-vue'
+import { message } from 'ant-design-vue'
 import { chatApi } from '@/api/chat.api'
+import { videoApi } from '@/api/video.api'
+import { useAuthStore } from '@/stores/auth.store'
+import ModelManageModal from '@/views/video-extract/ModelManageModal.vue'
 import type { ChatMessage, ChatConversation, AiProvider } from '@/types/api'
 import MarkdownIt from 'markdown-it'
 import hljs from 'highlight.js'
 import 'highlight.js/styles/github.css'
 
-// 初始化 markdown-it，启用代码高亮
+const auth = useAuthStore()
+
 const md: MarkdownIt = new MarkdownIt({
   html: false,
   linkify: true,
@@ -174,8 +240,11 @@ const md: MarkdownIt = new MarkdownIt({
         return `<pre class="hljs"><code>${hljs.highlight(str, { language: lang }).value}</code></pre>`
       } catch { /* ignore */ }
     }
-    // 使用 MarkdownIt 的静态工具方法转义
-    const escaped = str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
+    const escaped = str
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
     return `<pre class="hljs"><code>${escaped}</code></pre>`
   }
 })
@@ -188,9 +257,17 @@ const messages = ref<ChatMessage[]>([])
 const inputMessage = ref('')
 const isLoading = ref(false)
 const messagesRef = ref<HTMLElement | null>(null)
+/** Chat 模型管理（与视频提取等同 capability=chat） */
+const modelManageOpen = ref(false)
+const testingModel = ref(false)
+const modelTestStatus = ref<'idle' | 'ok' | 'fail'>('idle')
+const modelTestLatency = ref<number | null>(null)
+const modelTestError = ref('')
+/** 最近复制成功的消息 id，用于短暂切换图标 */
+const copiedId = ref<string>('')
+let copiedTimer: ReturnType<typeof setTimeout> | null = null
 let currentAbortController: AbortController | null = null
 
-// 过滤掉正在流式加载中的空 assistant 消息（由 typing indicator 替代显示）
 const displayMessages = computed(() => {
   if (isLoading.value && messages.value.length > 0) {
     const last = messages.value[messages.value.length - 1]
@@ -202,10 +279,10 @@ const displayMessages = computed(() => {
 })
 
 const defaultPrompts = [
-  { icon: '📊', text: '分析当前持仓情况' },
-  { icon: '📈', text: 'BTC 当前趋势如何？' },
-  { icon: '⚠️', text: '我的策略有哪些风险？' },
-  { icon: '💡', text: '给我一些交易建议' }
+  { icon: '💬', text: '用三句话介绍你自己' },
+  { icon: '✍️', text: '帮我润色一段工作邮件' },
+  { icon: '🧠', text: '解释一下什么是大语言模型' },
+  { icon: '📋', text: '给我一份每日学习计划模板' }
 ]
 
 function parseModelKey(key: string): { provider: string; model: string } {
@@ -230,9 +307,36 @@ function formatChatTime(timestamp: string): string {
   return `${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${timeStr}`
 }
 
+/** 复制消息原文（非渲染后的 HTML） */
+async function copyMessage(msg: ChatMessage) {
+  const text = (msg.content || '').trim()
+  if (!text) return
+  try {
+    if (navigator.clipboard?.writeText) {
+      await navigator.clipboard.writeText(text)
+    } else {
+      const ta = document.createElement('textarea')
+      ta.value = text
+      ta.style.position = 'fixed'
+      ta.style.left = '-9999px'
+      document.body.appendChild(ta)
+      ta.select()
+      document.execCommand('copy')
+      document.body.removeChild(ta)
+    }
+    copiedId.value = msg.id
+    if (copiedTimer) clearTimeout(copiedTimer)
+    copiedTimer = setTimeout(() => {
+      if (copiedId.value === msg.id) copiedId.value = ''
+    }, 1500)
+    message.success('已复制到剪贴板')
+  } catch {
+    message.error('复制失败，请手动选择文本')
+  }
+}
+
 function renderContent(content: string, role: string = 'assistant'): string {
   if (!content) return ''
-  // 用户消息只做简单转义和换行处理，不解析 Markdown
   if (role === 'user') {
     return content
       .replace(/&/g, '&amp;')
@@ -240,7 +344,6 @@ function renderContent(content: string, role: string = 'assistant'): string {
       .replace(/>/g, '&gt;')
       .replace(/\n/g, '<br>')
   }
-  // AI 回复使用 Markdown 渲染
   return md.render(content)
 }
 
@@ -251,22 +354,77 @@ async function scrollToBottom() {
   }
 }
 
-import { nextTick } from 'vue'
+function isModelKeyAvailable(key: string): boolean {
+  if (!key) return false
+  const { provider, model } = parseModelKey(key)
+  const p = availableProviders.value.find((x) => x.key === provider)
+  return !!(p && p.models.some((m) => m.id === model))
+}
 
 async function loadModels() {
   try {
     const res = await chatApi.getModels()
     availableProviders.value = (res as any).data || []
-    // 默认选中第一个供应商的第一个模型
-    if (availableProviders.value.length > 0 && !selectedModelKey.value) {
+    const prev = selectedModelKey.value
+    if (prev && isModelKeyAvailable(prev)) {
+      // 保留当前选择
+    } else if (availableProviders.value.length > 0) {
       const firstProvider = availableProviders.value[0]
       const firstModel = firstProvider.models[0]
       if (firstModel) {
         selectedModelKey.value = `${firstProvider.key}::${firstModel.id}`
+      } else {
+        selectedModelKey.value = ''
       }
+    } else {
+      selectedModelKey.value = ''
     }
+    // 模型列表变化后重置测试状态
+    modelTestStatus.value = 'idle'
+    modelTestLatency.value = null
+    modelTestError.value = ''
   } catch {
     availableProviders.value = []
+  }
+}
+
+async function onModelsChanged() {
+  await loadModels()
+  message.success('模型列表已刷新')
+}
+
+async function handleTestModel() {
+  if (!selectedModelKey.value) {
+    message.warning('请先选择模型')
+    return
+  }
+  const { provider, model } = parseModelKey(selectedModelKey.value)
+  if (!provider || !model) {
+    message.warning('模型无效')
+    return
+  }
+  testingModel.value = true
+  modelTestStatus.value = 'idle'
+  modelTestError.value = ''
+  modelTestLatency.value = null
+  try {
+    const res = await videoApi.testModel({ provider, model })
+    const data = (res as any).data
+    if (data?.available) {
+      modelTestStatus.value = 'ok'
+      modelTestLatency.value = data.latencyMs ?? null
+      message.success(`模型可用${data.latencyMs != null ? `（${data.latencyMs}ms）` : ''}`)
+    } else {
+      modelTestStatus.value = 'fail'
+      modelTestError.value = data?.errorMessage || '不可用'
+      message.error(modelTestError.value || '模型不可用')
+    }
+  } catch (e: any) {
+    modelTestStatus.value = 'fail'
+    modelTestError.value = e?.message || '测试失败'
+    message.error(modelTestError.value)
+  } finally {
+    testingModel.value = false
   }
 }
 
@@ -315,14 +473,41 @@ function createConversation() {
 }
 
 function handleModelChange() {
-  // 无需额外操作，选中模型会在发送消息时传递
+  modelTestStatus.value = 'idle'
+  modelTestLatency.value = null
+  modelTestError.value = ''
+  const { provider, model } = parseModelKey(selectedModelKey.value)
+  if (!activeConversationId.value) return
+  const conv = conversations.value.find(c => c.id === activeConversationId.value)
+  if (conv) {
+    conv.provider = provider
+    conv.model = model
+  }
 }
 
-async function handleSend(e?: any) {
-  if (e && e.shiftKey) return
-  if (e) e.preventDefault()
+/** Enter 发送；Shift+Enter 换行；输入法组字中不拦截 */
+function onEnterKey(e: KeyboardEvent) {
+  if (e.shiftKey) return
+  // 中文等输入法确认选字时不要发送
+  if (e.isComposing || e.keyCode === 229) return
+  e.preventDefault()
+  e.stopPropagation()
+  void handleSend()
+}
+
+async function handleSend() {
   const text = inputMessage.value.trim()
   if (!text || isLoading.value) return
+  if (!selectedModelKey.value) return
+
+  // 先清空输入框，避免 a-textarea 在 Enter 默认行为后把文本写回
+  inputMessage.value = ''
+  await nextTick()
+  inputMessage.value = ''
+
+  if (!activeConversationId.value) {
+    createConversation()
+  }
 
   const { provider, model } = parseModelKey(selectedModelKey.value)
 
@@ -333,11 +518,9 @@ async function handleSend(e?: any) {
     timestamp: new Date().toISOString()
   }
   messages.value.push(userMsg)
-  inputMessage.value = ''
   isLoading.value = true
   scrollToBottom()
 
-  // 创建 AI 回复占位消息（用于流式追加内容）
   const assistantMsgData: ChatMessage = {
     id: 'msg_ai_' + Date.now(),
     role: 'assistant',
@@ -351,7 +534,9 @@ async function handleSend(e?: any) {
   currentAbortController = chatApi.sendMessageStream(
     {
       message: text,
-      conversationId: activeConversationId.value.startsWith('local_') ? undefined : activeConversationId.value,
+      conversationId: activeConversationId.value.startsWith('local_')
+        ? undefined
+        : activeConversationId.value,
       provider: provider || undefined,
       model: model || undefined
     },
@@ -359,11 +544,19 @@ async function handleSend(e?: any) {
       onMeta(data) {
         if (data.conversationId && activeConversationId.value.startsWith('local_')) {
           activeConversationId.value = data.conversationId
-          const conv = conversations.value.find(c => c.id.startsWith('local_'))
+          const conv = conversations.value.find(c => String(c.id).startsWith('local_'))
           if (conv) {
             conv.id = data.conversationId
             conv.title = text.slice(0, 20) || '新对话'
+            if (data.provider) conv.provider = data.provider
+            if (data.model) conv.model = data.model
           }
+        }
+        // 同步当前会话的模型展示
+        const conv = conversations.value.find(c => c.id === activeConversationId.value)
+        if (conv) {
+          if (provider) conv.provider = provider
+          if (model) conv.model = model
         }
       },
       onDelta(data) {
@@ -379,11 +572,15 @@ async function handleSend(e?: any) {
         scrollToBottom()
       },
       onError(data) {
-        if (!messages.value[assistantMsgIndex].content) {
-          messages.value[assistantMsgIndex] = {
-            ...messages.value[assistantMsgIndex],
-            content: data.message || '抱歉，请求失败，请稍后重试。'
-          }
+        const errText = data.message || '抱歉，请求失败，请稍后重试。'
+        const prev = messages.value[assistantMsgIndex].content || ''
+        // 无内容则直接展示错误；已有部分流式内容则追加超时/错误说明
+        const next = prev
+          ? (prev.includes(errText) ? prev : `${prev}\n\n${errText}`)
+          : errText
+        messages.value[assistantMsgIndex] = {
+          ...messages.value[assistantMsgIndex],
+          content: next
         }
         isLoading.value = false
         currentAbortController = null
@@ -411,7 +608,7 @@ function handleQuickPrompt(text: string) {
     createConversation()
   }
   inputMessage.value = text
-  nextTick(() => handleSend())
+  void nextTick(() => handleSend())
 }
 
 onMounted(() => {
@@ -436,7 +633,6 @@ onMounted(() => {
   overflow: hidden;
 }
 
-// 左侧会话列表
 .chat-sidebar {
   width: 240px;
   border-right: 1px solid var(--border-color);
@@ -537,7 +733,6 @@ onMounted(() => {
   }
 }
 
-// 右侧聊天区域
 .chat-main {
   flex: 1;
   display: flex;
@@ -556,7 +751,16 @@ onMounted(() => {
   .chat-header-left {
     display: flex;
     align-items: center;
-    gap: 12px;
+    gap: 8px;
+    flex-wrap: wrap;
+    min-width: 0;
+  }
+
+  .chat-header-right {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-shrink: 0;
   }
 
   .chat-title {
@@ -567,6 +771,7 @@ onMounted(() => {
 
   .model-select {
     min-width: 180px;
+    max-width: 260px;
 
     :deep(.ant-select-selector) {
       border-radius: 6px;
@@ -580,20 +785,26 @@ onMounted(() => {
     }
   }
 
+  .header-action-btn {
+    border-radius: 6px;
+    font-size: 12px;
+    height: 28px;
+    padding: 0 10px;
+  }
+
   .chat-hint {
     font-size: 12px;
     color: var(--text-muted);
+    white-space: nowrap;
   }
 }
 
-// 消息列表
 .chat-messages {
   flex: 1;
   overflow-y: auto;
   padding: 20px;
 }
 
-// 欢迎页
 .chat-welcome {
   display: flex;
   flex-direction: column;
@@ -666,7 +877,6 @@ onMounted(() => {
   }
 }
 
-// 消息气泡
 .message-item {
   display: flex;
   gap: 10px;
@@ -691,6 +901,10 @@ onMounted(() => {
         text-align: right;
       }
 
+      .message-footer {
+        flex-direction: row-reverse;
+      }
+
       .message-content {
         background: var(--primary-color);
         color: #fff;
@@ -701,11 +915,11 @@ onMounted(() => {
           color: #fff;
         }
       }
-
-      .message-time {
-        text-align: right;
-      }
     }
+  }
+
+  &:hover .msg-copy-btn {
+    opacity: 1;
   }
 
   .message-avatar {
@@ -744,13 +958,25 @@ onMounted(() => {
       margin-bottom: 4px;
     }
 
+    .message-footer {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-top: 4px;
+      min-height: 22px;
+    }
+
+    .message-time {
+      font-size: 11px;
+      color: var(--text-muted);
+    }
+
     .message-content {
       padding: 10px 14px;
       font-size: 14px;
       line-height: 1.6;
       word-break: break-word;
 
-      // Markdown 渲染样式
       :deep(p) {
         margin: 0 0 8px 0;
         &:last-child { margin-bottom: 0; }
@@ -841,16 +1067,41 @@ onMounted(() => {
         margin: 12px 0;
       }
     }
-
-    .message-time {
-      font-size: 11px;
-      color: var(--text-muted);
-      margin-top: 4px;
-    }
   }
 }
 
-// 打字指示器
+.msg-copy-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  border: none;
+  background: transparent;
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-size: 11px;
+  line-height: 1;
+  color: var(--text-muted);
+  cursor: pointer;
+  opacity: 0.55;
+  transition: opacity 0.15s, color 0.15s, background 0.15s;
+
+  .msg-copy-label {
+    font-size: 11px;
+  }
+
+  &:hover {
+    opacity: 1;
+    color: var(--primary-color);
+    background: rgba(22, 119, 255, 0.08);
+  }
+
+  &.copied {
+    opacity: 1;
+    color: #16a34a;
+    background: rgba(22, 163, 74, 0.08);
+  }
+}
+
 .typing-indicator {
   display: flex;
   gap: 4px;
@@ -873,7 +1124,6 @@ onMounted(() => {
   40% { opacity: 1; transform: scale(1); }
 }
 
-// 输入区域
 .chat-input-area {
   padding: 12px 20px 16px;
   border-top: 1px solid var(--border-color);

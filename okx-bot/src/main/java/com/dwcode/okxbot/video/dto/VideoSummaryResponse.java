@@ -11,6 +11,9 @@ public class VideoSummaryResponse {
     private String title;
     private Double duration;
     private String sourceUrl;
+    private String understandingMode;
+    private Boolean degraded;
+    private String degradeReason;
     private VideoSummaryPart summary;
     private TranscriptionResult transcription;
 }

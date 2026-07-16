@@ -571,22 +571,17 @@ PENDING
 | **润色 Chat** | `ai_model_config`（`capability=chat`）+ `GET /video/models` | 开启润色时必选 | `llm_provider` + `llm_model` |
 
 生图模型库字段：`invoke_url`、`default_steps`、`max_steps`、`protocol`；  
-迁移脚本：`sql/ai_model_config_capability_alter.sql`、`sql/ai_model_config_image_protocol_qwen.sql`。
+迁移脚本：`sql/ai_model_config_capability_alter.sql`。
 
-### 生图协议（protocol）
+### 生图实现（当前）
 
-| protocol | Adapter | 典型模型 |
-|----------|---------|----------|
-| `nvidia-flux` | `NvidiaFluxImageAdapter` | FLUX 云端 `.../v1/genai/black-forest-labs/...` |
-| `nvidia-qwen` | `NvidiaQwenImageAdapter` → **POST /v1/images/generations** | Qwen-Image（官方 OpenAPI） |
-| `nvidia-openai-images` | 同上 | 显式 OpenAI Images |
-| `nvidia-qwen-infer` | 同上 → **POST /v1/infer** | 自托管 NIM 原生体 |
-| （空） | 按 modelId/url 推断（含 `qwen` → qwen） | — |
+| 项 | 说明 |
+|----|------|
+| Adapter | **仅** `NvidiaFluxImageAdapter`（+ Mock） |
+| 协议 | `nvidia-flux`：云端 `https://ai.api.nvidia.com/v1/genai/black-forest-labs/...` |
+| 已移除 | Qwen 文生图适配（`NvidiaQwenImageAdapter` / 协议路由 / 相关 seed） |
 
-路由入口：`CompositeImageGenPort`。
-
-**重要**：Qwen 官方文档 [qwen-image.html](https://docs.nvidia.com/nim/visual-genai/latest/api/qwen-image.html) 面向 **Visual GenAI NIM 自托管**，路径是 `/v1/images/generations` 与 `/v1/infer`，**不是** FLUX 的 `ai.api.nvidia.com/v1/genai/qwen/...`（后者会纯文本 `404 page not found`）。  
-本地示例：`http://127.0.0.1:8000/v1/images/generations`，先 `docker/NIM` 部署 qwen-image。
+> NVIDIA Build 上文生图 Qwen 等多为 Downloadable NIM，无与 FLUX 同等的云端 GenAI；系统仅保留 FLUX 云端路径。
 
 鉴权：与其它 API 一样，JWT Bearer（除登录白名单外）。
 

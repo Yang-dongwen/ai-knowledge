@@ -92,10 +92,51 @@ public class ShotlistNormalizeService {
                 if (s.getOverlay().getLayout() == null) {
                     s.getOverlay().setLayout("hook-center");
                 }
+                // TTS 模式：补全空 narration，避免后续 Edge sanitize 后「文本为空」
+                String audioModeLower = list.getAudio() != null && list.getAudio().getMode() != null
+                        ? list.getAudio().getMode().toLowerCase(Locale.ROOT)
+                        : (am != null ? am.toLowerCase(Locale.ROOT) : "none");
+                if (("tts".equals(audioModeLower) || "tts_bgm".equals(audioModeLower))
+                        && (s.getNarration() == null || s.getNarration().isBlank())) {
+                    s.setNarration(fillNarrationFromOverlay(s, titleHint, order - 1));
+                }
             }
         }
         meta.setDurationInFrames(frame);
         return list;
+    }
+
+    private static String fillNarrationFromOverlay(ShotDto s, String titleHint, int order) {
+        StringBuilder sb = new StringBuilder();
+        if (s.getOverlay() != null) {
+            if (s.getOverlay().getTitle() != null && !s.getOverlay().getTitle().isBlank()) {
+                sb.append(s.getOverlay().getTitle().trim());
+            }
+            if (s.getOverlay().getSubtitle() != null && !s.getOverlay().getSubtitle().isBlank()) {
+                if (!sb.isEmpty()) {
+                    sb.append('。');
+                }
+                sb.append(s.getOverlay().getSubtitle().trim());
+            }
+            if (s.getOverlay().getBullets() != null) {
+                for (String b : s.getOverlay().getBullets()) {
+                    if (b != null && !b.isBlank()) {
+                        if (!sb.isEmpty()) {
+                            sb.append('。');
+                        }
+                        sb.append(b.trim());
+                    }
+                }
+            }
+        }
+        if (!sb.isEmpty()) {
+            return sb.toString();
+        }
+        String base = titleHint != null && !titleHint.isBlank() ? titleHint.trim() : "本片";
+        if (base.length() > 24) {
+            base = base.substring(0, 24);
+        }
+        return base + "，第" + order + "镜。";
     }
 
     private static int[] resolveSize(String aspect) {

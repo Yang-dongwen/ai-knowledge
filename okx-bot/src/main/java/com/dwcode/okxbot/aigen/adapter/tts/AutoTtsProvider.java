@@ -27,6 +27,13 @@ public class AutoTtsProvider implements TtsPort {
 
     @Override
     public TtsResult synthesize(TtsCommand command) throws Exception {
+        // 空文案直接失败，避免 Edge/SAPI 双失败被误报成「引擎均不可用」
+        String raw = command.getText() != null ? command.getText().trim() : "";
+        if (raw.isEmpty()) {
+            throw new BusinessException(
+                    "TTS 文本为空: scene=" + command.getSceneId()
+                            + "（请检查镜头 narration / overlay 标题是否为空）");
+        }
         String mode = preferredMode();
         switch (mode) {
             case "mock" -> {

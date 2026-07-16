@@ -3,7 +3,9 @@ package com.dwcode.okxbot.auth.config;
 import com.dwcode.okxbot.auth.security.JwtAuthFilter;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.dwcode.okxbot.common.response.ApiResult;
+import jakarta.servlet.DispatcherType;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.http.HttpMethod;
@@ -27,6 +29,7 @@ import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
 
+@Slf4j
 @Configuration
 @EnableWebSecurity
 @EnableMethodSecurity
@@ -53,6 +56,9 @@ public class SecurityConfig {
                 .cors(Customizer.withDefaults())
                 .sessionManagement(s -> s.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(auth -> auth
+                        // SSE/SseEmitter 异步派发时 SecurityContext 不在 HTTP 线程，勿二次鉴权
+                        // （否则响应已提交后抛 AccessDenied → dispatcherServlet ERROR 日志）
+                        .dispatcherTypeMatchers(DispatcherType.ASYNC, DispatcherType.ERROR).permitAll()
                         .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
                         .requestMatchers(
                                 "/api/auth/login",
@@ -61,7 +67,7 @@ public class SecurityConfig {
                                 "/api/auth/password/**"
                         ).permitAll()
                         .requestMatchers("/error").permitAll()
-                        // 交易管理 / 用户管理等：仅超级管理员
+                        // 交易管理 / 用户管理等：仅超级管理员（AI 聊天 /api/chat 对登录用户开放）
                         .requestMatchers(
                                 "/api/admin/**",
                                 "/api/dashboard/**",
@@ -72,7 +78,6 @@ public class SecurityConfig {
                                 "/api/orders/**",
                                 "/api/strategy-run-logs/**",
                                 "/api/system/**",
-                                "/api/chat/**",
                                 "/api/backtests/**"
                         ).hasRole("SUPER_ADMIN")
                         // 模型管理 CRUD：仅超级管理员（任务侧 /models 列表仍对登录用户开放）
@@ -82,6 +87,10 @@ public class SecurityConfig {
                 )
                 .exceptionHandling(ex -> ex
                         .authenticationEntryPoint((request, response, authException) -> {
+                            if (response.isCommitted()) {
+                                log.debug("认证失败但响应已提交: {}", authException.getMessage());
+                                return;
+                            }
                             response.setStatus(401);
                             response.setCharacterEncoding(StandardCharsets.UTF_8.name());
                             response.setContentType(MediaType.APPLICATION_JSON_VALUE);
@@ -89,6 +98,12 @@ public class SecurityConfig {
                                     ApiResult.fail(401, "未登录或登录已过期")));
                         })
                         .accessDeniedHandler((request, response, accessDeniedException) -> {
+                            if (response.isCommitted()) {
+                                // SSE 异步完成阶段常见，业务流已写出，避免二次写响应
+                                log.debug("拒绝访问但响应已提交: uri={}, msg={}",
+                                        request.getRequestURI(), accessDeniedException.getMessage());
+                                return;
+                            }
                             response.setStatus(403);
                             response.setCharacterEncoding(StandardCharsets.UTF_8.name());
                             response.setContentType(MediaType.APPLICATION_JSON_VALUE);

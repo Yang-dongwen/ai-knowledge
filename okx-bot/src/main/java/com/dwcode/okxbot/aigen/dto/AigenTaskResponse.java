@@ -30,6 +30,7 @@ public class AigenTaskResponse {
     private String llmModel;
     private String imageProvider;
     private String imageModel;
+    private Boolean enhanceImagePrompt;
     private String errorMessage;
     private Double durationSeconds;
     private Boolean outputAvailable;

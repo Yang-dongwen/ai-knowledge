@@ -152,6 +152,9 @@
             :filter-option="filterModelOption"
             placeholder="选择每镜画面所用的生图模型"
           />
+          <div style="margin-top: 8px">
+            <a-checkbox v-model:checked="enhanceImagePrompt">出图前润色画面 Prompt（LLM）</a-checkbox>
+          </div>
           <div v-if="!imageModelsLoading && !imageModels.length" class="model-status muted" style="margin-top: 6px">
             <a-tag color="warning">
               暂无生图模型
@@ -159,6 +162,21 @@
               <template v-else> — 请联系管理员配置 image 模型</template>
             </a-tag>
           </div>
+        </div>
+        <div
+          v-if="pipelineMode === 'visual' && (audioMode === 'tts' || audioMode === 'tts_bgm')"
+          class="opt"
+        >
+          <span class="field-label">配音音色</span>
+          <a-select
+            v-model:value="voiceId"
+            class="full"
+            :options="voiceOptions"
+            :loading="voicesLoading"
+            placeholder="TTS 音色"
+            show-search
+            :filter-option="filterModelOption"
+          />
         </div>
         <div class="opt">
           <span class="field-label">画幅</span>
@@ -554,6 +572,78 @@
             </div>
           </div>
 
+          <!-- VT-1.5 镜头条：缩略图 / 重生 / 上传 -->
+          <div
+            v-if="selected.pipelineMode === 'visual' && shotList.length"
+            class="shot-strip page-card"
+            style="margin-top: 12px; padding: 12px"
+          >
+            <div class="panel-header" style="margin-bottom: 8px">
+              <span class="panel-title">镜头（{{ shotList.length }}）</span>
+              <a-button type="text" size="small" :loading="shotsLoading" @click="loadShots(selected.id)">
+                刷新
+              </a-button>
+            </div>
+            <div class="shot-row" style="display: flex; gap: 10px; overflow-x: auto; padding-bottom: 4px">
+              <div
+                v-for="sh in shotList"
+                :key="sh.id"
+                class="shot-card"
+                style="min-width: 120px; max-width: 140px; flex-shrink: 0"
+              >
+                <div
+                  class="shot-thumb"
+                  style="height: 160px; border-radius: 8px; overflow: hidden; background: #1a1a22; position: relative"
+                >
+                  <img
+                    v-if="shotBlobUrls[sh.id]"
+                    :src="shotBlobUrls[sh.id]"
+                    alt=""
+                    style="width: 100%; height: 100%; object-fit: cover"
+                  />
+                  <div
+                    v-else
+                    style="display:flex;align-items:center;justify-content:center;height:100%;color:#888;font-size:12px"
+                  >
+                    {{ sh.imageAvailable ? '加载中' : '无图' }}
+                  </div>
+                  <span
+                    style="position:absolute;left:6px;top:6px;background:rgba(0,0,0,.55);color:#fff;font-size:11px;padding:1px 6px;border-radius:4px"
+                  >
+                    {{ sh.order ?? sh.id }}
+                  </span>
+                </div>
+                <div style="font-size: 12px; margin-top: 4px; line-height: 1.3" :title="sh.title || sh.id">
+                  {{ sh.title || sh.id }}
+                </div>
+                <div style="display: flex; gap: 4px; margin-top: 4px; flex-wrap: wrap">
+                  <a-button
+                    size="small"
+                    type="link"
+                    :loading="regeneratingShotId === sh.id"
+                    :disabled="!canEditShots"
+                    @click="handleRegenerateShot(sh.id)"
+                  >
+                    重生
+                  </a-button>
+                  <a-upload
+                    :show-upload-list="false"
+                    accept="image/*"
+                    :disabled="!canEditShots || uploadingShotId === sh.id"
+                    :before-upload="(f) => handleUploadShot(sh.id, f)"
+                  >
+                    <a-button size="small" type="link" :loading="uploadingShotId === sh.id" :disabled="!canEditShots">
+                      上传
+                    </a-button>
+                  </a-upload>
+                </div>
+              </div>
+            </div>
+            <div v-if="!canEditShots" style="font-size: 12px; color: #888; margin-top: 6px">
+              任务成功/失败/暂停后可重生或上传替换单镜
+            </div>
+          </div>
+
           <div v-if="selected.outputAvailable" class="player-box">
             <div class="player-head">
               <div class="player-head-left">
@@ -662,7 +752,7 @@ import {
   CodeOutlined,
   DownOutlined
 } from '@ant-design/icons-vue'
-import { aigenApi } from '@/api/aigen.api'
+import { aigenApi, type AigenShotSummary } from '@/api/aigen.api'
 import { imggenApi } from '@/api/imggen.api'
 import { videoApi } from '@/api/video.api'
 import { connectAigenTaskEvents } from '@/api/aigen.events'
@@ -684,8 +774,110 @@ const language = ref('zh')
 const audioModeOptions = [
   { value: 'none', label: '无音频（纯画面）' },
   { value: 'bgm_only', label: '仅 BGM（需 data/aigen/_bgm）' },
-  { value: 'tts', label: '口播 TTS（后续增强）' }
+  { value: 'tts', label: '口播 TTS' },
+  { value: 'tts_bgm', label: '口播 + BGM' }
 ]
+const enhanceImagePrompt = ref(false)
+const shotList = ref<AigenShotSummary[]>([])
+const shotsLoading = ref(false)
+const shotBlobUrls = ref<Record<string, string>>({})
+const regeneratingShotId = ref('')
+const uploadingShotId = ref('')
+
+const canEditShots = computed(() => {
+  const s = selected.value?.status
+  return s === 'SUCCESS' || s === 'FAILED' || s === 'PAUSED'
+})
+
+function revokeShotBlobs() {
+  Object.values(shotBlobUrls.value).forEach((u) => {
+    try {
+      URL.revokeObjectURL(u)
+    } catch {
+      /* ignore */
+    }
+  })
+  shotBlobUrls.value = {}
+}
+
+async function loadShots(taskId: string) {
+  if (!taskId) return
+  shotsLoading.value = true
+  try {
+    const res = await aigenApi.listShots(taskId)
+    shotList.value = res.data || []
+    revokeShotBlobs()
+    const urls: Record<string, string> = {}
+    await Promise.all(
+      shotList.value
+        .filter((s) => s.imageAvailable)
+        .map(async (s) => {
+          try {
+            const blob = await aigenApi.fetchShotImageBlob(taskId, s.id)
+            urls[s.id] = URL.createObjectURL(blob)
+          } catch {
+            /* skip */
+          }
+        })
+    )
+    shotBlobUrls.value = urls
+  } catch {
+    shotList.value = []
+  } finally {
+    shotsLoading.value = false
+  }
+}
+
+async function handleRegenerateShot(shotId: string) {
+  if (!selectedId.value || !canEditShots.value) return
+  regeneratingShotId.value = shotId
+  try {
+    const res = await aigenApi.regenerateShot(selectedId.value, shotId, {
+      enhance: enhanceImagePrompt.value,
+      reRender: true
+    })
+    upsertTask(res.data)
+    message.success('镜头已重生并重新合成')
+    await loadShots(selectedId.value)
+    if (res.data.outputAvailable) {
+      autoLoadedTaskId.value = null
+      // 触发重新拉成片
+      const id = selectedId.value
+      selectedId.value = null
+      await nextTick()
+      selectedId.value = id
+    }
+  } catch {
+    /* interceptor */
+  } finally {
+    regeneratingShotId.value = ''
+  }
+}
+
+function handleUploadShot(shotId: string, file: File) {
+  if (!selectedId.value || !canEditShots.value) return false
+  uploadingShotId.value = shotId
+  aigenApi
+    .uploadShotImage(selectedId.value, shotId, file, true)
+    .then(async (res) => {
+      message.success('已上传并重新合成')
+      await loadShots(selectedId.value!)
+      const task = await aigenApi.getTask(selectedId.value!)
+      upsertTask(task.data)
+      autoLoadedTaskId.value = null
+      const id = selectedId.value
+      selectedId.value = null
+      await nextTick()
+      selectedId.value = id
+    })
+    .catch(() => {
+      /* interceptor */
+    })
+    .finally(() => {
+      uploadingShotId.value = ''
+    })
+  return false
+}
 const stylePresetOptions = [
   { value: 'cinematic-dark', label: '电影暗调' },
   { value: 'clean-tech', label: '科技干净' },
@@ -1136,6 +1328,8 @@ function mergeFromEvent(data: Record<string, unknown>) {
   if (status) patch.status = status
   if (data.currentStep != null) patch.currentStep = String(data.currentStep)
   if (num('progress') != null) patch.progress = num('progress')
+  if (num('shotCount') != null) patch.shotCount = num('shotCount')
+  if (num('assetDoneCount') != null) patch.assetDoneCount = num('assetDoneCount')
   if (data.language != null) patch.language = String(data.language)
   if (data.aspectRatio != null) patch.aspectRatio = String(data.aspectRatio)
   if (num('targetDurationSec') != null) patch.targetDurationSec = num('targetDurationSec')
@@ -1236,7 +1430,19 @@ function selectTask(id: string) {
   storyboardOpen.value = false
   promptCollapsed.value = true
   revokeVideoUrl()
+  revokeShotBlobs()
+  shotList.value = []
   autoLoadedTaskId.value = null
+  const t = tasks.value.find((x) => x.id === id)
+  if (t?.pipelineMode === 'visual' && t.storyboardJson !== undefined) {
+    // no-op: storyboard not on list item
+  }
+  if (t?.pipelineMode === 'visual' || !t?.pipelineMode) {
+    // visual 任务：有分镜后即可拉镜头条（SUCCESS/失败/规划后均可能有 shotlist）
+    if (t && (t.status === 'SUCCESS' || t.status === 'FAILED' || t.status === 'PAUSED' || t.status === 'RENDERING')) {
+      loadShots(id)
+    }
+  }
 }
 
 function onVideoMeta() {
@@ -1331,11 +1537,18 @@ async function handleSubmit() {
         language: language.value,
         aspectRatio: aspectRatio.value,
         targetDurationSec: targetDurationSec.value,
-        voiceId: pipelineMode.value === 'template' ? voiceId.value : undefined,
+        voiceId:
+          pipelineMode.value === 'template' ||
+          audioMode.value === 'tts' ||
+          audioMode.value === 'tts_bgm'
+            ? voiceId.value
+            : undefined,
         llmProvider: parsed.provider,
         llmModel: parsed.model,
         imageProvider,
-        imageModel
+        imageModel,
+        enhanceImagePrompt:
+          pipelineMode.value === 'visual' ? enhanceImagePrompt.value : undefined
       }
     })
     const task = res.data

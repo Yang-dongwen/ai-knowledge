@@ -76,12 +76,6 @@ const routes: RouteRecordRaw[] = [
         meta: { title: '系统设置', group: 'trading', requiresSuperAdmin: true }
       },
       {
-        path: 'ai-chat',
-        name: 'AiChat',
-        component: () => import('@/views/ai-chat/index.vue'),
-        meta: { title: 'AI 助手', group: 'trading', requiresSuperAdmin: true }
-      },
-      {
         path: 'user-manage',
         name: 'UserManage',
         component: () => import('@/views/user-manage/index.vue'),
@@ -104,6 +98,12 @@ const routes: RouteRecordRaw[] = [
         name: 'ImageGenerate',
         component: () => import('@/views/image-generate/index.vue'),
         meta: { title: 'AI 文生图', group: 'tools' }
+      },
+      {
+        path: 'ai-chat',
+        name: 'AiChat',
+        component: () => import('@/views/ai-chat/index.vue'),
+        meta: { title: 'AI 对话', group: 'tools' }
       }
     ]
   }

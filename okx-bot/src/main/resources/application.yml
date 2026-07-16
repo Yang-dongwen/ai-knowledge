@@ -66,6 +66,8 @@ okx:
 ai:
   default-provider: nvidia
   max-context-messages: 20
+  # 聊天流式空闲超时（秒）：连续无 token 输出才中断；有输出可持续超过该时长
+  response-timeout-seconds: 20
   # Chat 出站引擎：langchain4j（默认，Phase A）| okhttp（回滚手写客户端）
   # 影响：视频提取总结、aigen 分镜、imggen 润色、/video/models/test
   chat-engine: langchain4j
@@ -127,7 +129,8 @@ video:
     provider: nvidia
     model:
     temperature: 0.3
-    max-tokens: 4096
+    # hybrid 总结字段多，过小易截断 chapters/导图/二创；SummarizationService 也会至少抬到 8192
+    max-tokens: 8192
     # NVIDIA 免费档常 503 All workers are busy，自动退避重试
     max-retries: 5
     retry-backoff-ms: 3000
@@ -143,6 +146,37 @@ video:
     concurrent-fragments: 8      # HLS/DASH 分片并发，可试 4~16
     prefer-merged: true          # 优先单文件流，减少双轨下载+合并
     # format: "best[height<=480]"  # 可选：完全自定义 yt-dlp -f，非空则覆盖上面规则
+  # 多模态画面理解（默认 audio_only 兼容现网；go-live 可改 hybrid）
+  understanding:
+    mode: audio_only
+    # true=不调云端 Omni，走 Mock 画面结果（联调用）
+    mock: false
+    provider: nvidia
+    model: nvidia/nemotron-3-nano-omni-30b-a3b-reasoning
+    # auto | nvidia-omni-chat | frame-vlm | mock
+    protocol: auto
+    timeout-seconds: 600
+    write-timeout-seconds: 120
+    max-retries: 4
+    max-request-video-seconds: 120
+    short-max-seconds: 90
+    medium-max-seconds: 600
+    chunk-seconds: 90
+    sample-stride-seconds: 60
+    sample-window-seconds: 20
+    target-height: 480
+    target-fps: 2
+    max-chunks-per-task: 20
+    max-upload-bytes: 20971520
+    fallback-to-audio: true
+    fallback-frame-vlm: true
+    cleanup-chunks: true
+    enable-thinking: false
+    thinking-token-budget: 1024
+    hybrid-max-duration-seconds: 1800
+    omni-max-duration-seconds: 1800
+    on-omni-too-long: reject
+    strip-audio-on-visual-chunks: true
 
 # AI 视频生成 Phase 1
 # mock-pipeline=true 时三步全 mock；false 时按 steps 切换
@@ -168,6 +202,7 @@ aigen:
     bgm-dir: ./data/aigen/_bgm
     image-steps: 4
     image-provider-key: nvidia
+    default-enhance-image-prompt: false
   steps:
     plan: real          # real=调 LLM；mock=本地模板分镜/mock 导演
     asset: real         # real=出图或 TTS；mock=占位图/mock 音频

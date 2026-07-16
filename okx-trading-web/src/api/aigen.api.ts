@@ -1,6 +1,21 @@
 import request from './request'
 import type { AigenCreateRequest, AigenTaskItem, AigenTaskPage, AigenTemplate } from '@/types/api'
 
+export interface AigenShotSummary {
+  id: string
+  order?: number
+  durationSec?: number
+  title?: string
+  visualType?: string
+  assetPath?: string
+  imageAvailable?: boolean
+  audioSrc?: string
+  audioAvailable?: boolean
+  motionType?: string
+  layout?: string
+  promptPreview?: string
+}
+
 /**
  * AI 视频生成 API（/api/v1/aigen/*）
  */
@@ -23,6 +38,41 @@ export const aigenApi = {
     return request.get(`/v1/aigen/tasks/${taskId}/storyboard`)
   },
 
+  listShots(taskId: string): Promise<{ data: AigenShotSummary[] }> {
+    return request.get(`/v1/aigen/tasks/${taskId}/shots`)
+  },
+
+  regenerateShot(
+    taskId: string,
+    shotId: string,
+    params?: { enhance?: boolean; reRender?: boolean }
+  ): Promise<{ data: AigenTaskItem }> {
+    return request.post(`/v1/aigen/tasks/${taskId}/shots/${encodeURIComponent(shotId)}/regenerate`, null, {
+      params: {
+        enhance: params?.enhance,
+        reRender: params?.reRender ?? true
+      }
+    })
+  },
+
+  async uploadShotImage(
+    taskId: string,
+    shotId: string,
+    file: File,
+    reRender = true
+  ): Promise<{ data: AigenShotSummary }> {
+    const form = new FormData()
+    form.append('file', file)
+    return request.post(
+      `/v1/aigen/tasks/${taskId}/shots/${encodeURIComponent(shotId)}/image`,
+      form,
+      {
+        params: { reRender },
+        headers: { 'Content-Type': 'multipart/form-data' }
+      }
+    )
+  },
+
   cancelTask(taskId: string): Promise<{ data: AigenTaskItem }> {
     return request.post(`/v1/aigen/tasks/${taskId}/cancel`)
   },
@@ -31,13 +81,14 @@ export const aigenApi = {
     return request.post(`/v1/aigen/tasks/${taskId}/pause`)
   },
 
-  /**
-   * 失败/取消/暂停/成功任务重试（清空产物后整流水线重跑）。
-   * 可传入 llmProvider / llmModel 重新指定模型。
-   */
   retryTask(
     taskId: string,
-    body?: { llmProvider?: string; llmModel?: string }
+    body?: {
+      llmProvider?: string
+      llmModel?: string
+      imageProvider?: string
+      imageModel?: string
+    }
   ): Promise<{ data: AigenTaskItem }> {
     return request.post(`/v1/aigen/tasks/${taskId}/retry`, body || {})
   },
@@ -54,10 +105,6 @@ export const aigenApi = {
     return request.get('/v1/aigen/voices')
   },
 
-  /**
-   * 拉取成片为 Blob（带 Authorization，供 video 标签播放）。
-   * 强制 type=video/mp4，避免浏览器对错误 MIME 只播画面不播声。
-   */
   async fetchOutputBlob(taskId: string): Promise<Blob> {
     const token = localStorage.getItem('okx_auth_token') || ''
     const res = await fetch(`/api/v1/aigen/tasks/${taskId}/media/output`, {
@@ -71,5 +118,23 @@ export const aigenApi = {
     }
     const buf = await res.arrayBuffer()
     return new Blob([buf], { type: 'video/mp4' })
+  },
+
+  /** 镜头缩略图 URL（需前端带 Authorization 拉 blob 时另处理） */
+  shotImageUrl(taskId: string, shotId: string): string {
+    return `/api/v1/aigen/tasks/${taskId}/shots/${encodeURIComponent(shotId)}/image`
+  },
+
+  async fetchShotImageBlob(taskId: string, shotId: string): Promise<Blob> {
+    const token = localStorage.getItem('okx_auth_token') || ''
+    const res = await fetch(aigenApi.shotImageUrl(taskId, shotId), {
+      headers: {
+        ...(token ? { Authorization: `Bearer ${token}` } : {})
+      }
+    })
+    if (!res.ok) {
+      throw new Error(`镜头图加载失败 HTTP ${res.status}`)
+    }
+    return res.blob()
   }
 }
