@@ -29,32 +29,36 @@ public class MockDirectorAdapter implements DirectorPort {
         boolean en = command.getLanguage() != null
                 && command.getLanguage().trim().toLowerCase(java.util.Locale.ROOT).startsWith("en");
         String[] titles = en
-                ? new String[]{"Hook", "Develop", "Contrast", "Insight", "Close"}
-                : new String[]{"开场", "展开", "对比", "洞察", "收束"};
-        String[] layouts = {"hook-center", "lower-third", "bullets-right", "caption", "hook-center"};
+                ? new String[]{"Breath", "Fracture", "Echo", "Rise", "Silence"}
+                : new String[]{"呼吸", "裂痕", "回声", "抬升", "余韵"};
+        String[] motions = {"drift", "punch_in", "whip", "orbit", "rise"};
+        String[] layouts = {"none", "free", "none", "big-word", "none"};
         for (int i = 0; i < 5; i++) {
             ShotDto s = new ShotDto();
             s.setId("shot-" + (i + 1));
-            s.setDurationSec(command.getTargetDurationSec() / 5.0);
+            s.setDurationSec(Math.max(2.4, command.getTargetDurationSec() / 5.0));
             ShotVisual v = new ShotVisual();
             v.setType("ai_image");
-            // mock 也跟随任务语言，避免演示数据强制英文
             v.setPrompt(en
-                    ? ("cinematic still, " + topic + ", shot " + (i + 1) + ", dramatic lighting, no text")
-                    : ("电影感静帧，" + topic + "，第" + (i + 1) + "镜，戏剧光影，画面无文字"));
+                    ? ("cinematic still of " + topic + ", shot " + (i + 1)
+                    + ", dramatic side light, shallow depth of field, film grain, no text")
+                    : ("电影感静帧：" + topic + "，第" + (i + 1)
+                    + "镜，侧逆光，浅景深，胶片质感，画面无文字"));
             s.setVisual(v);
+            ShotMotion m = new ShotMotion();
+            m.setType(motions[i]);
+            s.setMotion(m);
             ShotOverlay o = new ShotOverlay();
             o.setLayout(layouts[i]);
-            o.setTitle(titles[i] + (en ? " · " : " · ") + topic);
-            if (i == 2) {
-                o.setBullets(en
-                        ? List.of("Point A", "Point B", "Point C")
-                        : List.of("要点 A", "要点 B", "要点 C"));
+            o.setTextAnim("pop");
+            o.setStyle("cinematic");
+            if (!"none".equals(layouts[i])) {
+                o.setTitle(titles[i]);
             }
             s.setOverlay(o);
             s.setNarration(en
-                    ? (titles[i] + ". " + topic + ", look at this shot.")
-                    : (titles[i] + "。" + topic + "，请看这一镜。"));
+                    ? (titles[i] + ". " + topic + ".")
+                    : (titles[i] + "。" + topic + "。"));
             list.getShots().add(s);
         }
 

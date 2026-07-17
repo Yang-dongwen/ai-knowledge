@@ -95,8 +95,8 @@ const toolCards: ToolCard[] = [
     title: 'AI 对话',
     desc: '多模型自由切换，连续会话与灵感头脑风暴。',
     tags: ['Chat', '多模型'],
-    accent: '#7C3AED',
-    accentSoft: 'rgba(124, 58, 237, 0.12)',
+    accent: '#1f2937',
+    accentSoft: '#f3f4f6',
     icon: markRaw(RobotOutlined)
   },
   {
@@ -104,8 +104,8 @@ const toolCards: ToolCard[] = [
     title: '视频提取',
     desc: '粘贴链接即可转录、总结、二创脚本与画面理解。',
     tags: ['Whisper', 'Omni'],
-    accent: '#4F46E5',
-    accentSoft: 'rgba(79, 70, 229, 0.12)',
+    accent: '#1f2937',
+    accentSoft: '#f3f4f6',
     icon: markRaw(VideoCameraOutlined)
   },
   {
@@ -113,8 +113,8 @@ const toolCards: ToolCard[] = [
     title: 'AI 视频生成',
     desc: '一句话生成分镜、画面与口播，自动合成短片。',
     tags: ['分镜', 'TTS'],
-    accent: '#2563EB',
-    accentSoft: 'rgba(37, 99, 235, 0.12)',
+    accent: '#1f2937',
+    accentSoft: '#f3f4f6',
     icon: markRaw(ThunderboltOutlined)
   },
   {
@@ -122,8 +122,8 @@ const toolCards: ToolCard[] = [
     title: 'AI 文生图',
     desc: '提示词润色后调用 FLUX，多比例批量出图。',
     tags: ['FLUX', '润色'],
-    accent: '#059669',
-    accentSoft: 'rgba(5, 150, 105, 0.12)',
+    accent: '#1f2937',
+    accentSoft: '#f3f4f6',
     icon: markRaw(PictureOutlined)
   }
 ]
@@ -142,40 +142,20 @@ function go(key: string) {
 
 .hero {
   position: relative;
-  padding: 36px 32px 32px;
-  border-radius: 28px;
-  border: 1px solid rgba(199, 210, 254, 0.65);
-  background:
-    linear-gradient(145deg, rgba(255, 255, 255, 0.94), rgba(245, 243, 255, 0.88) 55%, rgba(238, 242, 255, 0.9));
+  padding: 32px 28px 28px;
+  border-radius: 16px;
+  border: 1px solid #e5e7eb;
+  background: #fff;
   box-shadow:
     0 1px 2px rgba(15, 23, 42, 0.03),
-    0 20px 50px rgba(99, 102, 241, 0.12);
+    0 8px 24px rgba(15, 23, 42, 0.04);
   overflow: hidden;
-  margin-bottom: 22px;
-  animation: hero-in 0.55s ease both;
+  margin-bottom: 20px;
+  animation: hero-in 0.45s ease both;
 
-  &::before {
-    content: '';
-    position: absolute;
-    right: -80px;
-    top: -90px;
-    width: 320px;
-    height: 320px;
-    border-radius: 50%;
-    background: radial-gradient(circle, rgba(129, 140, 248, 0.35), transparent 68%);
-    pointer-events: none;
-  }
-
+  &::before,
   &::after {
-    content: '';
-    position: absolute;
-    left: -40px;
-    bottom: -70px;
-    width: 220px;
-    height: 220px;
-    border-radius: 50%;
-    background: radial-gradient(circle, rgba(192, 132, 252, 0.22), transparent 70%);
-    pointer-events: none;
+    display: none;
   }
 }
 
@@ -185,14 +165,14 @@ function go(key: string) {
   display: inline-flex;
   align-items: center;
   gap: 8px;
-  padding: 6px 12px;
+  padding: 5px 11px;
   border-radius: 999px;
-  background: rgba(255, 255, 255, 0.8);
-  border: 1px solid rgba(199, 210, 254, 0.8);
+  background: #f3f4f6;
+  border: 1px solid #e5e7eb;
   font-size: 12px;
   font-weight: 600;
-  color: #4f46e5;
-  margin-bottom: 16px;
+  color: #374151;
+  margin-bottom: 14px;
 }
 
 .pulse-dot {
@@ -208,18 +188,17 @@ function go(key: string) {
   position: relative;
   z-index: 1;
   margin: 0;
-  font-size: clamp(28px, 4vw, 36px);
-  font-weight: 800;
-  letter-spacing: -0.035em;
-  line-height: 1.2;
+  font-size: clamp(26px, 3.6vw, 32px);
+  font-weight: 750;
+  letter-spacing: -0.03em;
+  line-height: 1.25;
   color: #0f172a;
 
   em {
     font-style: normal;
-    background: linear-gradient(120deg, #4f46e5, #7c3aed 50%, #a855f7);
-    -webkit-background-clip: text;
-    background-clip: text;
-    color: transparent;
+    color: #1f2937;
+    border-bottom: 2px solid #e5e7eb;
+    padding-bottom: 1px;
   }
 }
 
@@ -243,24 +222,35 @@ function go(key: string) {
 }
 
 .cta-main {
-  height: 46px !important;
-  border-radius: 999px !important;
-  padding-inline: 22px !important;
-  font-weight: 650 !important;
+  height: 42px !important;
+  border-radius: 12px !important;
+  padding-inline: 18px !important;
+  font-weight: 560 !important;
+  background: #1f2937 !important;
+  border: none !important;
+  box-shadow: none !important;
+  color: #fff !important;
+
+  &:hover {
+    background: #111827 !important;
+    color: #fff !important;
+  }
 }
 
 .cta-ghost {
-  height: 46px !important;
-  border-radius: 999px !important;
-  padding-inline: 18px !important;
+  height: 42px !important;
+  border-radius: 12px !important;
+  padding-inline: 16px !important;
   border-color: #e2e8f0 !important;
-  background: rgba(255, 255, 255, 0.75) !important;
-  color: #334155 !important;
-  font-weight: 560 !important;
+  background: #fff !important;
+  color: #475569 !important;
+  font-weight: 500 !important;
+  box-shadow: none !important;
 
   &:hover {
-    border-color: #c7d2fe !important;
-    color: #4f46e5 !important;
+    border-color: #cbd5e1 !important;
+    color: #1e293b !important;
+    background: #f8fafc !important;
   }
 }
 
@@ -278,74 +268,56 @@ function go(key: string) {
 .tool-card {
   position: relative;
   display: flex;
-  gap: 16px;
+  gap: 14px;
   text-align: left;
-  padding: 20px 20px 18px;
-  border-radius: 22px;
-  border: 1px solid rgba(226, 232, 240, 0.95);
-  background: linear-gradient(165deg, rgba(255, 255, 255, 0.94), rgba(255, 255, 255, 0.86));
+  padding: 18px 18px 16px;
+  border-radius: 14px;
+  border: 1px solid #e5e7eb;
+  background: #fff;
   box-shadow:
     0 1px 2px rgba(15, 23, 42, 0.03),
-    0 12px 32px rgba(99, 102, 241, 0.06);
+    0 6px 18px rgba(15, 23, 42, 0.03);
   cursor: pointer;
   overflow: hidden;
-  transition: transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease;
-  animation: card-in 0.55s ease both;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease, background 0.15s ease;
+  animation: card-in 0.45s ease both;
   animation-delay: var(--delay);
 
   &:hover {
-    transform: translateY(-4px);
-    border-color: color-mix(in srgb, var(--accent) 35%, #e2e8f0);
+    border-color: #d1d5db;
+    background: #fafafa;
     box-shadow:
-      0 8px 12px rgba(15, 23, 42, 0.04),
-      0 22px 48px rgba(99, 102, 241, 0.14);
-
-    .card-glow {
-      opacity: 1;
-    }
+      0 1px 2px rgba(15, 23, 42, 0.04),
+      0 10px 24px rgba(15, 23, 42, 0.06);
 
     .card-arrow {
-      transform: translateX(4px);
-      color: var(--accent);
-    }
-
-    .card-icon {
-      transform: scale(1.05);
+      transform: translateX(3px);
+      color: #111827;
     }
   }
 
   &:active {
-    transform: translateY(-1px);
+    background: #f3f4f6;
   }
 }
 
 .card-glow {
-  position: absolute;
-  right: -30%;
-  top: -40%;
-  width: 70%;
-  height: 90%;
-  border-radius: 50%;
-  background: radial-gradient(circle, var(--accent-soft), transparent 70%);
-  opacity: 0.55;
-  transition: opacity 0.25s ease;
-  pointer-events: none;
+  display: none;
 }
 
 .card-icon {
   position: relative;
   z-index: 1;
-  width: 48px;
-  height: 48px;
-  border-radius: 16px;
+  width: 44px;
+  height: 44px;
+  border-radius: 12px;
   display: grid;
   place-items: center;
-  font-size: 22px;
-  color: var(--accent);
-  background: var(--accent-soft);
-  border: 1px solid color-mix(in srgb, var(--accent) 18%, transparent);
+  font-size: 20px;
+  color: #374151;
+  background: #f3f4f6;
+  border: 1px solid #e5e7eb;
   flex-shrink: 0;
-  transition: transform 0.2s ease;
 }
 
 .card-body {
@@ -391,11 +363,12 @@ function go(key: string) {
 
 .tag {
   font-size: 11px;
-  font-weight: 600;
-  padding: 3px 9px;
-  border-radius: 999px;
-  color: var(--accent);
-  background: var(--accent-soft);
+  font-weight: 550;
+  padding: 2px 8px;
+  border-radius: 6px;
+  color: #4b5563;
+  background: #f3f4f6;
+  border: 1px solid #e5e7eb;
 }
 
 .tips-row {
@@ -410,20 +383,19 @@ function go(key: string) {
 
 .tip-card {
   padding: 14px 16px;
-  border-radius: 16px;
-  background: rgba(255, 255, 255, 0.7);
-  border: 1px solid rgba(226, 232, 240, 0.9);
-  backdrop-filter: blur(8px);
-  animation: card-in 0.55s ease both;
-  animation-delay: 0.28s;
+  border-radius: 12px;
+  background: #fff;
+  border: 1px solid #e5e7eb;
+  animation: card-in 0.45s ease both;
+  animation-delay: 0.2s;
 }
 
 .tip-kicker {
   font-size: 11px;
   font-weight: 700;
-  letter-spacing: 0.06em;
+  letter-spacing: 0.04em;
   text-transform: uppercase;
-  color: #818cf8;
+  color: #6b7280;
   margin-bottom: 6px;
 }
 

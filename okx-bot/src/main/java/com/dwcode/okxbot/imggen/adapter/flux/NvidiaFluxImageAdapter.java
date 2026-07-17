@@ -74,7 +74,7 @@ public class NvidiaFluxImageAdapter implements ImageGenPort {
                 : ThreadLocalRandom.current().nextLong(0, Integer.MAX_VALUE);
         int maxSteps = 50;
         int defaultSteps = properties.getFlux().getDefaultSteps() > 0
-                ? properties.getFlux().getDefaultSteps() : 4;
+                ? properties.getFlux().getDefaultSteps() : 28;
         // steps 已在任务创建时按库表 max 夹紧；此处再兜底
         int steps = cmd.getSteps() > 0 ? cmd.getSteps() : defaultSteps;
         steps = Math.min(maxSteps, Math.max(1, steps));

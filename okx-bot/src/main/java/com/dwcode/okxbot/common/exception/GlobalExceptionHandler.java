@@ -23,12 +23,6 @@ public class GlobalExceptionHandler {
         return ApiResult.fail(e.getCode(), e.getMessage());
     }
 
-    @ExceptionHandler(OkxApiException.class)
-    public ApiResult<Void> handleOkxApiException(OkxApiException e) {
-        log.error("OKX API异常: errorCode={}, message={}", e.getErrorCode(), e.getMessage());
-        return ApiResult.fail(e.getCode(), e.getMessage());
-    }
-
     @ExceptionHandler(MethodArgumentNotValidException.class)
     @ResponseStatus(HttpStatus.BAD_REQUEST)
     public ApiResult<Void> handleValidationException(MethodArgumentNotValidException e) {

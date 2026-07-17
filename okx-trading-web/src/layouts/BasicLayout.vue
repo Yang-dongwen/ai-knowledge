@@ -1,5 +1,8 @@
 <template>
-  <a-layout class="basic-layout" :class="{ 'is-immersive': isImmersive }">
+  <a-layout
+    class="basic-layout"
+    :class="{ 'is-immersive': isImmersive, 'tools-ui': isToolsPage }"
+  >
     <div class="ambient" aria-hidden="true">
       <span class="orb orb-a" />
       <span class="orb orb-b" />
@@ -17,13 +20,31 @@
 </template>
 
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, watch, onUnmounted } from 'vue'
 import { useRoute } from 'vue-router'
 import AppHeader from './AppHeader.vue'
 
 const route = useRoute()
 /** 沉浸式页面（如 AI 对话）：无页脚、无外层滚动，高度锁死在视口内 */
 const isImmersive = computed(() => route.meta?.immersive === true)
+/** AI 工具相关页：启用极简控件样式 */
+const isToolsPage = computed(() => {
+  const group = route.meta?.group as string | undefined
+  return group === 'tools' || group === 'home' || route.path === '/home'
+})
+
+// 弹窗挂到 body，同步 class 以便按钮/checkbox 样式一致
+watch(
+  isToolsPage,
+  (v) => {
+    document.body.classList.toggle('tools-ui', v)
+  },
+  { immediate: true }
+)
+
+onUnmounted(() => {
+  document.body.classList.remove('tools-ui')
+})
 </script>
 
 <style lang="scss" scoped>
@@ -73,56 +94,57 @@ const isImmersive = computed(() => route.meta?.immersive === true)
   z-index: 0;
   pointer-events: none;
   overflow: hidden;
+  /* 更克制的环境光：低饱和灰青，避免整页偏紫 */
   background:
-    radial-gradient(1200px 600px at 8% -10%, rgba(99, 102, 241, 0.16), transparent 55%),
-    radial-gradient(900px 500px at 92% 0%, rgba(168, 85, 247, 0.12), transparent 50%),
-    radial-gradient(700px 420px at 50% 100%, rgba(56, 189, 248, 0.08), transparent 55%),
-    linear-gradient(180deg, #f7f8fc 0%, #f1f4fb 45%, #eef2ff 100%);
+    radial-gradient(1000px 520px at 12% -8%, rgba(148, 163, 184, 0.18), transparent 55%),
+    radial-gradient(800px 460px at 90% 4%, rgba(203, 213, 225, 0.2), transparent 52%),
+    radial-gradient(640px 380px at 48% 100%, rgba(226, 232, 240, 0.35), transparent 55%),
+    linear-gradient(180deg, #f8f9fb 0%, #f3f4f6 50%, #eef0f4 100%);
 }
 
 .orb {
   position: absolute;
   border-radius: 50%;
-  filter: blur(40px);
-  opacity: 0.55;
-  animation: orb-drift 18s ease-in-out infinite alternate;
+  filter: blur(48px);
+  opacity: 0.35;
+  animation: orb-drift 20s ease-in-out infinite alternate;
 }
 
 .orb-a {
-  width: 360px;
-  height: 360px;
-  left: -80px;
-  top: 12%;
-  background: radial-gradient(circle, rgba(129, 140, 248, 0.55), transparent 70%);
+  width: 320px;
+  height: 320px;
+  left: -70px;
+  top: 14%;
+  background: radial-gradient(circle, rgba(148, 163, 184, 0.45), transparent 70%);
 }
 
 .orb-b {
-  width: 420px;
-  height: 420px;
-  right: -100px;
-  top: 28%;
-  background: radial-gradient(circle, rgba(192, 132, 252, 0.42), transparent 70%);
+  width: 380px;
+  height: 380px;
+  right: -90px;
+  top: 30%;
+  background: radial-gradient(circle, rgba(203, 213, 225, 0.5), transparent 70%);
   animation-delay: -6s;
-  animation-duration: 22s;
+  animation-duration: 24s;
 }
 
 .orb-c {
-  width: 280px;
-  height: 280px;
-  left: 40%;
-  bottom: -60px;
-  background: radial-gradient(circle, rgba(56, 189, 248, 0.28), transparent 70%);
+  width: 260px;
+  height: 260px;
+  left: 42%;
+  bottom: -50px;
+  background: radial-gradient(circle, rgba(226, 232, 240, 0.55), transparent 70%);
   animation-delay: -11s;
-  animation-duration: 20s;
+  animation-duration: 22s;
 }
 
 .grid-fade {
   position: absolute;
   inset: 0;
-  opacity: 0.35;
+  opacity: 0.22;
   background-image:
-    linear-gradient(rgba(99, 102, 241, 0.04) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(99, 102, 241, 0.04) 1px, transparent 1px);
+    linear-gradient(rgba(15, 23, 42, 0.035) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(15, 23, 42, 0.035) 1px, transparent 1px);
   background-size: 48px 48px;
   mask-image: radial-gradient(ellipse 80% 70% at 50% 30%, #000 20%, transparent 75%);
 }

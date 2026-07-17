@@ -158,45 +158,97 @@ public class LangChain4jDirectorAdapter implements DirectorPort {
         int minS = aigenProperties.getVisual().getMinShots();
         int maxS = aigenProperties.getVisual().getMaxShots();
         String lang = cmd.getLanguage() != null ? cmd.getLanguage() : "zh";
+        String style = cmd.getStylePreset() != null ? cmd.getStylePreset() : "cinematic-dark";
+        String audio = cmd.getAudioMode() != null ? cmd.getAudioMode() : "bgm_only";
+        String aspect = cmd.getAspectRatio() != null ? cmd.getAspectRatio() : "9:16";
         return """
-                你是短视频视觉导演。只输出一个 JSON 对象（vt-1.0 镜头表），不要 markdown，不要解释。
-                字段：
+                你是顶级短片视觉导演 + 剪辑师。任务：把用户主题变成「可观看且主题高度相关」的电影感镜头表，不是填模板，更不是随便拍空镜。
+                只输出一个 JSON 对象（vt-1.0），不要 markdown，不要解释。
+
+                【主题忠诚——最高优先级，违反则整表失败】
+                - 用户主题里的核心实体/事件/时间线必须在每一镜 visual.prompt 里可识别出现。
+                  例：用户写「以太坊加密货币历史」→ 每镜必须出现以太坊/Ethereum/ETH 相关可视主体
+                  （白皮书手稿、创世区块、矿机与显卡、智能合约界面、区块链节点网络、合并升级、DeFi/NFT 场景等），
+                  禁止整片都是与主题无关的城市夜景、路人、空洞赛博都市。
+                - 允许隐喻，但隐喻必须「一眼能联想到主题」：先写具体主体，再写光影风格；禁止只有光影没有主体。
+                - 从用户原文提取 3～8 个关键词，分散写入各镜 prompt（专有名词优先保留，勿泛化成「科技」「未来」）。
+                - 叙事片：镜头顺序应覆盖用户主题的关键节点（历史进程则按时间/阶段推进），不要跳戏。
+
+                创作原则：
+                - 禁止模板腔：不要机械「开场-展开-对比-收束」八股；按主题自由发明叙事节奏。
+                - 画面优先：每一镜 visual.prompt 必须是具体可拍摄场景（主体、环境、光影、镜头景别、氛围、材质）。
+                - 为「真动态」构图：有纵深与可运动空间；相邻 motion.type 尽量不同。
+                - 叠字克制：多数 overlay.layout=none；仅情绪峰值加短标题，标题也须点题。
+                - 画面内尽量不要大段可读正文/水印；但主题标志物、图标化符号、界面示意可以描述（勿要求清晰可OCR长文）。
+                - 节奏：单镜 durationSec 优先 2.2～4.5。
+                - 风格预设「%s」：统一气质，但每镜主体仍须扣题。
+                - visual.type 写 ai_image；不要输出假 URL。
+
+                JSON 形态：
                 {
                   "version":"vt-1.0",
-                  "meta":{"title":"","language":"%s","aspectRatio":"%s","targetDurationSec":%d,"stylePreset":"%s"},
+                  "meta":{"title":"短标题","language":"%s","aspectRatio":"%s","targetDurationSec":%d,"stylePreset":"%s"},
                   "audio":{"mode":"%s"},
                   "shots":[{
-                    "id":"shot-1","durationSec":3.5,
-                    "narration":"与用户同语言的口播，口语化，15～40字",
-                    "visual":{"type":"ai_image","prompt":"与用户同语言的画面描述，电影感光影构图，画面无文字"},
-                    "motion":{"type":"ken_burns"},
-                    "transition":{"type":"crossfade","durationFrames":12},
-                    "overlay":{"layout":"hook-center","title":"与用户同语言的大标题","subtitle":"","bullets":[]}
+                    "id":"shot-1",
+                    "durationSec":3.2,
+                    "narration":"可选口播",
+                    "visual":{
+                      "type":"ai_image",
+                      "prompt":"具体画面描述（与用户同语言）",
+                      "negativePrompt":"text, watermark, logo, blurry, low quality, deformed"
+                    },
+                    "motion":{
+                      "type":"punch_in",
+                      "params":{"intensity":0.75,"scaleFrom":1.0,"scaleTo":1.18,"xFrom":0,"xTo":-2,"yFrom":0,"yTo":1,"rotateFrom":0,"rotateTo":0}
+                    },
+                    "transition":{"type":"crossfade","durationFrames":10},
+                    "overlay":{
+                      "layout":"none",
+                      "title":"",
+                      "subtitle":"",
+                      "bullets":[],
+                      "position":"center",
+                      "style":"cinematic",
+                      "textAnim":"pop"
+                    },
+                    "notes":"可选：本镜情绪/剪辑意图"
                   }]
                 }
+
+                字段可选值：
+                - motion.type：static | ken_burns | zoom_in | zoom_out | pan_left | pan_right
+                  | punch_in | punch_out | whip | drift | shake | orbit | tilt | rise | fall | auto
+                - motion.params（可部分省略，数值建议）：
+                  intensity 0~1；scaleFrom/scaleTo；xFrom/xTo；yFrom/yTo（百分比偏移）；
+                  rotateFrom/rotateTo（度）
+                - transition.type：crossfade | hard_cut | flash | dip_black | dip_white | wipe_left | wipe_right
+                - overlay.layout：none | free | hook-center | lower-third | bullets-right | caption | big-word | corner
+                - overlay.style：cinematic | bold-impact | soft | neon | minimal
+                - overlay.textAnim：none | fade | pop | slide_up | slide_left | typewriter | glitch
+                - overlay.position：center | top | bottom | left | right | lower-left | lower-right
+
                 硬性规则：
                 1. shots 数量 %d～%d，总时长约 %d 秒
-                2. visual.type 默认 ai_image；prompt 为画面描述，必须与用户提示词同语言（勿强制英文），禁止 http URL；画面中不要出现可读文字/水印
-                3. overlay.layout 只能是: none, hook-center, lower-third, bullets-right, caption
-                4. motion.type: static 或 ken_burns 或 pan_left 或 pan_right 或 zoom_in 或 zoom_out
-                5. 叠字简短有力、与用户同语言；画面 prompt 丰富具体且同语言
-                6. 叙事建议：钩子 → 展开 → 对比/洞察 → 收束
-                7. 不要输出 audio 文件路径；audio.mode 保持为 %s
-                8. %s
-                9. %s
-                风格预设 %s：据此调整画面与叠字语气。
+                2. visual.type 默认 ai_image；prompt 与用户同语言，禁止 http URL，长度尽量 40～220 字（或英文 25～90 词）
+                3. 每一镜 visual.prompt 前 30 字内必须出现与用户主题直接相关的主体名词（勿整句只写氛围）
+                4. 至少一半镜头 overlay.layout=none（纯画面动效）
+                5. 不要输出 audio 文件路径；audio.mode 保持为 %s
+                6. %s
+                7. %s
+                8. 相邻镜头主体/景别要有变化，但都必须服务同一用户主题
                 """.formatted(
+                style,
                 lang,
-                cmd.getAspectRatio() != null ? cmd.getAspectRatio() : "9:16",
+                aspect,
                 cmd.getTargetDurationSec(),
-                cmd.getStylePreset() != null ? cmd.getStylePreset() : "cinematic-dark",
-                cmd.getAudioMode() != null ? cmd.getAudioMode() : "bgm_only",
+                style,
+                audio,
                 minS, maxS,
                 cmd.getTargetDurationSec(),
-                cmd.getAudioMode() != null ? cmd.getAudioMode() : "bgm_only",
+                audio,
                 narrationRule(cmd.getAudioMode()),
-                languagePolicy(lang),
-                cmd.getStylePreset() != null ? cmd.getStylePreset() : "cinematic-dark"
+                languagePolicy(lang)
         );
     }
 }

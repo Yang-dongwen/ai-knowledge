@@ -304,7 +304,7 @@ onMounted(load)
 }
 
 .avatar {
-  background: linear-gradient(135deg, #6366f1, #8b5cf6) !important;
+  background: #1f2937 !important;
   font-size: 13px;
   font-weight: 600;
   flex-shrink: 0;

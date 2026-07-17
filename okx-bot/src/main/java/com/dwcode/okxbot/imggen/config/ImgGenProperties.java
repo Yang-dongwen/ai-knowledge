@@ -50,12 +50,12 @@ public class ImgGenProperties {
          * 兼容旧配置：未配置 models 列表时使用。
          */
         private String invokeUrl =
-                "https://ai.api.nvidia.com/v1/genai/black-forest-labs/flux.1-schnell";
-        private String modelPath = "black-forest-labs/flux.1-schnell";
-        private int defaultSteps = 4;
-        private int timeoutSeconds = 120;
+                "https://ai.api.nvidia.com/v1/genai/black-forest-labs/flux.1-dev";
+        private String modelPath = "black-forest-labs/flux.1-dev";
+        private int defaultSteps = 28;
+        private int timeoutSeconds = 300;
         /** 默认生图模型 id（对应 models[].id） */
-        private String defaultModel = "black-forest-labs/flux.1-schnell";
+        private String defaultModel = "black-forest-labs/flux.1-dev";
         /** 可选生图模型目录 */
         private List<ImageModelDef> models = new ArrayList<>();
     }

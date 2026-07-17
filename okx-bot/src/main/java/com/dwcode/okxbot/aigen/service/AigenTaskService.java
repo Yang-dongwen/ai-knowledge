@@ -181,16 +181,34 @@ public class AigenTaskService {
             }
         }
 
-        // visual 出图模型（与文生图共用 capability=image）
+        // visual 出图模型（与文生图共用 capability=image；默认高质量 FLUX.1-dev）
         String imageProvider = blankToNull(options.getImageProvider());
         String imageModel = blankToNull(options.getImageModel());
+        if (imageModel == null && aigenProperties.getVisual() != null) {
+            imageModel = blankToNull(aigenProperties.getVisual().getDefaultImageModel());
+        }
+        if (imageProvider == null && aigenProperties.getVisual() != null) {
+            imageProvider = blankToNull(aigenProperties.getVisual().getImageProviderKey());
+        }
         boolean needRealImage = "visual".equals(pipelineMode)
                 && !aigenProperties.isMockPipeline()
                 && !"mock".equalsIgnoreCase(aigenProperties.getSteps().getAsset());
         if (needRealImage) {
-            var imgCfg = aiModelConfigService.requireEnabledImageModel(imageProvider, imageModel);
-            imageProvider = imgCfg.getProvider();
-            imageModel = imgCfg.getModelId();
+            try {
+                var imgCfg = aiModelConfigService.requireEnabledImageModel(imageProvider, imageModel);
+                imageProvider = imgCfg.getProvider();
+                imageModel = imgCfg.getModelId();
+            } catch (BusinessException ex) {
+                // 默认 dev 未入库时回退到库表排序第一（多为 schnell）
+                if (imageModel != null) {
+                    log.warn("默认生图模型不可用 [{}]，回退库表首选: {}", imageModel, ex.getMessage());
+                    var imgCfg = aiModelConfigService.requireEnabledImageModel(imageProvider, null);
+                    imageProvider = imgCfg.getProvider();
+                    imageModel = imgCfg.getModelId();
+                } else {
+                    throw ex;
+                }
+            }
         } else if ("visual".equals(pipelineMode)) {
             // mock 出图：允许空，落库占位
             if (imageProvider == null) {
@@ -532,8 +550,12 @@ public class AigenTaskService {
 
     public List<AigenShotSummary> listShots(Long taskId) {
         AigenTaskEntity entity = requireOwnedTask(taskId);
+        // 进行中/排队时尚无 storyboardJson：返回空列表，避免页面进详情报「content is null」
+        if (entity.getStoryboardJson() == null || entity.getStoryboardJson().isBlank()) {
+            return List.of();
+        }
         ShotlistDto list = loadShotlist(entity);
-        if (list.getShots() == null) {
+        if (list == null || list.getShots() == null) {
             return List.of();
         }
         Path workDir = resolveWorkDir(entity);
@@ -549,12 +571,13 @@ public class AigenTaskService {
         ShotlistDto list = loadShotlist(entity);
         ShotDto shot = findShot(list, shotId);
         Path workDir = resolveWorkDir(entity);
-        if (shot.getVisual() == null || shot.getVisual().getAssetPath() == null) {
+        if (shot.getVisual() == null) {
             throw new BusinessException(404, "镜头尚无画面文件");
         }
-        Path path = workDir.resolve(shot.getVisual().getAssetPath()).normalize();
-        if (!path.startsWith(workDir.normalize()) || !Files.isRegularFile(path)) {
-            throw new BusinessException(404, "镜头图片不存在");
+        // 页面 <img> 必须用静图：优先 assetPath 图片；若误指 mp4 则找同名 jpg
+        Path path = resolveShotPreviewImage(workDir, shot);
+        if (path == null) {
+            throw new BusinessException(404, "镜头图片不存在（仅有视频或文件缺失）");
         }
         String name = path.getFileName().toString().toLowerCase(Locale.ROOT);
         MediaType mt = name.endsWith(".png") ? MediaType.IMAGE_PNG
@@ -564,6 +587,70 @@ public class AigenTaskService {
                 .contentType(mt)
                 .header(HttpHeaders.CONTENT_DISPOSITION, "inline; filename=\"" + path.getFileName() + "\"")
                 .body(new FileSystemResource(path));
+    }
+
+    /**
+     * 解析页面缩略图用的静图路径（不返回 mp4）。
+     */
+    private Path resolveShotPreviewImage(Path workDir, ShotDto shot) {
+        if (shot == null || shot.getVisual() == null || workDir == null) {
+            return null;
+        }
+        Path root = workDir.toAbsolutePath().normalize();
+        // 1) assetPath 若是图片
+        String asset = shot.getVisual().getAssetPath();
+        if (asset != null && !asset.isBlank()) {
+            Path p = workDir.resolve(asset).normalize();
+            if (p.startsWith(root) && Files.isRegularFile(p) && looksLikeImageName(p.getFileName().toString())) {
+                return p;
+            }
+            // assetPath 误为视频：旁路找同名静图
+            if (p.startsWith(root) && looksLikeVideoName(p.getFileName().toString())) {
+                Path still = siblingStillImage(p);
+                if (still != null) {
+                    return still;
+                }
+            }
+        }
+        // 2) videoPath 旁的静图
+        String video = shot.getVisual().getVideoPath();
+        if (video != null && !video.isBlank()) {
+            Path vp = workDir.resolve(video).normalize();
+            if (vp.startsWith(root)) {
+                Path still = siblingStillImage(vp);
+                if (still != null) {
+                    return still;
+                }
+            }
+        }
+        return null;
+    }
+
+    private static boolean looksLikeVideoName(String name) {
+        if (name == null) {
+            return false;
+        }
+        String n = name.toLowerCase(Locale.ROOT);
+        return n.endsWith(".mp4") || n.endsWith(".webm") || n.endsWith(".mov");
+    }
+
+    private static Path siblingStillImage(Path videoOrAny) {
+        if (videoOrAny == null || videoOrAny.getParent() == null) {
+            return null;
+        }
+        String file = videoOrAny.getFileName().toString();
+        int dot = file.lastIndexOf('.');
+        String stem = dot > 0 ? file.substring(0, dot) : file;
+        if (stem.endsWith("-svd")) {
+            stem = stem.substring(0, stem.length() - 4);
+        }
+        for (String ext : new String[]{".jpg", ".jpeg", ".png", ".webp"}) {
+            Path cand = videoOrAny.getParent().resolve(stem + ext);
+            if (Files.isRegularFile(cand)) {
+                return cand;
+            }
+        }
+        return null;
     }
 
     /**
@@ -656,8 +743,15 @@ public class AigenTaskService {
     }
 
     private ShotlistDto loadShotlist(AigenTaskEntity entity) {
+        String json = entity != null ? entity.getStoryboardJson() : null;
+        if (json == null || json.isBlank()) {
+            // 规划完成前正常为空；调用方应先判空，此处兜底避免 Jackson NPE
+            throw new BusinessException(404, "镜头表尚未生成");
+        }
         try {
-            return objectMapper.readValue(entity.getStoryboardJson(), ShotlistDto.class);
+            return objectMapper.readValue(json, ShotlistDto.class);
+        } catch (BusinessException e) {
+            throw e;
         } catch (Exception e) {
             throw new BusinessException(400, "解析镜头表失败: " + e.getMessage());
         }
@@ -740,11 +834,8 @@ public class AigenTaskService {
     }
 
     private AigenShotSummary toShotSummary(Path workDir, ShotDto s) {
-        boolean img = false;
-        if (s.getVisual() != null && s.getVisual().getAssetPath() != null) {
-            Path p = workDir.resolve(s.getVisual().getAssetPath()).normalize();
-            img = Files.isRegularFile(p);
-        }
+        // 页面能否出缩略图 = 能否解析到静图（兼容旧数据 assetPath 误为 mp4）
+        boolean img = resolveShotPreviewImage(workDir, s) != null;
         boolean audio = false;
         if (s.getAudioSrc() != null) {
             Path p = workDir.resolve(s.getAudioSrc()).normalize();
@@ -755,13 +846,25 @@ public class AigenTaskService {
         if (preview != null && preview.length() > 80) {
             preview = preview.substring(0, 80) + "…";
         }
+        // 对外 assetPath 尽量返回静图路径，避免前端误当视频
+        String assetPath = s.getVisual() != null ? s.getVisual().getAssetPath() : null;
+        Path previewFile = resolveShotPreviewImage(workDir, s);
+        if (previewFile != null && workDir != null) {
+            try {
+                assetPath = workDir.toAbsolutePath().normalize()
+                        .relativize(previewFile.toAbsolutePath().normalize())
+                        .toString().replace('\\', '/');
+            } catch (Exception ignored) {
+                // keep original
+            }
+        }
         return AigenShotSummary.builder()
                 .id(s.getId())
                 .order(s.getOrder())
                 .durationSec(s.getDurationSec())
                 .title(s.getOverlay() != null ? s.getOverlay().getTitle() : null)
                 .visualType(s.getVisual() != null ? s.getVisual().getType() : null)
-                .assetPath(s.getVisual() != null ? s.getVisual().getAssetPath() : null)
+                .assetPath(assetPath)
                 .imageAvailable(img)
                 .audioSrc(s.getAudioSrc())
                 .audioAvailable(audio)

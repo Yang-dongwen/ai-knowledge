@@ -1,0 +1,388 @@
+/**
+ * AI 工具页控件：按钮 / Checkbox / Radio
+ * 极简大方；主按钮用中性墨色，避免刺眼蓝底。
+ */
+
+.tools-ui {
+  // ——— Button ———
+  .ant-btn {
+    height: 36px;
+    padding: 0 14px;
+    border-radius: 10px !important;
+    font-size: 13px;
+    font-weight: 500;
+    letter-spacing: 0.01em;
+    border: 1px solid #e5e7eb;
+    background: #fff;
+    color: #374151;
+    box-shadow: none !important;
+    transition:
+      background 0.15s ease,
+      border-color 0.15s ease,
+      color 0.15s ease,
+      opacity 0.15s ease;
+
+    &:not(:disabled):hover {
+      color: #111827;
+      border-color: #d1d5db;
+      background: #f9fafb;
+    }
+
+    &:not(:disabled):active {
+      background: #f3f4f6;
+    }
+
+    &:disabled {
+      opacity: 0.45;
+      color: #9ca3af;
+      border-color: #e5e7eb;
+      background: #f9fafb;
+    }
+
+    .anticon {
+      font-size: 14px;
+    }
+  }
+
+  .ant-btn-sm {
+    height: 30px;
+    padding: 0 10px;
+    border-radius: 8px !important;
+    font-size: 12px;
+  }
+
+  .ant-btn-lg,
+  .ant-btn-lg.ant-btn {
+    height: 42px !important;
+    padding: 0 18px !important;
+    border-radius: 12px !important;
+    font-size: 14px !important;
+    font-weight: 560 !important;
+  }
+
+  // 主按钮：柔和墨灰，非蓝色
+  .ant-btn-primary {
+    color: #fff !important;
+    border-color: transparent !important;
+    background: #1f2937 !important;
+
+    &:not(:disabled):hover {
+      color: #fff !important;
+      background: #111827 !important;
+      border-color: transparent !important;
+    }
+
+    &:not(:disabled):active {
+      background: #030712 !important;
+    }
+
+    &:disabled {
+      color: #fff !important;
+      background: #9ca3af !important;
+      border-color: transparent !important;
+      opacity: 0.75;
+    }
+  }
+
+  .ant-btn-primary.ant-btn-background-ghost,
+  .ant-btn-default.ant-btn-background-ghost {
+    color: #374151 !important;
+    border-color: #d1d5db !important;
+    background: transparent !important;
+
+    &:not(:disabled):hover {
+      color: #111827 !important;
+      border-color: #9ca3af !important;
+      background: #f9fafb !important;
+    }
+  }
+
+  .ant-btn-dashed {
+    border-style: dashed;
+    border-color: #e5e7eb;
+    color: #6b7280;
+    background: transparent;
+
+    &:not(:disabled):hover {
+      color: #111827;
+      border-color: #d1d5db;
+      background: #f9fafb;
+    }
+  }
+
+  .ant-btn-text {
+    border-color: transparent !important;
+    background: transparent !important;
+    box-shadow: none !important;
+    color: #6b7280;
+
+    &:not(:disabled):hover {
+      color: #111827;
+      background: #f3f4f6 !important;
+    }
+  }
+
+  .ant-btn-link {
+    border-color: transparent !important;
+    background: transparent !important;
+    box-shadow: none !important;
+    color: #374151;
+    padding-inline: 8px;
+
+    &:not(:disabled):hover {
+      color: #111827;
+      background: transparent !important;
+    }
+  }
+
+  .ant-btn-dangerous {
+    color: #be123c;
+    border-color: #fecdd3;
+    background: #fff;
+
+    &:not(:disabled):hover {
+      color: #9f1239;
+      border-color: #fda4af;
+      background: #fff1f2;
+    }
+  }
+
+  .ant-btn-dangerous.ant-btn-primary {
+    color: #fff !important;
+    border-color: transparent !important;
+    background: #e11d48 !important;
+
+    &:not(:disabled):hover {
+      background: #be123c !important;
+    }
+  }
+
+  // 工具页主提交（开始提取 / 生成 / 工作台 CTA）
+  .submit-btn.ant-btn,
+  .submit-actions .ant-btn-primary,
+  .cta-main.ant-btn {
+    height: 42px !important;
+    padding: 0 20px !important;
+    border-radius: 12px !important;
+    font-weight: 560 !important;
+    font-size: 14px !important;
+    border: none !important;
+    background: #1f2937 !important;
+    box-shadow: none !important;
+    color: #fff !important;
+
+    &:not(:disabled):hover {
+      background: #111827 !important;
+      filter: none;
+      transform: none;
+    }
+  }
+
+  .test-btn.ant-btn,
+  .manage-btn.ant-btn {
+    height: 40px !important;
+    border-radius: 10px !important;
+    font-weight: 500 !important;
+    color: #4b5563 !important;
+    border-color: #e5e7eb !important;
+    background: #fff !important;
+
+    &:not(:disabled):hover {
+      color: #111827 !important;
+      border-color: #d1d5db !important;
+      background: #f9fafb !important;
+    }
+  }
+
+  .manage-btn.ant-btn {
+    color: #374151 !important;
+    border-color: #e5e7eb !important;
+    background: #fafafa !important;
+
+    &:not(:disabled):hover {
+      color: #111827 !important;
+      border-color: #d1d5db !important;
+      background: #f3f4f6 !important;
+    }
+  }
+
+  // ——— Checkbox（中性选中色，不刺眼）———
+  .ant-checkbox-wrapper {
+    align-items: center;
+    color: #4b5563;
+    font-size: 13px;
+    font-weight: 500;
+    line-height: 1.4;
+
+    &:hover .ant-checkbox-inner {
+      border-color: #9ca3af;
+    }
+  }
+
+  .ant-checkbox {
+    top: 0;
+
+    .ant-checkbox-inner {
+      width: 16px;
+      height: 16px;
+      border-radius: 5px;
+      border: 1.5px solid #d1d5db;
+      background: #fff;
+      transition:
+        border-color 0.15s ease,
+        background 0.15s ease,
+        box-shadow 0.15s ease;
+
+      &::after {
+        width: 5px;
+        height: 8.5px;
+        border-width: 0 1.5px 1.5px 0;
+        top: 45%;
+        inset-inline-start: 25%;
+      }
+    }
+
+    & + span {
+      padding-inline-start: 8px;
+      padding-inline-end: 4px;
+    }
+  }
+
+  .ant-checkbox-checked .ant-checkbox-inner {
+    background: #1f2937 !important;
+    border-color: #1f2937 !important;
+  }
+
+  .ant-checkbox-wrapper:hover .ant-checkbox-checked:not(.ant-checkbox-disabled) .ant-checkbox-inner,
+  .ant-checkbox-checked:not(.ant-checkbox-disabled):hover .ant-checkbox-inner {
+    background: #111827 !important;
+    border-color: #111827 !important;
+  }
+
+  .ant-checkbox-indeterminate .ant-checkbox-inner {
+    background: #fff !important;
+    border-color: #1f2937 !important;
+
+    &::after {
+      width: 8px;
+      height: 8px;
+      background: #1f2937;
+      border: 0;
+      border-radius: 1px;
+      transform: translate(-50%, -50%) scale(1);
+    }
+  }
+
+  .ant-checkbox-disabled .ant-checkbox-inner {
+    background: #f3f4f6 !important;
+    border-color: #e5e7eb !important;
+  }
+
+  .ant-checkbox-wrapper-disabled {
+    color: #9ca3af;
+  }
+
+  .ant-checkbox-input:focus-visible + .ant-checkbox-inner,
+  .ant-checkbox-wrapper:focus-within .ant-checkbox-inner {
+    box-shadow: 0 0 0 3px rgba(17, 24, 39, 0.08);
+  }
+
+  // ——— Radio button group ———
+  .ant-radio-group-solid,
+  .ant-radio-group {
+    .ant-radio-button-wrapper {
+      height: 32px;
+      line-height: 30px;
+      padding: 0 12px;
+      font-size: 12.5px;
+      font-weight: 500;
+      color: #6b7280;
+      border-color: #e5e7eb !important;
+      background: #fff;
+
+      &::before {
+        background-color: #e5e7eb !important;
+      }
+
+      &:hover {
+        color: #111827;
+      }
+
+      &:first-child {
+        border-radius: 8px 0 0 8px !important;
+      }
+
+      &:last-child {
+        border-radius: 0 8px 8px 0 !important;
+      }
+    }
+
+    .ant-radio-button-wrapper-checked:not(.ant-radio-button-wrapper-disabled) {
+      color: #111827 !important;
+      background: #f3f4f6 !important;
+      border-color: #d1d5db !important;
+      box-shadow: none !important;
+      z-index: 1;
+
+      &::before {
+        background-color: #d1d5db !important;
+      }
+
+      &:hover {
+        color: #030712 !important;
+        background: #e5e7eb !important;
+      }
+    }
+  }
+
+  .ant-radio-group-solid .ant-radio-button-wrapper-checked:not(.ant-radio-button-wrapper-disabled) {
+    color: #fff !important;
+    background: #1f2937 !important;
+    border-color: #1f2937 !important;
+
+    &::before {
+      background-color: #1f2937 !important;
+    }
+
+    &:hover {
+      color: #fff !important;
+      background: #111827 !important;
+      border-color: #111827 !important;
+    }
+  }
+
+  .ant-radio-group-small .ant-radio-button-wrapper {
+    height: 28px;
+    line-height: 26px;
+    padding: 0 10px;
+    font-size: 12px;
+  }
+
+  .ant-radio-wrapper {
+    color: #4b5563;
+    font-size: 13px;
+
+    .ant-radio-inner {
+      width: 16px;
+      height: 16px;
+      border-color: #d1d5db;
+    }
+
+    .ant-radio-checked .ant-radio-inner {
+      border-color: #1f2937;
+
+      &::after {
+        background-color: #1f2937;
+        transform: scale(0.45);
+      }
+    }
+  }
+
+  .ant-switch {
+    background: #d1d5db;
+
+    &.ant-switch-checked {
+      background: #1f2937;
+    }
+  }
+}

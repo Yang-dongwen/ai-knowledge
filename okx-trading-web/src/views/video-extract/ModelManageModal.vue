@@ -8,10 +8,19 @@
     @cancel="emit('update:open', false)"
   >
     <div class="modal-toolbar">
-      <span class="hint">{{ modalHint }}</span>
+      <div class="toolbar-left">
+        <span
+          v-if="lockedCapability"
+          class="cap-pill"
+          :class="`cap-${lockedCapability}`"
+        >
+          {{ capabilityLabel(lockedCapability) }}
+        </span>
+        <span class="hint">{{ modalHint }}</span>
+      </div>
       <a-button type="primary" @click="openForm()">
         <template #icon><PlusOutlined /></template>
-        添加模型
+        添加{{ lockedCapability ? capabilityLabel(lockedCapability) : '' }}模型
       </a-button>
     </div>
 
@@ -61,7 +70,7 @@
 
     <a-modal
       v-model:open="formOpen"
-      :title="editingId ? '编辑模型' : '添加模型'"
+      :title="formModalTitle"
       ok-text="保存"
       cancel-text="取消"
       :confirm-loading="saving"
@@ -69,11 +78,38 @@
     >
       <a-form layout="vertical" class="cfg-form">
         <a-form-item label="能力类型" required>
-          <a-radio-group v-model:value="form.capability" button-style="solid" :disabled="!!lockedCapability">
-            <a-radio-button value="chat">Chat（对话/润色/分镜）</a-radio-button>
-            <a-radio-button value="image">文生图 Image</a-radio-button>
-            <a-radio-button value="video_omni">视频理解 Omni</a-radio-button>
-          </a-radio-group>
+          <div class="cap-picker" role="radiogroup" aria-label="能力类型">
+            <button
+              v-for="opt in capabilityOptions"
+              :key="opt.value"
+              type="button"
+              class="cap-option"
+              :class="[
+                `cap-${opt.value}`,
+                {
+                  active: form.capability === opt.value,
+                  locked: !!lockedCapability,
+                  disabled: !!lockedCapability && lockedCapability !== opt.value
+                }
+              ]"
+              :disabled="!!lockedCapability && lockedCapability !== opt.value"
+              :aria-checked="form.capability === opt.value"
+              role="radio"
+              @click="onPickCapability(opt.value)"
+            >
+              <span class="cap-option-check" aria-hidden="true">
+                <CheckOutlined v-if="form.capability === opt.value" />
+              </span>
+              <span class="cap-option-body">
+                <span class="cap-option-title">{{ opt.label }}</span>
+                <span class="cap-option-desc">{{ opt.desc }}</span>
+              </span>
+              <span v-if="form.capability === opt.value" class="cap-option-badge">当前</span>
+            </button>
+          </div>
+          <p v-if="lockedCapability" class="cap-lock-hint">
+            当前入口固定为「{{ capabilityLabel(lockedCapability) }}」模型，已高亮标识
+          </p>
         </a-form-item>
         <a-form-item label="供应商" required>
           <a-select
@@ -141,9 +177,11 @@
 <script setup lang="ts">
 import { ref, watch, reactive, computed } from 'vue'
 import { message, Modal } from 'ant-design-vue'
-import { PlusOutlined } from '@ant-design/icons-vue'
+import { PlusOutlined, CheckOutlined } from '@ant-design/icons-vue'
 import { videoApi } from '@/api/video.api'
 import type { AiModelConfig, AiProviderOption } from '@/types/api'
+
+type Capability = 'chat' | 'image' | 'video_omni'
 
 const props = withDefaults(
   defineProps<{
@@ -152,7 +190,7 @@ const props = withDefaults(
      * 锁定能力：打开时只管理该类型。
      * 不传则展示全部，表单可切换类型。
      */
-    capability?: 'chat' | 'image' | 'video_omni'
+    capability?: Capability
   }>(),
   { capability: undefined }
 )
@@ -164,11 +202,22 @@ const emit = defineEmits<{
 
 const lockedCapability = computed(() => props.capability || null)
 
+const capabilityOptions: { value: Capability; label: string; desc: string }[] = [
+  { value: 'chat', label: 'Chat', desc: '对话 / 润色 / 分镜 / 总结' },
+  { value: 'image', label: '文生图', desc: 'FLUX 等图片生成模型' },
+  { value: 'video_omni', label: '视频理解', desc: '画面理解 · video_omni' }
+]
+
 const modalTitle = computed(() => {
   if (props.capability === 'image') return '文生图模型管理'
   if (props.capability === 'chat') return 'Chat 模型管理'
   if (props.capability === 'video_omni') return '视频理解模型管理'
   return 'AI 模型管理'
+})
+
+const formModalTitle = computed(() => {
+  const cap = capabilityLabel(form.capability)
+  return editingId.value ? `编辑${cap}模型` : `添加${cap}模型`
 })
 
 const modalHint = computed(() => {
@@ -193,7 +242,7 @@ const editingId = ref<string | null>(null)
 const togglingId = ref('')
 
 const form = reactive({
-  capability: 'chat' as 'chat' | 'image' | 'video_omni',
+  capability: 'chat' as Capability,
   provider: 'nvidia',
   modelId: '',
   modelName: '',
@@ -205,6 +254,18 @@ const form = reactive({
   sortOrder: 0,
   remark: ''
 })
+
+function onPickCapability(value: Capability) {
+  if (lockedCapability.value && lockedCapability.value !== value) return
+  if (form.capability === value) return
+  form.capability = value
+  form.protocol = defaultProtocolFor(value)
+  if (value !== 'image') {
+    form.invokeUrl = ''
+  } else if (!form.invokeUrl) {
+    form.invokeUrl = 'https://ai.api.nvidia.com/v1/genai/black-forest-labs/flux.1-schnell'
+  }
+}
 
 const imageProtocolOptions = [
   { value: 'nvidia-flux', label: 'nvidia-flux（NVIDIA FLUX 云端 GenAI）' }
@@ -303,7 +364,7 @@ function defaultProtocolFor(cap: string) {
   return ''
 }
 
-function normalizeCap(cap?: string | null): 'chat' | 'image' | 'video_omni' {
+function normalizeCap(cap?: string | null): Capability {
   if (cap === 'image') return 'image'
   if (cap === 'video_omni') return 'video_omni'
   return 'chat'
@@ -456,6 +517,46 @@ function onDelete(record: AiModelConfig) {
   gap: 12px;
   margin-bottom: 14px;
 }
+
+.toolbar-left {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  min-width: 0;
+  flex: 1;
+}
+
+.cap-pill {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  height: 24px;
+  padding: 0 10px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 650;
+  letter-spacing: 0.02em;
+  border: 1px solid #e5e7eb;
+  background: #f3f4f6;
+  color: #111827;
+
+  &.cap-chat {
+    background: #111827;
+    border-color: #111827;
+    color: #fff;
+  }
+  &.cap-image {
+    background: #065f46;
+    border-color: #065f46;
+    color: #fff;
+  }
+  &.cap-video_omni {
+    background: #1e3a5f;
+    border-color: #1e3a5f;
+    color: #fff;
+  }
+}
+
 .hint {
   font-size: 12px;
   color: #64748b;
@@ -472,5 +573,149 @@ function onDelete(record: AiModelConfig) {
 .cfg-form {
   max-height: 60vh;
   overflow-y: auto;
+}
+
+/* 能力类型选择：当前种类高亮 */
+.cap-picker {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+
+  @media (max-width: 560px) {
+    grid-template-columns: 1fr;
+  }
+}
+
+.cap-option {
+  position: relative;
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  width: 100%;
+  text-align: left;
+  padding: 12px 12px 12px 10px;
+  border-radius: 12px;
+  border: 1.5px solid #e5e7eb;
+  background: #fff;
+  cursor: pointer;
+  transition:
+    border-color 0.15s ease,
+    background 0.15s ease,
+    box-shadow 0.15s ease,
+    opacity 0.15s ease;
+  color: #374151;
+
+  &:hover:not(:disabled):not(.active) {
+    border-color: #d1d5db;
+    background: #fafafa;
+  }
+
+  &.active {
+    border-color: #111827;
+    background: #f9fafb;
+    box-shadow: 0 0 0 3px rgba(17, 24, 39, 0.08);
+
+    .cap-option-title {
+      color: #111827;
+      font-weight: 700;
+    }
+
+    .cap-option-check {
+      background: #111827;
+      border-color: #111827;
+      color: #fff;
+    }
+  }
+
+  &.active.cap-image {
+    border-color: #065f46;
+    box-shadow: 0 0 0 3px rgba(6, 95, 70, 0.1);
+
+    .cap-option-check {
+      background: #065f46;
+      border-color: #065f46;
+    }
+
+    .cap-option-badge {
+      background: #ecfdf5;
+      color: #065f46;
+    }
+  }
+
+  &.active.cap-video_omni {
+    border-color: #1e3a5f;
+    box-shadow: 0 0 0 3px rgba(30, 58, 95, 0.12);
+
+    .cap-option-check {
+      background: #1e3a5f;
+      border-color: #1e3a5f;
+    }
+
+    .cap-option-badge {
+      background: #eff6ff;
+      color: #1e3a5f;
+    }
+  }
+
+  &.disabled {
+    opacity: 0.38;
+    cursor: not-allowed;
+    filter: grayscale(0.2);
+  }
+}
+
+.cap-option-check {
+  width: 20px;
+  height: 20px;
+  border-radius: 999px;
+  border: 1.5px solid #d1d5db;
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+  margin-top: 1px;
+  font-size: 11px;
+  background: #fff;
+  color: transparent;
+}
+
+.cap-option-body {
+  min-width: 0;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.cap-option-title {
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.3;
+  color: #374151;
+}
+
+.cap-option-desc {
+  font-size: 11.5px;
+  color: #9ca3af;
+  line-height: 1.35;
+}
+
+.cap-option-badge {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  padding: 2px 6px;
+  border-radius: 999px;
+  background: #111827;
+  color: #fff;
+}
+
+.cap-lock-hint {
+  margin: 8px 0 0;
+  font-size: 12px;
+  color: #6b7280;
+  line-height: 1.4;
 }
 </style>

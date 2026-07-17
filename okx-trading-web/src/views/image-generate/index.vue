@@ -1175,13 +1175,13 @@ onUnmounted(() => {
 
   &:focus-within {
     background: #fff;
-    border-color: #a78bfa;
-    box-shadow: 0 0 0 3px rgba(124, 58, 237, 0.12);
+    border-color: #9ca3af;
+    box-shadow: 0 0 0 3px rgba(15, 23, 42, 0.06);
   }
 
   &.is-enhanced {
-    border-color: #86efac;
-    box-shadow: 0 0 0 2px rgba(34, 197, 94, 0.12);
+    border-color: #a7f3d0;
+    box-shadow: 0 0 0 2px rgba(16, 185, 129, 0.1);
   }
 
   :deep(.prompt-textarea-in-box.ant-input),
@@ -1225,43 +1225,45 @@ onUnmounted(() => {
   gap: 4px;
   height: 28px;
   padding: 0 10px;
-  border-radius: 999px;
+  border-radius: 8px;
   font-size: 12px;
   font-weight: 500;
   line-height: 1;
-  border: 1px solid transparent;
+  border: 1px solid #e2e8f0;
+  background: #fff;
+  color: #475569;
   cursor: pointer;
   transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease, opacity 0.15s ease;
   user-select: none;
 
   &:disabled {
-    opacity: 0.55;
+    opacity: 0.45;
     cursor: not-allowed;
   }
 
   &.enhance {
-    color: #6d28d9;
-    background: #f5f3ff;
-    border-color: #ddd6fe;
+    color: #374151;
+    border-color: #e5e7eb;
+    background: #fff;
 
     &:hover:not(:disabled) {
-      background: #ede9fe;
-      border-color: #c4b5fd;
+      background: #f9fafb;
+      border-color: #d1d5db;
+      color: #111827;
     }
 
     &.busy {
-      color: #7c3aed;
+      color: #6b7280;
     }
   }
 
   &.undo {
     color: #64748b;
-    background: #f8fafc;
-    border-color: #e2e8f0;
 
     &:hover:not(:disabled) {
       color: #334155;
-      background: #f1f5f9;
+      background: #f8fafc;
+      border-color: #cbd5e1;
     }
   }
 }

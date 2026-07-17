@@ -22,10 +22,11 @@
   --content-padding: #{$content-padding};
   --card-radius: #{$card-radius};
   --card-shadow: #{$card-shadow};
-  --glass-bg: rgba(255, 255, 255, 0.72);
-  --glass-border: rgba(255, 255, 255, 0.55);
-  --glow-primary: rgba(99, 102, 241, 0.22);
-  --glow-accent: rgba(168, 85, 247, 0.16);
+  --glass-bg: rgba(255, 255, 255, 0.78);
+  --glass-border: rgba(229, 231, 235, 0.9);
+  --focus-ring: rgba(15, 23, 42, 0.08);
+  --control-height: 36px;
+  --control-radius: 10px;
 }
 
 body {
@@ -53,7 +54,7 @@ body {
   min-height: 100vh;
 }
 
-/* 沉浸式路由：禁止 html/body 整页滚动（由页面内部区域滚动） */
+/* 沉浸式路由：禁止 html/body 整页滚动 */
 html.immersive-page,
 html.immersive-page body {
   height: 100%;
@@ -66,37 +67,32 @@ html.immersive-page #app {
   overflow: hidden;
 }
 
-// 卡片 · 圆润玻璃质感
+// 卡片 · 干净轻浮层（去掉紫边悬停）
 .page-card {
   position: relative;
-  background: linear-gradient(165deg, rgba(255, 255, 255, 0.96) 0%, rgba(255, 255, 255, 0.9) 100%);
+  background: var(--card-bg);
   border-radius: var(--card-radius);
   box-shadow: var(--card-shadow);
-  border: 1px solid rgba(226, 232, 240, 0.9);
-  padding: 22px 24px;
-  margin-bottom: 18px;
-  backdrop-filter: blur(10px);
-  transition: box-shadow 0.22s ease, border-color 0.22s ease, transform 0.22s ease;
+  border: 1px solid var(--border-color);
+  padding: 20px 22px;
+  margin-bottom: 16px;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
 
   &:hover {
-    border-color: rgba(199, 210, 254, 0.85);
+    border-color: #d1d5db;
     box-shadow:
-      0 2px 4px rgba(15, 23, 42, 0.03),
-      0 16px 40px rgba(99, 102, 241, 0.08);
+      0 1px 2px rgba(15, 23, 42, 0.04),
+      0 10px 28px rgba(15, 23, 42, 0.05);
   }
 }
 
-// 页面标题
+// 页面标题 · 实色墨黑（去掉紫渐变字）
 .page-title {
   font-size: 22px;
-  font-weight: 750;
-  letter-spacing: -0.03em;
+  font-weight: 700;
+  letter-spacing: -0.025em;
   color: var(--text-primary);
   margin-bottom: 4px;
-  background: linear-gradient(120deg, #0f172a 0%, #312e81 55%, #5b21b6 100%);
-  -webkit-background-clip: text;
-  background-clip: text;
-  color: transparent;
 }
 
 .page-subtitle {
@@ -116,21 +112,18 @@ html.immersive-page #app {
   font-weight: 500;
 }
 
-// 滚动条 · 细圆
+// 滚动条 · 中性细圆
 ::-webkit-scrollbar {
-  width: 7px;
-  height: 7px;
+  width: 6px;
+  height: 6px;
 }
 
 ::-webkit-scrollbar-thumb {
-  background: linear-gradient(180deg, #c7d2fe, #ddd6fe);
+  background: #d1d5db;
   border-radius: 999px;
-  border: 2px solid transparent;
-  background-clip: padding-box;
 
   &:hover {
-    background: linear-gradient(180deg, #a5b4fc, #c4b5fd);
-    background-clip: padding-box;
+    background: #9ca3af;
   }
 }
 
@@ -138,10 +131,10 @@ html.immersive-page #app {
   background: transparent;
 }
 
-// Ant Design 覆盖 · 更圆润
+// ——— Ant Design 全局克制覆盖 ———
 .ant-table {
   .ant-table-thead > tr > th {
-    background: linear-gradient(180deg, #f8fafc 0%, #f1f5f9 100%) !important;
+    background: #fafafa !important;
     font-weight: 600;
     color: var(--text-secondary);
     font-size: 13px;
@@ -149,89 +142,228 @@ html.immersive-page #app {
   }
 
   .ant-table-tbody > tr > td {
-    border-bottom: 1px solid #f1f5f9;
+    border-bottom: 1px solid #f3f4f6;
     font-size: 13px;
   }
 
   .ant-table-tbody > tr:hover > td {
-    background: #f8fafc !important;
+    background: #fafafa !important;
   }
 }
 
 .ant-tag {
-  border-radius: 999px !important;
+  border-radius: 6px !important;
   font-size: 12px;
-  padding-inline: 10px;
-  border: none;
+  padding-inline: 8px;
+  border: 1px solid transparent;
   font-weight: 500;
+  line-height: 20px;
 }
 
 .ant-btn {
-  border-radius: 12px !important;
-  font-weight: 560;
+  border-radius: var(--control-radius) !important;
+  font-weight: 500;
   box-shadow: none;
-  transition: transform 0.15s ease, box-shadow 0.15s ease, background 0.15s ease;
+  transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease;
 
   &.ant-btn-primary {
-    background: linear-gradient(135deg, #6366f1 0%, #7c3aed 100%);
-    border: none;
-    box-shadow: 0 6px 16px rgba(99, 102, 241, 0.28);
+    background: #1f2937;
+    border-color: #1f2937;
+    color: #fff;
+    box-shadow: none;
 
     &:hover {
-      background: linear-gradient(135deg, #4f46e5 0%, #6d28d9 100%) !important;
-      box-shadow: 0 8px 20px rgba(99, 102, 241, 0.36);
+      background: #111827 !important;
+      border-color: #111827 !important;
+      color: #fff !important;
     }
 
     &:active {
-      transform: translateY(1px);
+      background: #030712 !important;
+      border-color: #030712 !important;
     }
   }
 
   &.ant-btn-lg {
-    border-radius: 14px !important;
-    height: 44px;
-    padding-inline: 20px;
+    border-radius: 12px !important;
+    height: 42px;
+    padding-inline: 18px;
   }
 }
 
+// 表单控件：统一高度与焦点环
 .ant-input,
 .ant-input-affix-wrapper,
 .ant-input-number,
 .ant-select-selector,
 .ant-picker {
-  border-radius: 12px !important;
+  border-radius: var(--control-radius) !important;
+  border-color: #e5e7eb !important;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease !important;
+}
+
+.ant-input,
+.ant-input-affix-wrapper,
+.ant-input-number,
+.ant-picker {
+  &:hover {
+    border-color: #d1d5db !important;
+  }
+
+  &:focus,
+  &.ant-input-affix-wrapper-focused,
+  &.ant-input-number-focused,
+  &.ant-picker-focused {
+    border-color: #9ca3af !important;
+    box-shadow: 0 0 0 3px var(--focus-ring) !important;
+  }
+}
+
+.ant-select:not(.ant-select-disabled):hover .ant-select-selector {
+  border-color: #d1d5db !important;
+}
+
+.ant-select-focused:not(.ant-select-disabled) .ant-select-selector {
+  border-color: #9ca3af !important;
+  box-shadow: 0 0 0 3px var(--focus-ring) !important;
+}
+
+textarea.ant-input {
+  line-height: 1.6;
+  padding: 10px 12px !important;
 }
 
 .ant-select-dropdown,
 .ant-dropdown-menu,
 .ant-modal-content {
-  border-radius: 16px !important;
+  border-radius: 14px !important;
 }
 
 .ant-modal-content {
   overflow: hidden;
   box-shadow:
-    0 24px 64px rgba(15, 23, 42, 0.16),
-    0 0 0 1px rgba(99, 102, 241, 0.06) !important;
+    0 20px 48px rgba(15, 23, 42, 0.12),
+    0 0 0 1px rgba(15, 23, 42, 0.04) !important;
 }
 
-.ant-radio-button-wrapper {
-  border-radius: 0 !important;
+.ant-modal-header {
+  border-bottom-color: #f3f4f6 !important;
+  margin-bottom: 0 !important;
+}
 
-  &:first-child {
-    border-radius: 10px 0 0 10px !important;
+.ant-modal-title {
+  font-weight: 650 !important;
+  color: #0f172a !important;
+}
+
+.ant-modal-footer {
+  border-top-color: #f3f4f6 !important;
+}
+
+// Tabs 更干净
+.ant-tabs-top > .ant-tabs-nav::before {
+  border-bottom-color: #f3f4f6 !important;
+}
+
+.ant-tabs .ant-tabs-tab {
+  color: #6b7280;
+  font-weight: 500;
+  padding: 10px 2px !important;
+
+  + .ant-tabs-tab {
+    margin-left: 20px !important;
   }
 
-  &:last-child {
-    border-radius: 0 10px 10px 0 !important;
+  &:hover {
+    color: #111827;
   }
+}
+
+.ant-tabs .ant-tabs-tab.ant-tabs-tab-active .ant-tabs-tab-btn {
+  color: #111827 !important;
+  font-weight: 600;
+  text-shadow: none !important;
+}
+
+.ant-tabs .ant-tabs-ink-bar {
+  background: #1f2937 !important;
+  height: 2px !important;
+  border-radius: 2px;
+}
+
+// Progress 中性
+.ant-progress-bg {
+  background-color: #1f2937 !important;
+}
+
+.ant-progress-inner {
+  background-color: #f3f4f6 !important;
+}
+
+// Alert 圆角统一
+.ant-alert {
+  border-radius: 12px !important;
+}
+
+// Empty 默认图高度更收敛
+.ant-empty-image {
+  height: 56px !important;
+}
+
+// Tooltip / Dropdown 轻阴影
+.ant-tooltip-inner {
+  border-radius: 8px !important;
+  font-size: 12px !important;
+}
+
+.ant-dropdown-menu {
+  padding: 6px !important;
+  box-shadow:
+    0 8px 24px rgba(15, 23, 42, 0.1),
+    0 0 0 1px rgba(15, 23, 42, 0.04) !important;
+}
+
+.ant-dropdown-menu-item {
+  border-radius: 8px !important;
 }
 
 // 页脚
 .page-footer {
   text-align: center;
-  padding: 28px 0 18px;
+  padding: 24px 0 16px;
   color: var(--text-muted);
   font-size: 12px;
   letter-spacing: 0.02em;
 }
+
+// 链接
+a {
+  color: #1f2937;
+  text-decoration: none;
+  transition: color 0.15s ease;
+
+  &:hover {
+    color: #111827;
+  }
+}
+
+// Message 轻量圆角
+.ant-message-notice-content {
+  border-radius: 10px !important;
+  box-shadow:
+    0 4px 16px rgba(15, 23, 42, 0.08),
+    0 0 0 1px rgba(15, 23, 42, 0.04) !important;
+}
+
+// 分割线
+.ant-divider {
+  border-color: #f3f4f6 !important;
+}
+
+// Spin 主色
+.ant-spin-dot-item {
+  background-color: #1f2937 !important;
+}
+
+// 工具页按钮 / checkbox / radio
+@import './tools-controls.scss';

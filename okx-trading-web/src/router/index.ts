@@ -34,54 +34,6 @@ const routes: RouteRecordRaw[] = [
         meta: { title: '工作台', group: 'home' }
       },
       {
-        path: 'dashboard',
-        name: 'Dashboard',
-        component: () => import('@/views/dashboard/index.vue'),
-        meta: { title: '仪表盘', group: 'trading', requiresSuperAdmin: true }
-      },
-      {
-        path: 'okx-config',
-        name: 'OkxConfig',
-        component: () => import('@/views/okx-config/index.vue'),
-        meta: { title: 'OKX配置', group: 'trading', requiresSuperAdmin: true }
-      },
-      {
-        path: 'strategies',
-        name: 'Strategies',
-        component: () => import('@/views/strategy/index.vue'),
-        meta: { title: '策略管理', group: 'trading', requiresSuperAdmin: true }
-      },
-      {
-        path: 'positions',
-        name: 'Positions',
-        component: () => import('@/views/position/index.vue'),
-        meta: { title: '当前持仓', group: 'trading', requiresSuperAdmin: true }
-      },
-      {
-        path: 'trades',
-        name: 'Trades',
-        component: () => import('@/views/trade/index.vue'),
-        meta: { title: '交易记录', group: 'trading', requiresSuperAdmin: true }
-      },
-      {
-        path: 'orders',
-        name: 'Orders',
-        component: () => import('@/views/order/index.vue'),
-        meta: { title: '订单记录', group: 'trading', requiresSuperAdmin: true }
-      },
-      {
-        path: 'run-logs',
-        name: 'RunLogs',
-        component: () => import('@/views/run-log/index.vue'),
-        meta: { title: '运行日志', group: 'trading', requiresSuperAdmin: true }
-      },
-      {
-        path: 'system-settings',
-        name: 'SystemSettings',
-        component: () => import('@/views/system-settings/index.vue'),
-        meta: { title: '系统设置', group: 'trading', requiresSuperAdmin: true }
-      },
-      {
         path: 'user-manage',
         name: 'UserManage',
         component: () => import('@/views/user-manage/index.vue'),
@@ -109,7 +61,6 @@ const routes: RouteRecordRaw[] = [
         path: 'ai-chat',
         name: 'AiChat',
         component: () => import('@/views/ai-chat/index.vue'),
-        // immersive：占满视口、隐藏页脚，由页面内部滚动（仅消息区）
         meta: { title: 'AI 对话', group: 'tools', immersive: true }
       }
     ]
@@ -135,9 +86,7 @@ router.beforeEach(async (to) => {
   if (isPublic && auth.isLoggedIn && (to.path === '/login' || to.path === '/register')) {
     return { path: '/home' }
   }
-  // 交易管理等超管页面：无权限则回工作台
   if (to.meta?.requiresSuperAdmin && auth.isLoggedIn && !auth.isSuperAdmin) {
-    // 尝试刷新一次角色（避免 localStorage 旧缓存）
     if (!auth.user?.role) {
       await auth.fetchMe()
     }
@@ -151,7 +100,6 @@ router.beforeEach(async (to) => {
 router.afterEach((to) => {
   const pageTitle = (to.meta?.title as string | undefined) || ''
   document.title = pageTitle ? `${pageTitle} · ${APP_TITLE}` : APP_TITLE
-  // 沉浸式页面：锁死 body 滚动，只允许内部聊天区域滚动
   document.documentElement.classList.toggle('immersive-page', to.meta?.immersive === true)
 })
 

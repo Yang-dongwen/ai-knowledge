@@ -48,14 +48,64 @@ public class AigenProperties {
         private boolean failOnShotError = false;
         private String defaultAudioMode = "bgm_only";
         private String defaultStylePreset = "cinematic-dark";
-        private String motionDefault = "ken_burns";
+        /** 默认运镜：auto=按镜序自动挑选富有变化的运镜 */
+        private String motionDefault = "auto";
         private String compositionId = "VisualTimeline";
         /** 预置 BGM 目录（相对运行目录或绝对路径） */
         private String bgmDir = "./data/aigen/_bgm";
-        private int imageSteps = 4;
+        /**
+         * visual 默认生图步数（任务未指定时；库表 default_steps 优先）。
+         * FLUX.1-dev 建议 20～28；schnell 建议 4～8。
+         */
+        private int imageSteps = 28;
         private String imageProviderKey = "nvidia";
-        /** 默认是否润色出图 prompt */
-        private boolean defaultEnhanceImagePrompt = false;
+        /**
+         * visual 默认生图模型（capability=image 的 model_id）。
+         * 空则按库表 sort_order 取第一个启用模型。
+         */
+        private String defaultImageModel = "black-forest-labs/flux.1-dev";
+        /** 默认是否润色出图 prompt（建议 true，提升电影感） */
+        private boolean defaultEnhanceImagePrompt = true;
+        /**
+         * 出图语言策略：
+         * <ul>
+         *   <li>{@code auto} — 优先 visual.promptEn（英文），无则中文 prompt + 主题锚点</li>
+         *   <li>{@code en} — 强制走英文路径（缺 promptEn 时用 LLM 临时英化或锚点英文）</li>
+         *   <li>{@code zh} — 仅用中文 prompt</li>
+         * </ul>
+         * FLUX 等对英文实体名（Ethereum、blockchain）通常更稳。
+         */
+        private String imagePromptLanguage = "auto";
+        /** 规划后校验镜头是否命中用户主题关键词；失败则触发 repair */
+        private boolean enforceTopicKeywords = true;
+
+        /**
+         * 静图 → 动感短片。失败自动回退静图。template 模式不受影响。
+         * @deprecated 见 {@link #i2vMode}；kineticClips=false 时关闭全部 i2v
+         */
+        private boolean kineticClips = true;
+        /**
+         * 图生视频模式：
+         * <ul>
+         *   <li>{@code kinetic} — 本地 FFmpeg zoompan（默认，稳定）</li>
+         *   <li>{@code nvidia-svd} — NVIDIA Stable Video Diffusion（需开通；失败可回退）</li>
+         *   <li>{@code auto} — 先试 nvidia-svd，失败再 kinetic</li>
+         *   <li>{@code off} — 仅静图 + Remotion CSS 运镜</li>
+         * </ul>
+         */
+        private String i2vMode = "kinetic";
+        /** nvidia-svd 失败时是否回退 kinetic */
+        private boolean i2vFailOpenToKinetic = true;
+        private String svdInvokeUrl =
+                "https://ai.api.nvidia.com/v1/genai/stabilityai/stable-video-diffusion";
+        private int svdTimeoutSeconds = 300;
+        private int svdMotionBucketId = 127;
+        private int svdFps = 6;
+        /** 动效片段帧率（kinetic） */
+        private int kineticFps = 24;
+        /** libx264 preset：ultrafast|veryfast|faster|fast|medium */
+        private String kineticPreset = "veryfast";
+        private int kineticCrf = 20;
     }
 
     @Data
@@ -72,7 +122,8 @@ public class AigenProperties {
     public static class Llm {
         private String provider;
         private String model;
-        private double temperature = 0.5;
+        /** 导演创意温度：略高以鼓励自由想象 */
+        private double temperature = 0.72;
         private int maxTokens = 8192;
         private int maxRetries = 3;
         private int timeoutSeconds = 120;

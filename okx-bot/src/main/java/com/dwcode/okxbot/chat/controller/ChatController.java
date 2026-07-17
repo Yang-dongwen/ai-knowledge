@@ -1,5 +1,8 @@
 package com.dwcode.okxbot.chat.controller;
 
+import com.dwcode.okxbot.chat.agent.ToolResult;
+import com.dwcode.okxbot.chat.dto.AgentConfirmRequest;
+import com.dwcode.okxbot.chat.dto.AgentRejectRequest;
 import com.dwcode.okxbot.chat.dto.ChatRequest;
 import com.dwcode.okxbot.chat.dto.EditResendRequest;
 import com.dwcode.okxbot.chat.dto.RenameConversationRequest;
@@ -127,6 +130,25 @@ public class ChatController {
         boolean ok = chatService.stopStream(body.getStreamId(), body.getConversationId());
         Map<String, Object> data = new HashMap<>();
         data.put("stopped", ok);
+        return ApiResult.ok(data);
+    }
+
+    /**
+     * 确认 Agent 写工具草案（真正创建任务）。
+     */
+    @PostMapping("/agent/confirm")
+    public ApiResult<ToolResult> agentConfirm(@Valid @RequestBody AgentConfirmRequest request) {
+        return ApiResult.ok(chatService.confirmAgentAction(request.getConfirmId(), request.getArgs()));
+    }
+
+    /**
+     * 拒绝 Agent 写工具草案。
+     */
+    @PostMapping("/agent/reject")
+    public ApiResult<Map<String, Object>> agentReject(@Valid @RequestBody AgentRejectRequest request) {
+        boolean ok = chatService.rejectAgentAction(request.getConfirmId());
+        Map<String, Object> data = new HashMap<>();
+        data.put("rejected", ok);
         return ApiResult.ok(data);
     }
 

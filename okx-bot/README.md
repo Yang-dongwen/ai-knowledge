@@ -37,8 +37,6 @@ okx-bot/
 ├── src/main/java/com/dwcode/okxbot/
 ├── src/main/resources/
 │   ├── application.yml           # 主配置（DB、AI、video、aigen、imggen、auth）
-│   ├── application-paper.yml     # 模拟盘 profile（默认启用）
-│   ├── application-prod.yml      # 实盘 profile（默认不启用实盘下单）
 │   └── db/schema.sql             # 全量建表脚本
 ├── whisper-service/              # Python Whisper 微服务
 ├── docker-compose.video.yml      # Whisper（及可选 Ollama）容器
@@ -76,7 +74,7 @@ okx-bot/
 
 ## 4. 外部工具依赖总表
 
-按功能模块列出。**只做交易 + 认证**时，不必安装 Whisper / Remotion / edge-tts。
+按功能模块列出。**仅认证**时不必安装 Whisper / Remotion / edge-tts。
 
 | 外部依赖 | 交易 | 聊天/模型 | 视频提取 | AI 视频生成 | 文生图 | 说明 |
 |----------|:----:|:---------:|:--------:|:-----------:|:------:|------|

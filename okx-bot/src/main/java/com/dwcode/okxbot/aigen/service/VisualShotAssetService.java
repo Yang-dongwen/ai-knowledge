@@ -13,6 +13,9 @@ import com.dwcode.okxbot.imggen.port.ImageGenCommand;
 import com.dwcode.okxbot.imggen.port.ImageGenPort;
 import com.dwcode.okxbot.imggen.port.ImageGenResult;
 import com.dwcode.okxbot.imggen.util.AspectRatioMapper;
+import com.dwcode.okxbot.aigen.port.ImageToVideoCommand;
+import com.dwcode.okxbot.aigen.port.ImageToVideoPort;
+import com.dwcode.okxbot.aigen.port.ImageToVideoResult;
 import com.dwcode.okxbot.aigen.port.TtsCommand;
 import com.dwcode.okxbot.aigen.port.TtsPort;
 import com.dwcode.okxbot.aigen.port.TtsResult;
@@ -24,6 +27,7 @@ import org.springframework.stereotype.Service;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
+import java.util.List;
 import java.util.Locale;
 
 /**
@@ -38,15 +42,17 @@ public class VisualShotAssetService {
      * 出图前润色：保持与用户/分镜原文相同语言，禁止强制英文化。
      */
     private static final String ENHANCE_SYSTEM = """
-            你是短视频分镜出图（FLUX 等）的提示词润色专家。
-            请把用户的画面描述改写成一条更清晰、更适合出图的提示词。
+            你是电影感文生图提示词导演（适配 FLUX 等）。
+            把输入改写成一条「主体扣题 + 镜头语言明确 + 光影质感强」的出图提示词。
 
             规则：
-            1. 必须与输入使用相同语言（中文进中文出，英文进英文出），禁止擅自翻译成另一种语言。
-            2. 只输出润色后的提示词正文：不要引号、不要 markdown、不要解释。
-            3. 保留核心主体与意图，可补充光影、构图、氛围、质感；画面中不要出现可读文字或水印。
-            4. 控制在约 200 字以内（或英文约 120 词以内）。
-            5. 不要加入 NSFW 内容。
+            1. 与输入同语言（中文进中文出），禁止擅自翻译成另一种语言。
+            2. 只输出提示词正文：不要引号、markdown、编号或解释。
+            3. 【主题锚点】必须保留输入中的核心专有名词与主体（如以太坊、ETH、区块链、比特币等），
+               放在提示词前半段；禁止删掉主体只剩「赛博都市/霓虹/雾气」等空镜。
+            4. 补足：景别、机位、主光与氛围、材质；仍保持可拍摄的具体场景。
+            5. 不要要求画面内出现大段可读正文/水印；主题图标与界面示意可保留描述。
+            6. 约 80～220 字（英文 40～100 词）；不要 NSFW。
             """;
 
     private final ImageGenPort imageGenPort;
@@ -57,6 +63,7 @@ public class VisualShotAssetService {
     private final LlmChatClient llmChatClient;
     private final TtsPort ttsPort;
     private final AigenStorageService storageService;
+    private final ImageToVideoPort imageToVideoPort;
 
     public AspectRatioMapper.Size resolveFluxSize(AigenTaskEntity task, ShotlistDto list) {
         String aspect = list.getMeta() != null && list.getMeta().getAspectRatio() != null
@@ -90,10 +97,11 @@ public class VisualShotAssetService {
         String type = shot.getVisual().getType() != null
                 ? shot.getVisual().getType().toLowerCase(Locale.ROOT) : "ai_image";
 
-        // 用户上传：已有路径且文件在则保留
+        // 用户上传：已有路径且文件在则保留，仍尝试升级为动效片段
         if ("user_image".equals(type) && shot.getVisual().getAssetPath() != null) {
             Path existing = workDir.resolve(shot.getVisual().getAssetPath()).normalize();
             if (Files.isRegularFile(existing) && existing.startsWith(workDir.normalize())) {
+                applyImageToVideo(task, workDir, shot, existing, size.width(), size.height(), seedIndex);
                 return;
             }
         }
@@ -122,10 +130,16 @@ public class VisualShotAssetService {
                     finalPrompt = enhanceImagePrompt(task, prompt);
                     shot.getVisual().setPrompt(finalPrompt);
                 }
-                generateRealImage(task, workDir, shot, outFile, size.width(), size.height(), finalPrompt, seedIndex);
+                // 出图前注入主题锚点，避免画面与用户提示词脱节
+                String anchored = anchorPromptToTaskTheme(task, finalPrompt);
+                generateRealImage(task, workDir, shot, outFile, size.width(), size.height(), anchored, seedIndex);
                 shot.getVisual().setType("ai_image");
+                // 重生静图时清掉旧动效路径，稍后重新 i2v
+                shot.getVisual().setVideoPath(null);
             }
             shot.getVisual().setAssetPath(rel);
+            // 静图 → 动感视频片段（感官优先；失败保留静图）
+            applyImageToVideo(task, workDir, shot, outFile, size.width(), size.height(), seedIndex);
         } catch (Exception e) {
             log.warn("镜头出图失败 shotId={}: {}", shotId, e.getMessage());
             if (aigenProperties.getVisual().isFailOnShotError()) {
@@ -136,6 +150,65 @@ public class VisualShotAssetService {
                     title != null ? title : shotId, seedIndex);
             shot.getVisual().setAssetPath(rel);
             shot.getVisual().setType("gradient");
+            applyImageToVideo(task, workDir, shot, outFile, size.width(), size.height(), seedIndex);
+        }
+    }
+
+    /**
+     * 将已有静图转为 mp4 动效片段（kinetic / 可选云端 SVD）；成功则 type=ai_video。
+     */
+    private void applyImageToVideo(AigenTaskEntity task, Path workDir, ShotDto shot, Path stillFile,
+                                   int width, int height, int seedIndex) {
+        if (shot == null || shot.getVisual() == null || stillFile == null) {
+            return;
+        }
+        // 已有有效动效视频则跳过（允许重复调用时幂等）
+        String existingVideo = shot.getVisual().getVideoPath();
+        if (existingVideo != null && !existingVideo.isBlank()) {
+            Path vp = workDir.resolve(existingVideo).normalize();
+            if (Files.isRegularFile(vp)) {
+                return;
+            }
+        }
+        try {
+            String providerKey = null;
+            if (task != null && task.getImageProvider() != null && !task.getImageProvider().isBlank()) {
+                providerKey = task.getImageProvider();
+            } else if (aigenProperties.getVisual() != null) {
+                providerKey = aigenProperties.getVisual().getImageProviderKey();
+            }
+            ImageToVideoResult r = imageToVideoPort.convert(ImageToVideoCommand.builder()
+                    .workDir(workDir)
+                    .stillImage(stillFile)
+                    .shot(shot)
+                    .width(width)
+                    .height(height)
+                    .seedIndex(seedIndex)
+                    .providerKey(providerKey)
+                    .build());
+            if (r != null && r.isSuccess()) {
+                // 页面预览继续用静图 assetPath；mp4 写入 videoPath 供 Remotion 合成
+                String stillRel = shot.getVisual().getAssetPath();
+                if (stillRel == null || stillRel.isBlank()
+                        || stillRel.toLowerCase(Locale.ROOT).endsWith(".mp4")
+                        || stillRel.toLowerCase(Locale.ROOT).endsWith(".webm")) {
+                    // 若此前误写成视频路径，尽量回指同名静图
+                    String stillGuess = guessStillRelative(workDir, stillFile, r.getRelativePath());
+                    if (stillGuess != null) {
+                        shot.getVisual().setAssetPath(stillGuess);
+                    }
+                }
+                shot.getVisual().setVideoPath(r.getRelativePath());
+                shot.getVisual().setType("ai_video");
+                log.info("镜头已升级为动效视频: shotId={} provider={} still={} video={}",
+                        shot.getId(), r.getProvider(),
+                        shot.getVisual().getAssetPath(), r.getRelativePath());
+            } else if (r != null && r.getErrorMessage() != null) {
+                log.warn("图生视频未成功 shotId={} provider={}: {}",
+                        shot.getId(), r.getProvider(), r.getErrorMessage());
+            }
+        } catch (Exception e) {
+            log.warn("动效片段失败，保留静图 shotId={}: {}", shot.getId(), e.getMessage());
         }
     }
 
@@ -295,6 +368,42 @@ public class VisualShotAssetService {
         }
     }
 
+    /**
+     * 将用户任务主题关键词压入出图 prompt 前缀，降低「只有氛围、没有主题」概率。
+     */
+    static String anchorPromptToTaskTheme(AigenTaskEntity task, String shotPrompt) {
+        if (shotPrompt == null) {
+            shotPrompt = "";
+        }
+        String theme = "";
+        if (task != null) {
+            if (task.getTitle() != null && !task.getTitle().isBlank()) {
+                theme = task.getTitle().trim();
+            }
+            if (task.getPrompt() != null && !task.getPrompt().isBlank()) {
+                String p = task.getPrompt().trim().replaceAll("\\s+", " ");
+                if (p.length() > 80) {
+                    p = p.substring(0, 80);
+                }
+                theme = theme.isEmpty() ? p : (theme + "，" + p);
+            }
+        }
+        if (theme.isBlank()) {
+            return shotPrompt.trim();
+        }
+        // 已含主题片段则不重复堆叠
+        String lowerShot = shotPrompt.toLowerCase(Locale.ROOT);
+        String themeHead = theme.length() > 24 ? theme.substring(0, 24) : theme;
+        if (lowerShot.contains(themeHead.toLowerCase(Locale.ROOT))) {
+            return shotPrompt.trim();
+        }
+        if (task != null && task.getTitle() != null && !task.getTitle().isBlank()
+                && lowerShot.contains(task.getTitle().trim().toLowerCase(Locale.ROOT))) {
+            return shotPrompt.trim();
+        }
+        return ("主题：" + theme + "。画面：" + shotPrompt.trim()).trim();
+    }
+
     private void generateRealImage(AigenTaskEntity task, Path workDir, ShotDto shot,
                                    Path outFile, int width, int height,
                                    String prompt, int index) throws Exception {
@@ -325,7 +434,8 @@ public class VisualShotAssetService {
             }
             if (modelId == null || modelId.isBlank()) {
                 modelId = imgGenProperties.getFlux() != null
-                        ? imgGenProperties.getFlux().getDefaultModel() : "flux.1-schnell";
+                        ? imgGenProperties.getFlux().getDefaultModel()
+                        : "black-forest-labs/flux.1-dev";
             }
             invokeUrl = imgGenProperties.getFlux() != null
                     ? imgGenProperties.getFlux().getInvokeUrl() : null;
@@ -373,6 +483,39 @@ public class VisualShotAssetService {
             throw new IllegalStateException("找不到生成的图片文件");
         }
         Files.copy(found, outFile, StandardCopyOption.REPLACE_EXISTING);
+    }
+
+    /**
+     * 根据静图绝对路径或视频相对路径，推断页面预览用的静图相对路径。
+     */
+    private static String guessStillRelative(Path workDir, Path stillFile, String videoRel) {
+        if (stillFile != null && Files.isRegularFile(stillFile) && workDir != null) {
+            Path normWork = workDir.toAbsolutePath().normalize();
+            Path normStill = stillFile.toAbsolutePath().normalize();
+            if (normStill.startsWith(normWork)) {
+                return normWork.relativize(normStill).toString().replace('\\', '/');
+            }
+        }
+        if (videoRel == null || videoRel.isBlank()) {
+            return null;
+        }
+        String base = videoRel.replace('\\', '/');
+        int slash = base.lastIndexOf('/');
+        String dir = slash >= 0 ? base.substring(0, slash + 1) : "";
+        String file = slash >= 0 ? base.substring(slash + 1) : base;
+        int dot = file.lastIndexOf('.');
+        String stem = dot > 0 ? file.substring(0, dot) : file;
+        // 去掉 -svd 后缀
+        if (stem.endsWith("-svd")) {
+            stem = stem.substring(0, stem.length() - 4);
+        }
+        for (String ext : List.of(".jpg", ".jpeg", ".png", ".webp")) {
+            Path p = workDir.resolve(dir + stem + ext).normalize();
+            if (Files.isRegularFile(p)) {
+                return (dir + stem + ext).replace('\\', '/');
+            }
+        }
+        return null;
     }
 
     public void saveUserImage(Path workDir, ShotDto shot, byte[] bytes, String originalFilename) throws Exception {

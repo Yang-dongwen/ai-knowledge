@@ -199,8 +199,9 @@ public class RemotionHttpRenderAdapter implements VideoRenderPort {
             if (!(visual instanceof ObjectNode vObj)) {
                 continue;
             }
-            String rel = vObj.path("assetPath").asText(null);
-            if (rel == null || rel.isBlank()) {
+            // 合成优先动效视频 videoPath，其次 assetPath（静图）
+            String rel = firstExistingVisualRel(workDir, vObj, "videoPath", "assetPath");
+            if (rel == null) {
                 continue;
             }
             rel = rel.replace('\\', '/');
@@ -213,8 +214,33 @@ public class RemotionHttpRenderAdapter implements VideoRenderPort {
                 continue;
             }
             vObj.put("assetUrl", base + "/" + rel);
-            vObj.put("assetPath", rel);
+            // 保留 assetPath 为静图（若有），不强制覆盖成 mp4，避免前端缩略图链路再次踩坑
+            if (!vObj.hasNonNull("assetPath") || vObj.path("assetPath").asText("").isBlank()) {
+                vObj.put("assetPath", rel);
+            }
         }
+    }
+
+    /**
+     * 按字段优先级返回 workDir 下存在的相对路径。
+     */
+    private static String firstExistingVisualRel(Path workDir, ObjectNode vObj, String... fields) {
+        Path root = workDir.toAbsolutePath().normalize();
+        for (String field : fields) {
+            String rel = vObj.path(field).asText(null);
+            if (rel == null || rel.isBlank()) {
+                continue;
+            }
+            rel = rel.replace('\\', '/');
+            if (rel.startsWith("/")) {
+                rel = rel.substring(1);
+            }
+            Path file = workDir.resolve(rel).normalize();
+            if (file.startsWith(root) && Files.isRegularFile(file)) {
+                return rel;
+            }
+        }
+        return null;
     }
 
     private void rewriteShotlistBgmToHttp(ObjectNode inputProps, Path workDir, String remotionBaseUrl) {

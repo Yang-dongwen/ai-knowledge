@@ -67,20 +67,8 @@ public class SecurityConfig {
                                 "/api/auth/password/**"
                         ).permitAll()
                         .requestMatchers("/error").permitAll()
-                        // 交易管理 / 用户管理等：仅超级管理员（AI 聊天 /api/chat 对登录用户开放）
-                        .requestMatchers(
-                                "/api/admin/**",
-                                "/api/dashboard/**",
-                                "/api/okx/**",
-                                "/api/strategies/**",
-                                "/api/positions/**",
-                                "/api/trades/**",
-                                "/api/orders/**",
-                                "/api/strategy-run-logs/**",
-                                "/api/system/**",
-                                "/api/backtests/**"
-                        ).hasRole("SUPER_ADMIN")
-                        // 模型管理 CRUD：仅超级管理员（任务侧 /models 列表仍对登录用户开放）
+                        // 用户管理 / 模型配置 CRUD：仅超级管理员
+                        .requestMatchers("/api/admin/**").hasRole("SUPER_ADMIN")
                         .requestMatchers("/api/v1/video/model-configs", "/api/v1/video/model-configs/**")
                         .hasRole("SUPER_ADMIN")
                         .anyRequest().authenticated()

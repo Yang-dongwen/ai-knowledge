@@ -2040,47 +2040,20 @@ onUnmounted(() => {
 }
 
 .submit-hero {
-  margin-bottom: 20px;
-  padding: 28px 30px 22px;
-  border-radius: 24px;
-  background:
-    linear-gradient(
-      145deg,
-      rgba(255, 255, 255, 0.96) 0%,
-      rgba(239, 246, 255, 0.94) 48%,
-      rgba(245, 243, 255, 0.92) 100%
-    );
-  border: 1px solid rgba(199, 210, 254, 0.7);
+  margin-bottom: 18px;
+  padding: 24px 26px 20px;
+  border-radius: 16px;
+  background: #fff;
+  border: 1px solid #e5e7eb;
   box-shadow:
     0 1px 2px rgba(15, 23, 42, 0.03),
-    0 16px 48px rgba(99, 102, 241, 0.1),
-    0 0 0 1px rgba(255, 255, 255, 0.55) inset;
+    0 8px 24px rgba(15, 23, 42, 0.04);
   position: relative;
   overflow: hidden;
-  backdrop-filter: blur(12px);
 
-  &::after {
-    content: '';
-    position: absolute;
-    right: -50px;
-    top: -50px;
-    width: 240px;
-    height: 240px;
-    border-radius: 50%;
-    background: radial-gradient(circle, rgba(99, 102, 241, 0.22), transparent 70%);
-    pointer-events: none;
-  }
-
+  &::after,
   &::before {
-    content: '';
-    position: absolute;
-    left: -30px;
-    bottom: -50px;
-    width: 180px;
-    height: 180px;
-    border-radius: 50%;
-    background: radial-gradient(circle, rgba(56, 189, 248, 0.14), transparent 70%);
-    pointer-events: none;
+    display: none;
   }
 
   .hero-text {
@@ -2211,19 +2184,19 @@ onUnmounted(() => {
     }
 
     .submit-btn {
-      height: 46px;
-      border-radius: 999px;
-      padding: 0 26px;
-      font-weight: 650;
+      height: 42px;
+      border-radius: 12px;
+      padding: 0 20px;
+      font-weight: 560;
       border: none;
-      background: linear-gradient(135deg, #4f46e5, #7c3aed 55%, #8b5cf6);
-      box-shadow:
-        0 12px 26px rgba(79, 70, 229, 0.32),
-        0 0 0 1px rgba(255, 255, 255, 0.2) inset;
+      background: #1f2937;
+      color: #fff;
+      box-shadow: none;
 
       &:hover:not(:disabled) {
-        filter: brightness(1.05);
-        transform: translateY(-1px);
+        background: #111827;
+        filter: none;
+        transform: none;
       }
     }
 
@@ -2236,12 +2209,11 @@ onUnmounted(() => {
     position: relative;
     z-index: 1;
     margin-top: 14px;
-    padding: 16px 18px;
-    background: rgba(255, 255, 255, 0.74);
-    border: 1px solid rgba(199, 210, 254, 0.55);
-    border-radius: 18px;
-    backdrop-filter: blur(10px);
-    box-shadow: 0 4px 18px rgba(99, 102, 241, 0.05);
+    padding: 14px 16px;
+    background: #fafafa;
+    border: 1px solid #e5e7eb;
+    border-radius: 12px;
+    box-shadow: none;
 
     .model-pick {
       display: flex;
@@ -2330,11 +2302,11 @@ onUnmounted(() => {
   padding: 0;
   overflow: hidden;
   max-height: calc(100vh - 220px);
-  border-radius: 22px !important;
+  border-radius: 16px !important;
   border: 1px solid rgba(226, 232, 240, 0.9) !important;
   box-shadow:
     0 1px 2px rgba(15, 23, 42, 0.03),
-    0 14px 36px rgba(99, 102, 241, 0.07) !important;
+    0 8px 24px rgba(15, 23, 42, 0.04) !important;
   background: linear-gradient(180deg, rgba(255, 255, 255, 0.96), rgba(255, 255, 255, 0.9)) !important;
   backdrop-filter: blur(10px);
 
@@ -2374,14 +2346,14 @@ onUnmounted(() => {
   background: rgba(248, 250, 252, 0.65);
 
   &:hover {
-    background: rgba(238, 242, 255, 0.75);
-    border-color: rgba(199, 210, 254, 0.7);
+    background: #f3f4f6;
+    border-color: #e5e7eb;
   }
 
   &.active {
-    background: linear-gradient(135deg, rgba(238, 242, 255, 0.98), rgba(248, 250, 252, 0.95));
-    border-color: rgba(99, 102, 241, 0.28);
-    box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.08);
+    background: #f3f4f6;
+    border-color: #d1d5db;
+    box-shadow: none;
   }
 
   .task-item-top {
@@ -2480,7 +2452,7 @@ onUnmounted(() => {
 
   &.llm-badge {
     background: #eef2ff;
-    color: #4f46e5;
+    color: #1f2937;
   }
 }
 
@@ -2489,11 +2461,11 @@ onUnmounted(() => {
   max-height: calc(100vh - 220px);
   overflow-y: auto;
   padding: 22px 24px;
-  border-radius: 22px !important;
+  border-radius: 16px !important;
   border: 1px solid rgba(226, 232, 240, 0.9) !important;
   box-shadow:
     0 1px 2px rgba(15, 23, 42, 0.03),
-    0 14px 36px rgba(99, 102, 241, 0.07) !important;
+    0 8px 24px rgba(15, 23, 42, 0.04) !important;
   background: linear-gradient(180deg, rgba(255, 255, 255, 0.96), rgba(255, 255, 255, 0.9)) !important;
   backdrop-filter: blur(10px);
 }
@@ -2730,7 +2702,7 @@ onUnmounted(() => {
       }
 
       &.transcribe {
-        background: linear-gradient(90deg, #a78bfa, #7c3aed);
+        background: #1f2937;
       }
 
       &.understand {

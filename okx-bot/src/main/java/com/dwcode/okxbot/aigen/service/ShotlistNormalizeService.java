@@ -57,8 +57,8 @@ public class ShotlistNormalizeService {
                     s.setId("shot-" + order);
                 }
                 s.setOrder(order++);
-                double sec = s.getDurationSec() != null ? s.getDurationSec() : 3.5;
-                sec = Math.min(8.0, Math.max(1.5, sec));
+                double sec = s.getDurationSec() != null ? s.getDurationSec() : 3.2;
+                sec = Math.min(10.0, Math.max(1.2, sec));
                 s.setDurationSec(sec);
                 int df = Math.max(1, (int) Math.round(sec * fps));
                 s.setDurationInFrames(df);
@@ -75,22 +75,44 @@ public class ShotlistNormalizeService {
                     s.setMotion(new ShotMotion());
                 }
                 if (s.getMotion().getType() == null || s.getMotion().getType().isBlank()) {
-                    s.getMotion().setType(aigenProperties.getVisual().getMotionDefault());
+                    String def = aigenProperties.getVisual().getMotionDefault();
+                    s.getMotion().setType(def != null && !def.isBlank() ? def : "auto");
+                }
+                // 无 params 时给 auto/运镜一个默认 intensity，便于 Remotion 发挥
+                if (s.getMotion().getParams() == null) {
+                    s.getMotion().setParams(new java.util.HashMap<>());
+                }
+                if (!s.getMotion().getParams().containsKey("intensity")) {
+                    // 镜序交替强弱，避免全片匀速
+                    double intensity = 0.45 + 0.12 * ((order - 1) % 5);
+                    s.getMotion().getParams().put("intensity", Math.min(0.95, intensity));
                 }
                 if (s.getTransition() == null) {
                     s.setTransition(new ShotTransition());
                 }
-                if (s.getTransition().getType() == null) {
-                    s.getTransition().setType("crossfade");
+                if (s.getTransition().getType() == null || s.getTransition().getType().isBlank()) {
+                    s.getTransition().setType(order % 4 == 0 ? "dip_black" : "crossfade");
                 }
                 if (s.getTransition().getDurationFrames() == null) {
-                    s.getTransition().setDurationFrames(12);
+                    s.getTransition().setDurationFrames(10);
                 }
                 if (s.getOverlay() == null) {
                     s.setOverlay(new ShotOverlay());
                 }
-                if (s.getOverlay().getLayout() == null) {
-                    s.getOverlay().setLayout("hook-center");
+                // 默认不叠字，减少模板感；有 title 且 layout 空时才给 free
+                if (s.getOverlay().getLayout() == null || s.getOverlay().getLayout().isBlank()) {
+                    boolean hasText = (s.getOverlay().getTitle() != null && !s.getOverlay().getTitle().isBlank())
+                            || (s.getOverlay().getSubtitle() != null && !s.getOverlay().getSubtitle().isBlank());
+                    s.getOverlay().setLayout(hasText ? "free" : "none");
+                }
+                if (s.getOverlay().getStyle() == null || s.getOverlay().getStyle().isBlank()) {
+                    s.getOverlay().setStyle("cinematic");
+                }
+                if (s.getOverlay().getTextAnim() == null || s.getOverlay().getTextAnim().isBlank()) {
+                    s.getOverlay().setTextAnim("pop");
+                }
+                if (s.getOverlay().getPosition() == null || s.getOverlay().getPosition().isBlank()) {
+                    s.getOverlay().setPosition("center");
                 }
                 // TTS 模式：补全空 narration，避免后续 Edge sanitize 后「文本为空」
                 String audioModeLower = list.getAudio() != null && list.getAudio().getMode() != null

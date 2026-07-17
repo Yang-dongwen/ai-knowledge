@@ -147,18 +147,18 @@ async function loadProfile() {
   align-items: center;
   gap: 16px;
   padding: 16px;
-  border-radius: 14px;
-  background: linear-gradient(135deg, #eef2ff 0%, #f5f3ff 50%, #faf5ff 100%);
-  border: 1px solid #e9e7ff;
+  border-radius: 12px;
+  background: #f9fafb;
+  border: 1px solid #e5e7eb;
   margin-bottom: 16px;
 }
 
 .profile-avatar {
-  background: linear-gradient(135deg, #6366f1, #8b5cf6) !important;
+  background: #1f2937 !important;
   font-size: 28px;
   font-weight: 700;
   flex-shrink: 0;
-  box-shadow: 0 4px 14px rgba(99, 102, 241, 0.35);
+  box-shadow: none;
 }
 
 .profile-hero-text {

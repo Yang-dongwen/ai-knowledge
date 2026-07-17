@@ -24,13 +24,13 @@ INSERT INTO ai_model_config (
     default_steps, max_steps, enabled, sort_order, remark, created_at, updated_at
 )
 SELECT
-    3000000000000000001, 'nvidia', 'black-forest-labs/flux.1-schnell', 'FLUX.1-schnell（快速）',
-    'image', 'https://ai.api.nvidia.com/v1/genai/black-forest-labs/flux.1-schnell',
-    4, 8, 1, 10, '蒸馏快速模型', NOW(3), NOW(3)
+    3000000000000000002, 'nvidia', 'black-forest-labs/flux.1-dev', 'FLUX.1-dev（高质量）',
+    'image', 'https://ai.api.nvidia.com/v1/genai/black-forest-labs/flux.1-dev',
+    28, 50, 1, 5, '画质优先，默认推荐', NOW(3), NOW(3)
 FROM DUAL
 WHERE NOT EXISTS (
     SELECT 1 FROM ai_model_config
-    WHERE provider = 'nvidia' AND model_id = 'black-forest-labs/flux.1-schnell' AND capability = 'image'
+    WHERE provider = 'nvidia' AND model_id = 'black-forest-labs/flux.1-dev' AND capability = 'image'
 );
 
 INSERT INTO ai_model_config (
@@ -38,11 +38,11 @@ INSERT INTO ai_model_config (
     default_steps, max_steps, enabled, sort_order, remark, created_at, updated_at
 )
 SELECT
-    3000000000000000002, 'nvidia', 'black-forest-labs/flux.1-dev', 'FLUX.1-dev（高质量）',
-    'image', 'https://ai.api.nvidia.com/v1/genai/black-forest-labs/flux.1-dev',
-    28, 50, 1, 20, '更高画质，更慢', NOW(3), NOW(3)
+    3000000000000000001, 'nvidia', 'black-forest-labs/flux.1-schnell', 'FLUX.1-schnell（快速）',
+    'image', 'https://ai.api.nvidia.com/v1/genai/black-forest-labs/flux.1-schnell',
+    4, 8, 1, 20, '蒸馏快速模型，适合预览', NOW(3), NOW(3)
 FROM DUAL
 WHERE NOT EXISTS (
     SELECT 1 FROM ai_model_config
-    WHERE provider = 'nvidia' AND model_id = 'black-forest-labs/flux.1-dev' AND capability = 'image'
+    WHERE provider = 'nvidia' AND model_id = 'black-forest-labs/flux.1-schnell' AND capability = 'image'
 );

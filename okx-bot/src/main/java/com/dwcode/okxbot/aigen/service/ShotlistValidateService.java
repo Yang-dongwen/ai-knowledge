@@ -16,8 +16,19 @@ import java.util.Set;
 public class ShotlistValidateService {
 
     private static final Set<String> VISUAL_TYPES = Set.of("ai_image", "solid", "gradient", "user_image", "ai_video");
-    private static final Set<String> MOTION_TYPES = Set.of("static", "ken_burns", "zoom_in", "zoom_out", "pan_left", "pan_right");
-    private static final Set<String> LAYOUTS = Set.of("none", "hook-center", "lower-third", "bullets-right", "caption");
+    private static final Set<String> MOTION_TYPES = Set.of(
+            "static", "ken_burns", "zoom_in", "zoom_out", "pan_left", "pan_right",
+            "punch_in", "punch_out", "whip", "drift", "shake", "orbit", "tilt", "rise", "fall", "auto"
+    );
+    private static final Set<String> LAYOUTS = Set.of(
+            "none", "free", "hook-center", "lower-third", "bullets-right", "caption", "big-word", "corner"
+    );
+    private static final Set<String> TRANSITION_TYPES = Set.of(
+            "crossfade", "hard_cut", "flash", "dip_black", "dip_white", "wipe_left", "wipe_right"
+    );
+    private static final Set<String> TEXT_ANIMS = Set.of(
+            "none", "fade", "pop", "slide_up", "slide_left", "typewriter", "glitch"
+    );
     private static final Set<String> AUDIO_MODES = Set.of("none", "bgm_only", "tts", "tts_bgm");
 
     private final AigenProperties aigenProperties;
@@ -54,8 +65,8 @@ public class ShotlistValidateService {
                 errors.add(prefix + ".id 不能为空");
             }
             double d = s.getDurationSec() != null ? s.getDurationSec() : 0;
-            if (d < 1.5 || d > 8.0) {
-                errors.add(prefix + ".durationSec 需在 1.5～8，当前 " + d);
+            if (d < 1.2 || d > 10.0) {
+                errors.add(prefix + ".durationSec 需在 1.2～10，当前 " + d);
             }
             totalSec += Math.max(0, d);
             if (s.getVisual() == null) {
@@ -70,7 +81,7 @@ public class ShotlistValidateService {
                 String p = s.getVisual().getPrompt();
                 if (p == null || p.isBlank()) {
                     errors.add(prefix + ".visual.prompt 不能为空");
-                } else if (p.length() > 800) {
+                } else if (p.length() > 1200) {
                     errors.add(prefix + ".visual.prompt 过长");
                 } else if (p.toLowerCase(Locale.ROOT).contains("http://")
                         || p.toLowerCase(Locale.ROOT).contains("https://")) {
@@ -79,14 +90,24 @@ public class ShotlistValidateService {
             }
             if (s.getMotion() != null && s.getMotion().getType() != null
                     && !MOTION_TYPES.contains(s.getMotion().getType().toLowerCase(Locale.ROOT))) {
-                errors.add(prefix + ".motion.type 非法: " + s.getMotion().getType());
+                // 未知运镜降级为 auto，不拦整表（鼓励自由发挥）
+                s.getMotion().setType("auto");
+            }
+            if (s.getTransition() != null && s.getTransition().getType() != null
+                    && !TRANSITION_TYPES.contains(s.getTransition().getType().toLowerCase(Locale.ROOT))) {
+                s.getTransition().setType("crossfade");
             }
             if (s.getOverlay() != null && s.getOverlay().getLayout() != null
                     && !LAYOUTS.contains(s.getOverlay().getLayout().toLowerCase(Locale.ROOT))) {
-                errors.add(prefix + ".overlay.layout 非法: " + s.getOverlay().getLayout());
+                // 未知布局 → free（按 position 自由放置）
+                s.getOverlay().setLayout("free");
+            }
+            if (s.getOverlay() != null && s.getOverlay().getTextAnim() != null
+                    && !TEXT_ANIMS.contains(s.getOverlay().getTextAnim().toLowerCase(Locale.ROOT))) {
+                s.getOverlay().setTextAnim("pop");
             }
             if (s.getOverlay() != null && s.getOverlay().getTitle() != null
-                    && s.getOverlay().getTitle().length() > 40) {
+                    && s.getOverlay().getTitle().length() > 48) {
                 errors.add(prefix + ".overlay.title 过长");
             }
             if (s.getVisual().getAssetPath() != null) {

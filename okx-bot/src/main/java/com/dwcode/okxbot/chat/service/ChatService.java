@@ -4,6 +4,11 @@ import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.dwcode.okxbot.auth.security.SecurityUtils;
 import com.dwcode.okxbot.chat.config.AiProperties;
 import com.dwcode.okxbot.chat.config.AiProperties.ProviderConfig;
+import com.dwcode.okxbot.chat.agent.AgentConfirmService;
+import com.dwcode.okxbot.chat.agent.ChatAgentOrchestrator;
+import com.dwcode.okxbot.chat.agent.ToolContext;
+import com.dwcode.okxbot.chat.agent.ToolResult;
+import com.dwcode.okxbot.chat.config.AgentProperties;
 import com.dwcode.okxbot.chat.stream.ChatStreamHandle;
 import com.dwcode.okxbot.chat.stream.ChatStreamRegistry;
 import com.dwcode.okxbot.chat.stream.StreamCancelledException;
@@ -78,6 +83,9 @@ public class ChatService {
     private final AiModelConfigService aiModelConfigService;
     private final LlmChatGateway llmChatGateway;
     private final ChatStreamRegistry chatStreamRegistry;
+    private final ChatAgentOrchestrator chatAgentOrchestrator;
+    private final AgentConfirmService agentConfirmService;
+    private final AgentProperties agentProperties;
 
     /** 按 ai.response-timeout-seconds 构建；未响应即中断 */
     private OkHttpClient httpClient;
@@ -262,6 +270,8 @@ public class ChatService {
      */
     public List<ChatMessageDTO> getMessages(Long conversationId) {
         requireOwnedConversation(conversationId);
+        // 将 token 已失效但仍挂着 AGENT_CONFIRM 的消息改写为终态，避免刷新后再次出现可确认卡
+        agentConfirmService.reconcileStaleConfirms(conversationId);
         List<ChatMessageEntity> entities = messageMapper.selectList(
                 new LambdaQueryWrapper<ChatMessageEntity>()
                         .eq(ChatMessageEntity::getConversationId, conversationId)
@@ -364,17 +374,40 @@ public class ChatService {
                 streamHandle = chatStreamRegistry.register(userId, conversationId);
                 bindEmitterCancel(emitter, streamHandle);
 
+                boolean agentMode = Boolean.TRUE.equals(request.getAgentMode())
+                        && agentProperties.isEnabled();
+
                 Map<String, Object> meta = new HashMap<>();
                 meta.put("conversationId", String.valueOf(conversationId));
                 meta.put("streamId", streamHandle.getStreamId());
                 meta.put("provider", providerKey);
                 meta.put("model", modelId);
+                meta.put("agentMode", agentMode);
                 emitter.send(SseEmitter.event().name("meta").data(objectMapper.writeValueAsString(meta)));
 
                 ChatConversationEntity convSnap = conversationMapper.selectById(conversationId);
-                String aiReply = callAiApiStream(
-                        conversationId, providerKey, providerConfig, modelId,
-                        emitter, streamHandle, convSnap, request);
+                String aiReply;
+
+                if (agentMode) {
+                    aiReply = runAgentTurnAndStream(
+                            request.getMessage(),
+                            conversationId,
+                            userId,
+                            providerKey,
+                            modelId,
+                            streamHandle,
+                            emitter);
+                    // null 表示回退纯聊天流式
+                    if (aiReply == null) {
+                        aiReply = callAiApiStream(
+                                conversationId, providerKey, providerConfig, modelId,
+                                emitter, streamHandle, convSnap, request);
+                    }
+                } else {
+                    aiReply = callAiApiStream(
+                            conversationId, providerKey, providerConfig, modelId,
+                            emitter, streamHandle, convSnap, request);
+                }
 
                 persistAssistantAndComplete(conversationId, userId, request.getMessage(),
                         aiReply, false, emitter);
@@ -1179,6 +1212,198 @@ public class ChatService {
         }
         sendStreamError(emitter, errorMsg);
         return errorMsg;
+    }
+
+    /**
+     * Agent 一轮：决策 + 可选 READ 工具 + 推送 tool_result + 推送总结 delta。
+     * 决策/工具/总结阶段可响应 stop（与 {@link ChatStreamHandle} 联动）。
+     *
+     * @return 最终 assistant 文本；null 表示应回退普通流式聊天
+     */
+    private String runAgentTurnAndStream(String userMessage,
+                                         Long conversationId,
+                                         Long userId,
+                                         String providerKey,
+                                         String modelId,
+                                         ChatStreamHandle streamHandle,
+                                         SseEmitter emitter) {
+        if (streamHandle != null && streamHandle.isCancelled()) {
+            throw new StreamCancelledException("");
+        }
+        String historyDigest = buildHistoryDigest(conversationId, 6);
+        ToolContext toolCtx = ToolContext.builder()
+                .userId(userId)
+                .conversationId(conversationId)
+                .streamId(streamHandle != null ? streamHandle.getStreamId() : null)
+                .build();
+
+        // 推送阶段状态，前端可展示「分析意图 / 执行工具 / 总结」
+        sendAgentStatusEvent(emitter, "deciding", "正在分析意图…");
+
+        ChatAgentOrchestrator.AgentTurnResult turn = chatAgentOrchestrator.runTurn(
+                userMessage,
+                historyDigest,
+                providerKey,
+                modelId,
+                toolCtx,
+                () -> streamHandle != null && streamHandle.isCancelled(),
+                phase -> {
+                    String label = switch (phase != null ? phase : "") {
+                        case "deciding" -> "正在分析意图…";
+                        case "tool_running" -> "正在调用工具…";
+                        case "summarizing" -> "正在整理结果…";
+                        default -> "处理中…";
+                    };
+                    sendAgentStatusEvent(emitter, phase, label);
+                });
+
+        if (streamHandle != null && streamHandle.isCancelled()) {
+            throw new StreamCancelledException("");
+        }
+
+        // 未使用工具且无现成 reply → 外层走正常流式
+        if (!turn.isUsedTool() && (turn.getAssistantText() == null || turn.getAssistantText().isBlank())) {
+            sendAgentStatusEvent(emitter, "fallback_chat", "改为普通对话…");
+            return null;
+        }
+
+        if (turn.isUsedTool() && turn.getToolResult() != null) {
+            if (turn.isNeedsConfirm()) {
+                sendToolConfirmEvent(emitter, turn.getToolName(), turn.getToolResult());
+            } else {
+                sendToolResultEvent(emitter, turn.getToolName(), turn.getToolResult());
+            }
+        }
+
+        String text = turn.getAssistantText();
+        if (text == null || text.isBlank()) {
+            text = turn.getToolResult() != null && turn.getToolResult().getMessage() != null
+                    ? turn.getToolResult().getMessage()
+                    : "（无回复）";
+        }
+        // 将确认卡载荷嵌入消息正文，避免前端 loadMessages 后丢失（刷新/重载仍可还原）
+        if (turn.isNeedsConfirm() && turn.getToolResult() != null) {
+            text = appendConfirmMarker(text, turn.getToolName(), turn.getToolResult());
+        } else if (turn.isUsedTool() && turn.getToolResult() != null
+                && turn.getToolResult().getUi() != null) {
+            text = appendToolResultMarker(text, turn.getToolName(), turn.getToolResult());
+        }
+        sendAgentStatusEvent(emitter, "done", null);
+        sendStreamDelta(emitter, text);
+        return text;
+    }
+
+    /** SSE：agent 阶段状态（deciding / tool_running / summarizing / done） */
+    private void sendAgentStatusEvent(SseEmitter emitter, String phase, String label) {
+        try {
+            Map<String, Object> body = new HashMap<>();
+            body.put("phase", phase);
+            if (label != null) {
+                body.put("label", label);
+            }
+            emitter.send(SseEmitter.event().name("agent_status")
+                    .data(objectMapper.writeValueAsString(body)));
+        } catch (Exception e) {
+            log.debug("发送 agent_status 失败: {}", e.getMessage());
+        }
+    }
+
+    /**
+     * 在消息末尾附加隐藏标记，供前端从历史消息还原工具卡。
+     * 格式：\n\n[[AGENT_CONFIRM]]{json}[[/AGENT_CONFIRM]]
+     */
+    private String appendConfirmMarker(String text, String toolName, ToolResult result) {
+        try {
+            Map<String, Object> body = new HashMap<>();
+            body.put("tool", toolName);
+            body.put("ok", result.isOk());
+            body.put("message", result.getMessage());
+            body.put("data", result.getData());
+            body.put("ui", result.getUi());
+            String json = objectMapper.writeValueAsString(body);
+            return (text != null ? text : "") + "\n\n[[AGENT_CONFIRM]]" + json + "[[/AGENT_CONFIRM]]";
+        } catch (Exception e) {
+            return text;
+        }
+    }
+
+    private String appendToolResultMarker(String text, String toolName, ToolResult result) {
+        try {
+            Map<String, Object> body = new HashMap<>();
+            body.put("tool", toolName);
+            body.put("ok", result.isOk());
+            body.put("message", result.getMessage());
+            body.put("data", result.getData());
+            body.put("ui", result.getUi());
+            String json = objectMapper.writeValueAsString(body);
+            return (text != null ? text : "") + "\n\n[[AGENT_RESULT]]" + json + "[[/AGENT_RESULT]]";
+        } catch (Exception e) {
+            return text;
+        }
+    }
+
+    /**
+     * 用户确认写工具草案 → 真正创建任务。
+     *
+     * @param argOverrides 用户在确认卡上修改的参数，可为 null
+     */
+    public ToolResult confirmAgentAction(String confirmId, Map<String, Object> argOverrides) {
+        return agentConfirmService.confirm(confirmId, argOverrides);
+    }
+
+    public boolean rejectAgentAction(String confirmId) {
+        return agentConfirmService.reject(confirmId);
+    }
+
+    private void sendToolConfirmEvent(SseEmitter emitter, String toolName, ToolResult result) {
+        try {
+            Map<String, Object> body = new HashMap<>();
+            body.put("tool", toolName);
+            body.put("ok", result != null && result.isOk());
+            body.put("message", result != null ? result.getMessage() : null);
+            body.put("data", result != null ? result.getData() : null);
+            body.put("ui", result != null ? result.getUi() : null);
+            emitter.send(SseEmitter.event().name("tool_confirm")
+                    .data(objectMapper.writeValueAsString(body)));
+        } catch (Exception e) {
+            log.debug("发送 tool_confirm 失败: {}", e.getMessage());
+        }
+    }
+
+    private void sendToolResultEvent(SseEmitter emitter, String toolName, ToolResult result) {
+        try {
+            Map<String, Object> body = new HashMap<>();
+            body.put("tool", toolName);
+            body.put("ok", result != null && result.isOk());
+            body.put("message", result != null ? result.getMessage() : null);
+            body.put("data", result != null ? result.getData() : null);
+            body.put("ui", result != null ? result.getUi() : null);
+            emitter.send(SseEmitter.event().name("tool_result")
+                    .data(objectMapper.writeValueAsString(body)));
+        } catch (Exception e) {
+            log.debug("发送 tool_result 失败: {}", e.getMessage());
+        }
+    }
+
+    /** 最近若干条消息的短摘要，供意图分类参考 */
+    private String buildHistoryDigest(Long conversationId, int limit) {
+        List<ChatMessageEntity> history = messageMapper.selectList(
+                new LambdaQueryWrapper<ChatMessageEntity>()
+                        .eq(ChatMessageEntity::getConversationId, conversationId)
+                        .orderByDesc(ChatMessageEntity::getCreatedAt)
+                        .last("LIMIT " + Math.max(1, limit))
+        );
+        history.sort((a, b) -> a.getCreatedAt().compareTo(b.getCreatedAt()));
+        StringBuilder sb = new StringBuilder();
+        for (ChatMessageEntity m : history) {
+            String role = m.getRole() != null ? m.getRole() : "?";
+            String c = m.getContent() != null ? m.getContent() : "";
+            if (c.length() > 120) {
+                c = c.substring(0, 120) + "…";
+            }
+            sb.append(role).append(": ").append(c).append('\n');
+        }
+        return sb.toString();
     }
 
     private void sendStreamDelta(SseEmitter emitter, String content) {

@@ -92,26 +92,6 @@
 
       <!-- 右侧操作 -->
       <div class="header-right">
-        <template v-if="isTradingRoute">
-          <div class="status-chip" :class="runMode === 'PAPER' ? 'chip-paper' : 'chip-live'">
-            <span class="chip-dot" />
-            {{ runMode === 'PAPER' ? '模拟盘' : '实盘' }}
-          </div>
-          <div class="status-chip" :class="systemStatus === 'RUNNING' ? 'chip-running' : 'chip-stopped'">
-            <span class="chip-dot" />
-            {{ systemStatus === 'RUNNING' ? '运行中' : '已停止' }}
-          </div>
-          <button
-            type="button"
-            class="action-stop"
-            :class="{ stopped: systemStatus === 'STOPPED' }"
-            @click="handleEmergencyStop"
-          >
-            {{ systemStatus === 'RUNNING' ? '一键停止' : '恢复运行' }}
-          </button>
-          <div class="header-divider thin" />
-        </template>
-
         <a-tooltip title="刷新页面">
           <button type="button" class="icon-btn" @click="handleRefresh">
             <SyncOutlined />
@@ -155,21 +135,12 @@
 <script setup lang="ts">
 import { ref, computed, watch, markRaw, onMounted, onUnmounted, type Component } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
-import { Modal, message } from 'ant-design-vue'
+import { message } from 'ant-design-vue'
 import { useAuthStore } from '@/stores/auth.store'
 import {
-  HomeOutlined,
-  SettingOutlined,
-  ThunderboltOutlined,
-  UnorderedListOutlined,
-  WalletOutlined,
-  FileTextOutlined,
-  ControlOutlined,
-  SwapOutlined,
   RobotOutlined,
   VideoCameraOutlined,
   PictureOutlined,
-  FundOutlined,
   ToolOutlined,
   SyncOutlined,
   BellOutlined,
@@ -177,7 +148,6 @@ import {
   TeamOutlined,
   AppstoreOutlined
 } from '@ant-design/icons-vue'
-import { useSystemStore } from '@/stores/system.store'
 import ProfileCardModal from '@/components/ProfileCardModal.vue'
 import { roleLabel } from '@/api/auth.api'
 
@@ -201,24 +171,9 @@ interface MenuGroup {
   children: MenuItem[]
 }
 
-const TRADING_KEYS = new Set([
-  'dashboard',
-  'okx-config',
-  'strategies',
-  'positions',
-  'trades',
-  'orders',
-  'run-logs',
-  'system-settings'
-])
-
 const TOOLS_KEYS = new Set(['home', 'video-extract', 'video-generate', 'image-generate', 'ai-chat'])
-
-/** 系统管理（仅超级管理员） */
 const ADMIN_KEYS = new Set(['user-manage'])
-
-/** 仅超管可见的大菜单 key */
-const SUPER_ADMIN_ONLY_GROUPS = new Set(['trading', 'admin'])
+const SUPER_ADMIN_ONLY_GROUPS = new Set(['admin'])
 
 const ALL_MENU_GROUPS: MenuGroup[] = [
   {
@@ -226,8 +181,8 @@ const ALL_MENU_GROUPS: MenuGroup[] = [
     title: 'AI 工具',
     description: '工作台、对话、视频与文生图',
     icon: markRaw(ToolOutlined),
-    accent: '#7C3AED',
-    accentSoft: '#F3E8FF',
+    accent: '#1f2937',
+    accentSoft: '#f3f4f6',
     cols: 2,
     children: [
       {
@@ -235,115 +190,40 @@ const ALL_MENU_GROUPS: MenuGroup[] = [
         title: '工作台',
         description: '工具门户与快捷入口',
         icon: markRaw(AppstoreOutlined),
-        iconBg: '#EEF2FF',
-        iconColor: '#4F46E5'
+        iconBg: '#f3f4f6',
+        iconColor: '#1f2937'
       },
       {
         key: 'ai-chat',
         title: 'AI 对话',
         description: '纯聊天助手，可自由切换模型',
         icon: markRaw(RobotOutlined),
-        iconBg: '#EDE9FE',
-        iconColor: '#7C3AED'
+        iconBg: '#f3f4f6',
+        iconColor: '#374151'
       },
       {
         key: 'video-extract',
         title: '视频提取',
         description: '粘贴链接，自动转录并提炼核心内容',
         icon: markRaw(VideoCameraOutlined),
-        iconBg: '#F3E8FF',
-        iconColor: '#7C3AED'
+        iconBg: '#f3f4f6',
+        iconColor: '#374151'
       },
       {
         key: 'video-generate',
         title: 'AI 视频生成',
         description: '输入提示词，自动规划分镜并生成视频',
         icon: markRaw(RobotOutlined),
-        iconBg: '#EEF2FF',
-        iconColor: '#4F46E5'
+        iconBg: '#f3f4f6',
+        iconColor: '#374151'
       },
       {
         key: 'image-generate',
         title: 'AI 文生图',
         description: '提示词驱动，NVIDIA FLUX 生成图片',
         icon: markRaw(PictureOutlined),
-        iconBg: '#ECFDF5',
-        iconColor: '#059669'
-      }
-    ]
-  },
-  {
-    key: 'trading',
-    title: '交易管理',
-    description: '策略、持仓与交易相关功能',
-    icon: markRaw(FundOutlined),
-    accent: '#1677FF',
-    accentSoft: '#EBF5FF',
-    cols: 3,
-    children: [
-      {
-        key: 'dashboard',
-        title: '仪表盘',
-        description: '总览账户与运行概况',
-        icon: markRaw(HomeOutlined),
-        iconBg: '#EBF5FF',
-        iconColor: '#1677FF'
-      },
-      {
-        key: 'okx-config',
-        title: 'OKX 配置',
-        description: 'API 密钥与连接管理',
-        icon: markRaw(SettingOutlined),
-        iconBg: '#F0F9FF',
-        iconColor: '#0284C7'
-      },
-      {
-        key: 'strategies',
-        title: '策略管理',
-        description: '创建与启停交易策略',
-        icon: markRaw(ThunderboltOutlined),
-        iconBg: '#FEF3C7',
-        iconColor: '#D97706'
-      },
-      {
-        key: 'positions',
-        title: '当前持仓',
-        description: '查看持仓与浮动盈亏',
-        icon: markRaw(WalletOutlined),
-        iconBg: '#DCFCE7',
-        iconColor: '#16A34A'
-      },
-      {
-        key: 'trades',
-        title: '交易记录',
-        description: '历史成交明细查询',
-        icon: markRaw(SwapOutlined),
-        iconBg: '#E0E7FF',
-        iconColor: '#4F46E5'
-      },
-      {
-        key: 'orders',
-        title: '订单记录',
-        description: '委托单状态与详情',
-        icon: markRaw(UnorderedListOutlined),
-        iconBg: '#FCE7F3',
-        iconColor: '#DB2777'
-      },
-      {
-        key: 'run-logs',
-        title: '运行日志',
-        description: '策略信号与执行日志',
-        icon: markRaw(FileTextOutlined),
-        iconBg: '#F1F5F9',
-        iconColor: '#475569'
-      },
-      {
-        key: 'system-settings',
-        title: '系统设置',
-        description: '运行参数与安全选项',
-        icon: markRaw(ControlOutlined),
-        iconBg: '#FFEDD5',
-        iconColor: '#EA580C'
+        iconBg: '#f3f4f6',
+        iconColor: '#374151'
       }
     ]
   },
@@ -352,8 +232,8 @@ const ALL_MENU_GROUPS: MenuGroup[] = [
     title: '系统管理',
     description: '用户与权限等管理功能',
     icon: markRaw(TeamOutlined),
-    accent: '#DB2777',
-    accentSoft: '#FCE7F3',
+    accent: '#1f2937',
+    accentSoft: '#f3f4f6',
     cols: 1,
     children: [
       {
@@ -361,8 +241,8 @@ const ALL_MENU_GROUPS: MenuGroup[] = [
         title: '用户管理',
         description: '查询用户并启用/禁用账号',
         icon: markRaw(TeamOutlined),
-        iconBg: '#FCE7F3',
-        iconColor: '#DB2777'
+        iconBg: '#f3f4f6',
+        iconColor: '#1f2937'
       }
     ]
   }
@@ -370,13 +250,12 @@ const ALL_MENU_GROUPS: MenuGroup[] = [
 
 const router = useRouter()
 const route = useRoute()
-const systemStore = useSystemStore()
 const auth = useAuthStore()
 
 const openGroup = ref<string | null>(null)
 const profileOpen = ref(false)
 
-/** 交易管理、系统管理仅超管可见；普通用户/会员只看工具 */
+/** 系统管理仅超管可见 */
 const menuGroups = computed(() =>
   ALL_MENU_GROUPS.filter((g) => !SUPER_ADMIN_ONLY_GROUPS.has(g.key) || auth.isSuperAdmin)
 )
@@ -395,14 +274,10 @@ function openProfileCard() {
   profileOpen.value = true
 }
 
-const systemStatus = computed(() => systemStore.systemStatus)
-const runMode = computed(() => systemStore.runMode)
-const currentRouteKey = computed(() => route.path.split('/')[1] || 'video-extract')
-const isTradingRoute = computed(() => TRADING_KEYS.has(currentRouteKey.value))
+const currentRouteKey = computed(() => route.path.split('/')[1] || 'home')
 
 const activeGroupKey = computed(() => {
-  if (currentRouteKey.value === 'home' || TOOLS_KEYS.has(currentRouteKey.value)) return 'tools'
-  if (TRADING_KEYS.has(currentRouteKey.value)) return 'trading'
+  if (TOOLS_KEYS.has(currentRouteKey.value)) return 'tools'
   if (ADMIN_KEYS.has(currentRouteKey.value)) return 'admin'
   return ''
 })
@@ -431,17 +306,8 @@ function onDocumentClick(e: MouseEvent) {
 
 onMounted(() => {
   document.addEventListener('click', onDocumentClick)
-  // 登录后刷新角色，避免 localStorage 旧缓存导致菜单权限不准
   if (auth.isLoggedIn) {
-    auth
-      .fetchMe()
-      .then(() => {
-        // 交易系统状态仅超管可读；勿在普通用户登录后请求
-        if (auth.isSuperAdmin) {
-          systemStore.fetchSystemStatus()
-        }
-      })
-      .catch(() => undefined)
+    auth.fetchMe().catch(() => undefined)
   }
 })
 
@@ -473,27 +339,6 @@ async function onUserMenu({ key }: { key: string }) {
     router.replace('/login')
   }
 }
-
-function handleEmergencyStop() {
-  if (systemStatus.value === 'STOPPED') {
-    Modal.confirm({
-      title: '恢复运行',
-      content: '确认恢复系统运行？恢复后策略将继续执行交易。',
-      okText: '恢复运行',
-      cancelText: '取消',
-      onOk: () => systemStore.resumeSystem()
-    })
-  } else {
-    Modal.confirm({
-      title: '一键停止',
-      content: '确认停止所有交易？停止后系统将不再执行新的下单操作。',
-      okText: '确认停止',
-      okType: 'danger',
-      cancelText: '取消',
-      onOk: () => systemStore.stopSystem()
-    })
-  }
-}
 </script>
 
 <style lang="scss" scoped>
@@ -508,7 +353,7 @@ function handleEmergencyStop() {
   border-bottom: 1px solid rgba(226, 232, 240, 0.72);
   box-shadow:
     0 1px 0 rgba(255, 255, 255, 0.9) inset,
-    0 10px 30px rgba(99, 102, 241, 0.07);
+    0 4px 16px rgba(15, 23, 42, 0.04);
 }
 
 .header-inner {
@@ -538,33 +383,31 @@ function handleEmergencyStop() {
 }
 
 .logo-mark {
-  width: 38px;
-  height: 38px;
-  border-radius: 14px;
-  background: linear-gradient(135deg, #6366F1 0%, #7C3AED 48%, #A855F7 100%);
+  width: 36px;
+  height: 36px;
+  border-radius: 10px;
+  background: #1f2937;
   display: flex;
   align-items: center;
   justify-content: center;
-  box-shadow:
-    0 8px 20px rgba(99, 102, 241, 0.38),
-    0 0 0 1px rgba(255, 255, 255, 0.25) inset;
+  box-shadow: none;
   position: relative;
 
   &::after {
     content: '';
     position: absolute;
     inset: 1px;
-    border-radius: 13px;
-    background: linear-gradient(180deg, rgba(255, 255, 255, 0.28), transparent 50%);
+    border-radius: 9px;
+    background: linear-gradient(180deg, rgba(255, 255, 255, 0.12), transparent 55%);
     pointer-events: none;
   }
 }
 
 .logo-mark-inner {
   color: #fff;
-  font-size: 13px;
-  font-weight: 800;
-  letter-spacing: 0.5px;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.4px;
 }
 
 .logo-text {
@@ -632,15 +475,13 @@ function handleEmergencyStop() {
   }
 
   &.active {
-    background: linear-gradient(135deg, rgba(245, 243, 255, 0.98) 0%, rgba(238, 242, 255, 0.98) 100%);
-    border-color: rgba(199, 210, 254, 0.95);
-    color: #4338CA;
-    box-shadow:
-      0 0 0 3px rgba(99, 102, 241, 0.08),
-      0 6px 16px rgba(99, 102, 241, 0.1);
+    background: #f3f4f6;
+    border-color: #e5e7eb;
+    color: #111827;
+    box-shadow: none;
 
     .nav-trigger-icon {
-      color: #6366F1;
+      color: #111827;
     }
   }
 }
@@ -663,8 +504,8 @@ function handleEmergencyStop() {
   white-space: nowrap;
   padding: 2px 8px;
   border-radius: 999px;
-  background: rgba(99, 102, 241, 0.1);
-  color: #4F46E5;
+  background: #f3f4f6;
+  color: #374151;
   font-size: 12px;
   font-weight: 500;
 }
@@ -686,13 +527,12 @@ function handleEmergencyStop() {
   min-width: 320px;
   max-width: min(920px, calc(100vw - 32px));
   padding: 12px;
-  border-radius: 20px;
-  background: rgba(255, 255, 255, 0.92);
-  backdrop-filter: blur(16px);
-  border: 1px solid rgba(226, 232, 240, 0.9);
+  border-radius: 14px;
+  background: #fff;
+  border: 1px solid #e5e7eb;
   box-shadow:
     0 4px 6px -1px rgba(15, 23, 42, 0.05),
-    0 22px 48px -12px rgba(79, 70, 229, 0.18);
+    0 16px 36px -10px rgba(15, 23, 42, 0.12);
   z-index: 50;
 
   /* 单列工具菜单：固定舒适宽度，条目纵向排列 */
@@ -788,28 +628,28 @@ function handleEmergencyStop() {
   box-sizing: border-box;
 
   &:hover {
-    background: #F8FAFC;
-    border-color: #E5E7EB;
+    background: #f9fafb;
+    border-color: #e5e7eb;
 
     .item-chevron {
       opacity: 1;
       transform: translateX(2px);
-      color: #6366F1;
+      color: #374151;
     }
   }
 
   &.active {
-    background: linear-gradient(135deg, #F5F3FF 0%, #EEF2FF 100%);
-    border-color: #DDD6FE;
-    box-shadow: inset 0 0 0 1px rgba(99, 102, 241, 0.06);
+    background: #f3f4f6;
+    border-color: #e5e7eb;
+    box-shadow: none;
 
     .item-title {
-      color: #4338CA;
+      color: #111827;
     }
 
     .item-chevron {
       opacity: 1;
-      color: #6366F1;
+      color: #111827;
     }
   }
 }
@@ -852,8 +692,8 @@ function handleEmergencyStop() {
 .item-badge {
   font-size: 11px;
   font-weight: 500;
-  color: #6366F1;
-  background: rgba(99, 102, 241, 0.12);
+  color: #374151;
+  background: #e5e7eb;
   border-radius: 999px;
   padding: 0 7px;
   line-height: 18px;
@@ -901,93 +741,6 @@ function handleEmergencyStop() {
   margin-left: auto;
 }
 
-.status-chip {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  height: 28px;
-  padding: 0 10px;
-  border-radius: 999px;
-  font-size: 12px;
-  font-weight: 500;
-  border: 1px solid transparent;
-
-  .chip-dot {
-    width: 7px;
-    height: 7px;
-    border-radius: 50%;
-  }
-
-  &.chip-paper {
-    color: #047857;
-    background: #ECFDF5;
-    border-color: #A7F3D0;
-
-    .chip-dot {
-      background: #10B981;
-    }
-  }
-
-  &.chip-live {
-    color: #B91C1C;
-    background: #FEF2F2;
-    border-color: #FECACA;
-
-    .chip-dot {
-      background: #EF4444;
-    }
-  }
-
-  &.chip-running {
-    color: #1D4ED8;
-    background: #EFF6FF;
-    border-color: #BFDBFE;
-
-    .chip-dot {
-      background: #3B82F6;
-      box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.18);
-    }
-  }
-
-  &.chip-stopped {
-    color: #6B7280;
-    background: #F9FAFB;
-    border-color: #E5E7EB;
-
-    .chip-dot {
-      background: #9CA3AF;
-    }
-  }
-}
-
-.action-stop {
-  height: 30px;
-  padding: 0 12px;
-  border-radius: 8px;
-  border: 1px solid #FCA5A5;
-  background: #FEF2F2;
-  color: #DC2626;
-  font-size: 12px;
-  font-weight: 600;
-  cursor: pointer;
-  transition: all 0.16s ease;
-
-  &:hover {
-    background: #FEE2E2;
-    border-color: #F87171;
-  }
-
-  &.stopped {
-    border-color: #D1D5DB;
-    background: #F9FAFB;
-    color: #6B7280;
-
-    &:hover {
-      background: #F3F4F6;
-      color: #374151;
-    }
-  }
-}
 
 .icon-btn {
   width: 36px;
@@ -1018,14 +771,14 @@ function handleEmergencyStop() {
   padding: 4px 6px 4px 4px;
   margin-left: 2px;
   border-radius: 999px;
-  border: 1px solid rgba(226, 232, 240, 0.95);
-  background: rgba(255, 255, 255, 0.88);
-  box-shadow: 0 2px 10px rgba(99, 102, 241, 0.05);
-  transition: all 0.16s ease;
+  border: 1px solid #e5e7eb;
+  background: #fff;
+  box-shadow: none;
+  transition: border-color 0.15s ease, background 0.15s ease;
 
   &:hover {
-    border-color: #c7d2fe;
-    box-shadow: 0 6px 18px rgba(99, 102, 241, 0.12);
+    border-color: #d1d5db;
+    background: #fafafa;
   }
 }
 
@@ -1039,7 +792,7 @@ function handleEmergencyStop() {
 }
 
 .user-avatar {
-  background: linear-gradient(135deg, #6366F1, #8B5CF6) !important;
+  background: #1f2937 !important;
   font-size: 13px;
   font-weight: 600;
 }

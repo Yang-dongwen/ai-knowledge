@@ -164,18 +164,36 @@ public class ImgGenTaskService {
         boolean needReal = !properties.isMockPipeline()
                 && !"mock".equalsIgnoreCase(properties.getSteps().getGenerate());
         String imageModelId = blankToNull(options.getImageModel());
+        if (imageModelId == null && properties.getFlux() != null) {
+            imageModelId = blankToNull(properties.getFlux().getDefaultModel());
+        }
         String imageProviderHint = blankToNull(options.getImageProvider());
+        if (imageProviderHint == null && properties.getFlux() != null) {
+            imageProviderHint = blankToNull(properties.getFlux().getProviderKey());
+        }
         String providerKey;
         String resolvedModelId;
         int steps;
         if (needReal) {
-            var imgCfg = aiModelConfigService.requireEnabledImageModel(imageProviderHint, imageModelId);
+            com.dwcode.okxbot.video.entity.AiModelConfigEntity imgCfg;
+            try {
+                imgCfg = aiModelConfigService.requireEnabledImageModel(imageProviderHint, imageModelId);
+            } catch (BusinessException ex) {
+                if (imageModelId != null) {
+                    log.warn("默认生图模型不可用 [{}]，回退库表首选: {}", imageModelId, ex.getMessage());
+                    imgCfg = aiModelConfigService.requireEnabledImageModel(imageProviderHint, null);
+                } else {
+                    throw ex;
+                }
+            }
             providerKey = imgCfg.getProvider();
             resolvedModelId = imgCfg.getModelId();
             int maxSteps = imgCfg.getMaxSteps() != null && imgCfg.getMaxSteps() > 0
                     ? imgCfg.getMaxSteps() : 50;
             int defSteps = imgCfg.getDefaultSteps() != null && imgCfg.getDefaultSteps() > 0
-                    ? imgCfg.getDefaultSteps() : 4;
+                    ? imgCfg.getDefaultSteps()
+                    : (properties.getFlux().getDefaultSteps() > 0
+                    ? properties.getFlux().getDefaultSteps() : 28);
             steps = options.getSteps() != null ? options.getSteps() : defSteps;
             steps = Math.min(maxSteps, Math.max(1, steps));
         } else {

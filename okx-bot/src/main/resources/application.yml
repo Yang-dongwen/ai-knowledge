@@ -2,8 +2,6 @@ server:
   port: 8080
 
 spring:
-  profiles:
-    active: paper
   datasource:
     driver-class-name: com.mysql.cj.jdbc.Driver
     url: jdbc:mysql://localhost:3306/okx_bot?useUnicode=true&characterEncoding=utf-8&serverTimezone=Asia/Shanghai&useSSL=false&allowPublicKeyRetrieval=true
@@ -58,10 +56,6 @@ mybatis-plus:
       logic-delete-value: 1
       logic-not-delete-value: 0
 
-okx:
-  proxy-host: 127.0.0.1
-  proxy-port: 7897
-
 # AI 聊天配置（多供应商）
 ai:
   default-provider: nvidia
@@ -71,6 +65,15 @@ ai:
   # Chat 出站引擎：langchain4j（默认，Phase A）| okhttp（回滚手写客户端）
   # 影响：视频提取总结、aigen 分镜、imggen 润色、/video/models/test
   chat-engine: langchain4j
+  # AI 对话 Agent
+  agent:
+    enabled: true
+    decision-max-tokens: 512
+    summary-max-tokens: 1200
+    decision-temperature: 0.2
+    confirm-ttl-seconds: 900
+    # 单轮最多工具调用次数（防死循环）
+    max-tool-rounds: 2
   providers:
     openai:
       name: OpenAI
@@ -198,12 +201,33 @@ aigen:
     fail-on-shot-error: false
     default-audio-mode: bgm_only
     default-style-preset: cinematic-dark
-    motion-default: ken_burns
+    # auto=按镜序自动挑选富有变化的运镜（非固定 ken_burns 模板感）
+    motion-default: auto
     composition-id: VisualTimeline
     bgm-dir: ./data/aigen/_bgm
-    image-steps: 4
+    # FLUX.1-dev 建议 20～28；库表 default_steps 优先
+    image-steps: 28
     image-provider-key: nvidia
-    default-enhance-image-prompt: false
+    # 默认高质量生图（需 ai_model_config 有对应 capability=image 行；没有则回退库表首选）
+    default-image-model: black-forest-labs/flux.1-dev
+    # 默认润色出图 prompt，提升电影感
+    default-enhance-image-prompt: true
+    # auto=优先英文 promptEn 出图（FLUX 跟实体更稳）| en | zh
+    image-prompt-language: auto
+    # 规划后校验镜头是否扣题；失败会 repair
+    enforce-topic-keywords: true
+    # 静图→动效视频。template 不受影响
+    kinetic-clips: true
+    # kinetic=本地FFmpeg | nvidia-svd=云端SVD | auto=先SVD后kinetic | off=仅静图
+    i2v-mode: kinetic
+    i2v-fail-open-to-kinetic: true
+    svd-invoke-url: https://ai.api.nvidia.com/v1/genai/stabilityai/stable-video-diffusion
+    svd-timeout-seconds: 300
+    svd-motion-bucket-id: 127
+    svd-fps: 6
+    kinetic-fps: 24
+    kinetic-preset: veryfast
+    kinetic-crf: 20
   steps:
     plan: real          # real=调 LLM；mock=本地模板分镜/mock 导演
     asset: real         # real=出图或 TTS；mock=占位图/mock 音频
@@ -211,7 +235,8 @@ aigen:
   llm:
     provider: nvidia
     model:
-    temperature: 0.5
+    # 导演创意温度：略高以鼓励自由想象
+    temperature: 0.72
     max-tokens: 8192
     max-retries: 3
     timeout-seconds: 120
@@ -265,10 +290,12 @@ imggen:
   flux:
     # 生图模型请在 DB 表 ai_model_config（capability=image）维护；此处仅 Adapter 兜底
     provider-key: nvidia
-    invoke-url: https://ai.api.nvidia.com/v1/genai/black-forest-labs/flux.1-schnell
-    model-path: black-forest-labs/flux.1-schnell
-    default-steps: 4
-    timeout-seconds: 180
+    # 默认高质量 FLUX.1-dev（比 schnell 慢、更清晰）；快速预览可改回 flux.1-schnell + steps 4
+    invoke-url: https://ai.api.nvidia.com/v1/genai/black-forest-labs/flux.1-dev
+    model-path: black-forest-labs/flux.1-dev
+    default-model: black-forest-labs/flux.1-dev
+    default-steps: 28
+    timeout-seconds: 300
 
 logging:
   level:

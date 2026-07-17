@@ -1,5 +1,8 @@
 package com.dwcode.okxbot.aigen.config;
 
+import com.dwcode.okxbot.aigen.adapter.i2v.CompositeImageToVideoAdapter;
+import com.dwcode.okxbot.aigen.adapter.i2v.KineticImageToVideoAdapter;
+import com.dwcode.okxbot.aigen.adapter.i2v.NvidiaSvdImageToVideoAdapter;
 import com.dwcode.okxbot.aigen.adapter.llm.LangChain4jDirectorAdapter;
 import com.dwcode.okxbot.aigen.adapter.llm.LangChain4jScriptPlanAdapter;
 import com.dwcode.okxbot.aigen.adapter.llm.LlmChatScriptPlanAdapter;
@@ -14,9 +17,11 @@ import com.dwcode.okxbot.aigen.adapter.tts.EdgeTtsProvider;
 import com.dwcode.okxbot.aigen.adapter.tts.MockTtsProvider;
 import com.dwcode.okxbot.aigen.adapter.tts.WindowsSapiTtsProvider;
 import com.dwcode.okxbot.aigen.port.DirectorPort;
+import com.dwcode.okxbot.aigen.port.ImageToVideoPort;
 import com.dwcode.okxbot.aigen.port.ScriptPlanPort;
 import com.dwcode.okxbot.aigen.port.TtsPort;
 import com.dwcode.okxbot.aigen.port.VideoRenderPort;
+import com.dwcode.okxbot.aigen.service.KineticClipService;
 import com.dwcode.okxbot.aigen.service.ShotlistNormalizeService;
 import com.dwcode.okxbot.aigen.service.ShotlistValidateService;
 import com.dwcode.okxbot.aigen.service.StoryboardNormalizeService;
@@ -161,6 +166,31 @@ public class AigenBeanConfig {
         }
         log.info("Aigen TtsPort mode=real, provider={}", props.getTts().getProvider());
         return auto;
+    }
+
+    @Bean
+    public KineticImageToVideoAdapter kineticImageToVideoAdapter(KineticClipService kineticClipService) {
+        return new KineticImageToVideoAdapter(kineticClipService);
+    }
+
+    @Bean
+    public NvidiaSvdImageToVideoAdapter nvidiaSvdImageToVideoAdapter(
+            AigenProperties props,
+            AiProperties aiProperties,
+            ObjectMapper objectMapper) {
+        return new NvidiaSvdImageToVideoAdapter(props, aiProperties, objectMapper);
+    }
+
+    @Bean
+    public ImageToVideoPort imageToVideoPort(
+            AigenProperties props,
+            KineticImageToVideoAdapter kinetic,
+            NvidiaSvdImageToVideoAdapter svd) {
+        String mode = props.getVisual() != null && props.getVisual().getI2vMode() != null
+                ? props.getVisual().getI2vMode()
+                : "kinetic";
+        log.info("Aigen ImageToVideoPort mode={}", mode);
+        return new CompositeImageToVideoAdapter(props, kinetic, svd);
     }
 
     @Bean

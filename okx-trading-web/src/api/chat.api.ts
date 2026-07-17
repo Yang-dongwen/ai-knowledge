@@ -24,9 +24,28 @@ export interface StreamCallbacks {
     provider?: string
     model?: string
     regenerate?: boolean
+    agentMode?: boolean
   }) => void
   /** 收到 AI 回复增量内容 */
   onDelta?: (data: { content: string }) => void
+  /** Agent 工具结果 */
+  onToolResult?: (data: {
+    tool?: string
+    ok?: boolean
+    message?: string
+    data?: any
+    ui?: { type?: string; payload?: any }
+  }) => void
+  /** Agent 写工具确认卡 */
+  onToolConfirm?: (data: {
+    tool?: string
+    ok?: boolean
+    message?: string
+    data?: any
+    ui?: { type?: string; payload?: any }
+  }) => void
+  /** Agent 阶段状态（deciding / tool_running / summarizing / done） */
+  onAgentStatus?: (data: { phase?: string; label?: string }) => void
   /** 流式结束 */
   onDone?: (data: { messageId: string; cancelled?: boolean }) => void
   /** 错误 */
@@ -128,6 +147,18 @@ function streamFetch(
                 case 'delta':
                   resetIdleTimer()
                   callbacks.onDelta?.(parsed)
+                  break
+                case 'tool_result':
+                  resetIdleTimer()
+                  callbacks.onToolResult?.(parsed)
+                  break
+                case 'tool_confirm':
+                  resetIdleTimer()
+                  callbacks.onToolConfirm?.(parsed)
+                  break
+                case 'agent_status':
+                  resetIdleTimer()
+                  callbacks.onAgentStatus?.(parsed)
                   break
                 case 'done':
                   doneReceived = true
@@ -235,6 +266,16 @@ export const chatApi = {
    */
   stopStream(data: { streamId?: string; conversationId?: string }): Promise<{ data: { stopped: boolean } }> {
     return request.post('/chat/stop', data)
+  },
+
+  /** 确认 Agent 写工具草案（创建任务）；args 为用户在确认卡上修改后的参数 */
+  agentConfirm(confirmId: string, args?: Record<string, any>): Promise<{ data: any }> {
+    return request.post('/chat/agent/confirm', { confirmId, args })
+  },
+
+  /** 拒绝 Agent 写工具草案 */
+  agentReject(confirmId: string): Promise<{ data: { rejected: boolean } }> {
+    return request.post('/chat/agent/reject', { confirmId })
   },
 
   /**

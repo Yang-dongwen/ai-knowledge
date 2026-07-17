@@ -26,4 +26,10 @@ public class ChatRequest {
 
     /** 本次 max_tokens 覆盖（可选）；否则用会话设置 / 默认 2000 */
     private Integer maxTokens;
+
+    /**
+     * 是否启用 Agent 模式（PR-1：可调用只读工具查询任务/模型）。
+     * false/null 时行为与纯聊天一致。
+     */
+    private Boolean agentMode;
 }

@@ -579,48 +579,56 @@
             </div>
           </div>
 
-          <!-- VT-1.5 镜头条：缩略图 / 重生 / 上传 -->
-          <div
-            v-if="selected.pipelineMode === 'visual' && shotList.length"
-            class="shot-strip page-card"
-            style="margin-top: 12px; padding: 12px"
-          >
-            <div class="panel-header" style="margin-bottom: 8px">
-              <span class="panel-title">镜头（{{ shotList.length }}）</span>
-              <a-button type="text" size="small" :loading="shotsLoading" @click="loadShots(selected.id)">
+          <!-- VT-1.5 镜头条：选中 visual 任务即展示（含进入页自动选中） -->
+          <div v-if="showShotStrip" class="shot-strip page-card">
+            <div class="panel-header">
+              <span class="panel-title">
+                镜头{{ shotList.length ? `（${shotList.length}）` : '' }}
+              </span>
+              <a-button
+                type="text"
+                size="small"
+                :loading="shotsLoading"
+                @click="loadShots(selected.id)"
+              >
                 刷新
               </a-button>
             </div>
-            <div class="shot-row" style="display: flex; gap: 10px; overflow-x: auto; padding-bottom: 4px">
+            <div v-if="shotsLoading && !shotList.length" class="shot-empty">
+              <a-spin size="small" /> 加载镜头…
+            </div>
+            <div v-else-if="!shotList.length" class="shot-empty">
+              暂无镜头图（规划/出图完成后自动出现）
+            </div>
+            <div v-else class="shot-row">
               <div
-                v-for="sh in shotList"
+                v-for="(sh, shotIdx) in shotList"
                 :key="sh.id"
                 class="shot-card"
-                style="min-width: 120px; max-width: 140px; flex-shrink: 0"
               >
                 <div
                   class="shot-thumb"
-                  style="height: 160px; border-radius: 8px; overflow: hidden; background: #1a1a22; position: relative"
+                  :class="{ clickable: !!shotBlobUrls[sh.id] }"
+                  :title="shotBlobUrls[sh.id] ? '点击放大' : undefined"
+                  @click="previewShot(sh.id, shotIdx)"
                 >
                   <img
                     v-if="shotBlobUrls[sh.id]"
                     :src="shotBlobUrls[sh.id]"
                     alt=""
-                    style="width: 100%; height: 100%; object-fit: cover"
                   />
                   <div
                     v-else
-                    style="display:flex;align-items:center;justify-content:center;height:100%;color:#888;font-size:12px"
+                    class="shot-thumb-fallback"
                   >
                     {{ sh.imageAvailable ? '加载中' : '无图' }}
                   </div>
-                  <span
-                    style="position:absolute;left:6px;top:6px;background:rgba(0,0,0,.55);color:#fff;font-size:11px;padding:1px 6px;border-radius:4px"
-                  >
+                  <span class="shot-order-badge">
                     {{ sh.order ?? sh.id }}
                   </span>
+                  <span v-if="shotBlobUrls[sh.id]" class="shot-zoom-hint">放大</span>
                 </div>
-                <div style="font-size: 12px; margin-top: 4px; line-height: 1.3" :title="sh.title || sh.id">
+                <div class="shot-title" :title="sh.title || sh.id">
                   {{ sh.title || sh.id }}
                 </div>
                 <div style="display: flex; gap: 4px; margin-top: 4px; flex-wrap: wrap">
@@ -637,7 +645,7 @@
                     :show-upload-list="false"
                     accept="image/*"
                     :disabled="!canEditShots || uploadingShotId === sh.id"
-                    :before-upload="(f) => handleUploadShot(sh.id, f)"
+                    :before-upload="(f: File) => handleUploadShot(sh.id, f)"
                   >
                     <a-button size="small" type="link" :loading="uploadingShotId === sh.id" :disabled="!canEditShots">
                       上传
@@ -646,7 +654,7 @@
                 </div>
               </div>
             </div>
-            <div v-if="!canEditShots" style="font-size: 12px; color: #888; margin-top: 6px">
+            <div v-if="!canEditShots && shotList.length" class="shot-tip">
               任务成功/失败/暂停后可重生或上传替换单镜
             </div>
           </div>
@@ -744,6 +752,54 @@
         />
       </section>
     </div>
+
+    <!-- 镜头图放大预览 -->
+    <a-modal
+      v-model:open="shotPreviewOpen"
+      :footer="null"
+      :width="shotPreviewModalWidth"
+      centered
+      destroy-on-close
+      wrap-class-name="shot-preview-modal-wrap"
+      :title="shotPreviewTitle"
+      @cancel="closeShotPreview"
+    >
+      <div class="shot-preview-body">
+        <button
+          v-if="shotPreviewNavVisible"
+          type="button"
+          class="shot-preview-nav prev"
+          :disabled="!canShotPreviewPrev"
+          title="上一镜"
+          @click="shotPreviewStep(-1)"
+        >
+          ‹
+        </button>
+        <div class="shot-preview-frame">
+          <img
+            v-if="shotPreviewUrl"
+            :src="shotPreviewUrl"
+            :alt="shotPreviewTitle"
+            class="shot-preview-img"
+          />
+          <div v-else class="shot-preview-empty">暂无图片</div>
+        </div>
+        <button
+          v-if="shotPreviewNavVisible"
+          type="button"
+          class="shot-preview-nav next"
+          :disabled="!canShotPreviewNext"
+          title="下一镜"
+          @click="shotPreviewStep(1)"
+        >
+          ›
+        </button>
+      </div>
+      <div v-if="shotPreviewNavVisible" class="shot-preview-footer">
+        {{ shotPreviewIndex + 1 }} / {{ shotPreviewableIds.length }}
+        <span v-if="shotPreviewMeta" class="shot-preview-meta">· {{ shotPreviewMeta }}</span>
+      </div>
+    </a-modal>
   </div>
 </template>
 
@@ -797,10 +853,81 @@ const shotBlobUrls = ref<Record<string, string>>({})
 const regeneratingShotId = ref('')
 const uploadingShotId = ref('')
 
+/** 镜头放大预览 */
+const shotPreviewOpen = ref(false)
+const shotPreviewIndex = ref(0)
+
 const canEditShots = computed(() => {
   const s = selected.value?.status
   return s === 'SUCCESS' || s === 'FAILED' || s === 'PAUSED'
 })
+
+/** visual 任务（或未标明 pipeline 的旧任务）展示镜头区；模板口播不展示 */
+const showShotStrip = computed(() => {
+  const t = selected.value
+  if (!t) return false
+  if (t.pipelineMode === 'template') return false
+  return t.pipelineMode === 'visual' || !t.pipelineMode
+})
+
+/** 当前有图可预览的镜头 id 列表（按列表顺序） */
+const shotPreviewableIds = computed(() =>
+  shotList.value.filter((s) => !!shotBlobUrls.value[s.id]).map((s) => s.id)
+)
+
+const shotPreviewUrl = computed(() => {
+  const id = shotPreviewableIds.value[shotPreviewIndex.value]
+  return id ? shotBlobUrls.value[id] || '' : ''
+})
+
+const shotPreviewCurrent = computed(() => {
+  const id = shotPreviewableIds.value[shotPreviewIndex.value]
+  if (!id) return null
+  return shotList.value.find((s) => s.id === id) || null
+})
+
+const shotPreviewTitle = computed(() => {
+  const sh = shotPreviewCurrent.value
+  if (!sh) return '镜头预览'
+  const order = sh.order != null ? `#${sh.order}` : sh.id
+  const title = sh.title ? ` · ${sh.title}` : ''
+  return `镜头 ${order}${title}`
+})
+
+const shotPreviewMeta = computed(() => {
+  const sh = shotPreviewCurrent.value
+  if (!sh) return ''
+  return sh.title || sh.id
+})
+
+const shotPreviewNavVisible = computed(() => shotPreviewableIds.value.length > 1)
+const canShotPreviewPrev = computed(() => shotPreviewIndex.value > 0)
+const canShotPreviewNext = computed(
+  () => shotPreviewIndex.value < shotPreviewableIds.value.length - 1
+)
+/** 弹层宽度：窄屏用百分比，宽屏固定上限 */
+const shotPreviewModalWidth = computed(() => {
+  if (typeof window !== 'undefined' && window.innerWidth < 768) return '96%'
+  return 860
+})
+
+function previewShot(shotId: string, _listIdx?: number) {
+  const url = shotBlobUrls.value[shotId]
+  if (!url) return
+  const idx = shotPreviewableIds.value.indexOf(shotId)
+  shotPreviewIndex.value = idx >= 0 ? idx : 0
+  shotPreviewOpen.value = true
+}
+
+function closeShotPreview() {
+  shotPreviewOpen.value = false
+}
+
+function shotPreviewStep(delta: number) {
+  const next = shotPreviewIndex.value + delta
+  if (next < 0 || next >= shotPreviewableIds.value.length) return
+  shotPreviewIndex.value = next
+}
 
 function revokeShotBlobs() {
   Object.values(shotBlobUrls.value).forEach((u) => {
@@ -835,7 +962,9 @@ async function loadShots(taskId: string) {
     )
     shotBlobUrls.value = urls
   } catch {
+    // 进行中任务尚无镜头表：静默空列表，不弹全局错误
     shotList.value = []
+    revokeShotBlobs()
   } finally {
     shotsLoading.value = false
   }
@@ -1416,11 +1545,20 @@ async function loadTasks() {
   try {
     const res = await aigenApi.listTasks(0, 50)
     tasks.value = res.data?.items || []
-    if (selectedId.value && !tasks.value.find((t) => t.id === selectedId.value)) {
-      selectedId.value = tasks.value[0]?.id ?? null
+    let nextId = selectedId.value
+    if (nextId && !tasks.value.find((t) => t.id === nextId)) {
+      nextId = tasks.value[0]?.id ?? null
     }
-    if (!selectedId.value && tasks.value[0]) {
-      selectedId.value = tasks.value[0].id
+    if (!nextId && tasks.value[0]) {
+      nextId = tasks.value[0].id
+    }
+    // 进入页面 / 刷新列表：同步选中并拉镜头，不能只写 selectedId
+    if (nextId) {
+      await applySelection(nextId, { soft: selectedId.value === nextId })
+    } else {
+      selectedId.value = null
+      shotList.value = []
+      revokeShotBlobs()
     }
   } catch {
     // ignore
@@ -1436,26 +1574,48 @@ function revokeVideoUrl() {
   }
 }
 
-function selectTask(id: string) {
-  if (selectedId.value === id) return
-  selectedId.value = id
-  storyboardPreview.value = ''
-  storyboardOpen.value = false
-  promptCollapsed.value = true
-  revokeVideoUrl()
-  revokeShotBlobs()
-  shotList.value = []
-  autoLoadedTaskId.value = null
+/**
+ * 统一选中任务副作用（镜头条、分镜预览重置等）。
+ * soft=true：同一任务刷新列表时不重置预览/视频，只补拉镜头。
+ */
+async function applySelection(id: string, opts?: { soft?: boolean }) {
+  const soft = !!opts?.soft
+  const same = selectedId.value === id
+  if (!soft && same) {
+    // 再次点击同一任务：仍可刷新镜头
+    await maybeLoadShotsForTask(id)
+    return
+  }
+  if (!same) {
+    selectedId.value = id
+    storyboardPreview.value = ''
+    storyboardOpen.value = false
+    promptCollapsed.value = true
+    shotPreviewOpen.value = false
+    revokeVideoUrl()
+    revokeShotBlobs()
+    shotList.value = []
+    autoLoadedTaskId.value = null
+  } else {
+    selectedId.value = id
+  }
+  await maybeLoadShotsForTask(id)
+}
+
+/** visual 任务尽量拉镜头；模板模式清空 */
+async function maybeLoadShotsForTask(id: string) {
   const t = tasks.value.find((x) => x.id === id)
-  if (t?.pipelineMode === 'visual' && t.storyboardJson !== undefined) {
-    // no-op: storyboard not on list item
+  if (!t || t.pipelineMode === 'template') {
+    shotList.value = []
+    revokeShotBlobs()
+    return
   }
-  if (t?.pipelineMode === 'visual' || !t?.pipelineMode) {
-    // visual 任务：有分镜后即可拉镜头条（SUCCESS/失败/规划后均可能有 shotlist）
-    if (t && (t.status === 'SUCCESS' || t.status === 'FAILED' || t.status === 'PAUSED' || t.status === 'RENDERING')) {
-      loadShots(id)
-    }
-  }
+  // visual 或旧数据无 pipelineMode：一律尝试（规划后即可有 shotlist）
+  await loadShots(id)
+}
+
+function selectTask(id: string) {
+  void applySelection(id)
 }
 
 function onVideoMeta() {
@@ -1566,9 +1726,7 @@ async function handleSubmit() {
     })
     const task = res.data
     upsertTask(task)
-    selectedId.value = task.id
-    revokeVideoUrl()
-    autoLoadedTaskId.value = null
+    await applySelection(task.id)
     message.success('任务已提交')
     // SSE 若未连通，立刻用轮询兜底，避免一直停在「排队中」
     ensurePolling()
@@ -1743,10 +1901,18 @@ async function doDelete(id: string) {
     await aigenApi.deleteTask(id)
     tasks.value = tasks.value.filter((t) => t.id !== id)
     if (selectedId.value === id) {
-      selectedId.value = tasks.value[0]?.id ?? null
-      storyboardPreview.value = ''
-      revokeVideoUrl()
-      autoLoadedTaskId.value = null
+      const next = tasks.value[0]?.id ?? null
+      if (next) {
+        await applySelection(next)
+      } else {
+        selectedId.value = null
+        storyboardPreview.value = ''
+        storyboardOpen.value = false
+        shotList.value = []
+        revokeShotBlobs()
+        revokeVideoUrl()
+        autoLoadedTaskId.value = null
+      }
     }
     message.success('任务及相关文件已删除')
   } catch {
@@ -1769,11 +1935,34 @@ async function loadStoryboard() {
   }
 }
 
-// 选中任务变化 / 成片就绪 → 自动加载
+// 选中任务变化 / 成片就绪 → 自动加载成片
 watch(
   () => [selectedId.value, selected.value?.outputAvailable, selected.value?.status] as const,
   async () => {
     await maybeAutoLoadVideo()
+  }
+)
+
+// 任务进入有 shotlist 的状态时自动补拉镜头（SSE/轮询更新后）
+watch(
+  () => [selectedId.value, selected.value?.status, selected.value?.pipelineMode] as const,
+  async ([id, status, mode]) => {
+    if (!id) return
+    if (mode === 'template') return
+    // 规划中/出图中/渲染/终态都可能已有镜头
+    if (
+      status === 'ASSET_GENERATING' ||
+      status === 'RENDERING' ||
+      status === 'SUCCESS' ||
+      status === 'FAILED' ||
+      status === 'PAUSED' ||
+      status === 'PLANNING'
+    ) {
+      // 避免与 applySelection 重复狂刷：仅列表为空时补拉
+      if (!shotList.value.length && !shotsLoading.value) {
+        await maybeLoadShotsForTask(id)
+      }
+    }
   }
 )
 
@@ -1877,10 +2066,17 @@ onMounted(async () => {
         if (id) {
           tasks.value = tasks.value.filter((t) => t.id !== id)
           if (selectedId.value === id) {
-            selectedId.value = tasks.value[0]?.id ?? null
-            storyboardPreview.value = ''
-            revokeVideoUrl()
-            autoLoadedTaskId.value = null
+            const next = tasks.value[0]?.id ?? null
+            if (next) {
+              void applySelection(next)
+            } else {
+              selectedId.value = null
+              storyboardPreview.value = ''
+              shotList.value = []
+              revokeShotBlobs()
+              revokeVideoUrl()
+              autoLoadedTaskId.value = null
+            }
           }
         }
         ensurePolling()
@@ -1905,7 +2101,9 @@ watch(
 onUnmounted(() => {
   stopPolling()
   sseClose?.()
+  shotPreviewOpen.value = false
   revokeVideoUrl()
+  revokeShotBlobs()
 })
 </script>
 
