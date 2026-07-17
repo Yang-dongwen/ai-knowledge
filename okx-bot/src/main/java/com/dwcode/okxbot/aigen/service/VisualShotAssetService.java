@@ -64,6 +64,7 @@ public class VisualShotAssetService {
     private final TtsPort ttsPort;
     private final AigenStorageService storageService;
     private final ImageToVideoPort imageToVideoPort;
+    private final TopicRelevanceService topicRelevanceService;
 
     public AspectRatioMapper.Size resolveFluxSize(AigenTaskEntity task, ShotlistDto list) {
         String aspect = list.getMeta() != null && list.getMeta().getAspectRatio() != null
@@ -130,9 +131,9 @@ public class VisualShotAssetService {
                     finalPrompt = enhanceImagePrompt(task, prompt);
                     shot.getVisual().setPrompt(finalPrompt);
                 }
-                // 出图前注入主题锚点，避免画面与用户提示词脱节
-                String anchored = anchorPromptToTaskTheme(task, finalPrompt);
-                generateRealImage(task, workDir, shot, outFile, size.width(), size.height(), anchored, seedIndex);
+                // 出图：优先英文 promptEn（FLUX 更稳）+ 主题锚点
+                String forImage = resolveImagePrompt(task, shot, finalPrompt);
+                generateRealImage(task, workDir, shot, outFile, size.width(), size.height(), forImage, seedIndex);
                 shot.getVisual().setType("ai_image");
                 // 重生静图时清掉旧动效路径，稍后重新 i2v
                 shot.getVisual().setVideoPath(null);
@@ -369,6 +370,71 @@ public class VisualShotAssetService {
     }
 
     /**
+     * 选择实际送入文生图模型的提示词。
+     * auto/en：优先 promptEn；再回退中文 prompt；统一加主题锚点前缀。
+     */
+    String resolveImagePrompt(AigenTaskEntity task, ShotDto shot, String zhPromptAfterEnhance) {
+        String langMode = aigenProperties.getVisual() != null
+                ? aigenProperties.getVisual().getImagePromptLanguage()
+                : "auto";
+        if (langMode == null || langMode.isBlank()) {
+            langMode = "auto";
+        }
+        langMode = langMode.trim().toLowerCase(Locale.ROOT);
+
+        String en = shot != null && shot.getVisual() != null ? shot.getVisual().getPromptEn() : null;
+        String zh = zhPromptAfterEnhance != null ? zhPromptAfterEnhance
+                : (shot != null && shot.getVisual() != null ? shot.getVisual().getPrompt() : null);
+        if (zh == null) {
+            zh = "";
+        }
+
+        boolean preferEn = "auto".equals(langMode) || "en".equals(langMode);
+        String body;
+        boolean englishBody;
+        if (preferEn && en != null && !en.isBlank()) {
+            body = en.trim();
+            englishBody = true;
+        } else if ("zh".equals(langMode)) {
+            body = zh.trim();
+            englishBody = false;
+        } else if (preferEn) {
+            // 无 promptEn：中文 + 英文主题锚点双写，提高实体命中
+            String anchorEn = topicRelevanceService != null
+                    ? topicRelevanceService.buildAnchorPrefix(
+                    task != null ? task.getPrompt() : null, true)
+                    : "";
+            body = (anchorEn + zh.trim()).trim();
+            englishBody = false;
+        } else {
+            body = zh.trim();
+            englishBody = false;
+        }
+
+        String userTheme = task != null ? task.getPrompt() : null;
+        String prefix = topicRelevanceService != null
+                ? topicRelevanceService.buildAnchorPrefix(userTheme, englishBody || preferEn)
+                : "";
+        if (prefix.isBlank()) {
+            return anchorPromptToTaskTheme(task, body);
+        }
+        String lower = body.toLowerCase(Locale.ROOT);
+        // 已含锚点则不重复
+        List<String> anchors = topicRelevanceService.extractAnchors(userTheme);
+        boolean already = false;
+        for (String a : anchors) {
+            if (a != null && lower.contains(a.toLowerCase(Locale.ROOT))) {
+                already = true;
+                break;
+            }
+        }
+        if (already) {
+            return body;
+        }
+        return (prefix + body).trim();
+    }
+
+    /**
      * 将用户任务主题关键词压入出图 prompt 前缀，降低「只有氛围、没有主题」概率。
      */
     static String anchorPromptToTaskTheme(AigenTaskEntity task, String shotPrompt) {
@@ -391,7 +457,6 @@ public class VisualShotAssetService {
         if (theme.isBlank()) {
             return shotPrompt.trim();
         }
-        // 已含主题片段则不重复堆叠
         String lowerShot = shotPrompt.toLowerCase(Locale.ROOT);
         String themeHead = theme.length() > 24 ? theme.substring(0, 24) : theme;
         if (lowerShot.contains(themeHead.toLowerCase(Locale.ROOT))) {

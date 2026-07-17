@@ -106,10 +106,11 @@ public class AigenBeanConfig {
             ObjectMapper objectMapper,
             ShotlistValidateService validateService,
             ShotlistNormalizeService normalizeService,
+            com.dwcode.okxbot.aigen.service.TopicRelevanceService topicRelevanceService,
             AigenProperties aigenProperties) {
         return new LangChain4jDirectorAdapter(
                 chatModelFactory, llmChatClient, objectMapper,
-                validateService, normalizeService, aigenProperties);
+                validateService, normalizeService, topicRelevanceService, aigenProperties);
     }
 
     @Bean

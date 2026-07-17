@@ -6,6 +6,7 @@ import com.dwcode.okxbot.aigen.port.DirectorCommand;
 import com.dwcode.okxbot.aigen.port.DirectorPort;
 import com.dwcode.okxbot.aigen.service.ShotlistNormalizeService;
 import com.dwcode.okxbot.aigen.service.ShotlistValidateService;
+import com.dwcode.okxbot.aigen.service.TopicRelevanceService;
 import com.dwcode.okxbot.common.ai.ChatModelFactory;
 import com.dwcode.okxbot.common.ai.LlmCallOptions;
 import com.dwcode.okxbot.common.ai.LlmChatClient;
@@ -34,6 +35,7 @@ public class LangChain4jDirectorAdapter implements DirectorPort {
     private final ObjectMapper objectMapper;
     private final ShotlistValidateService validateService;
     private final ShotlistNormalizeService normalizeService;
+    private final TopicRelevanceService topicRelevanceService;
     private final AigenProperties aigenProperties;
 
     interface ShotlistJsonPlanner {
@@ -60,16 +62,27 @@ public class LangChain4jDirectorAdapter implements DirectorPort {
                     command.getAudioMode(),
                     command.getTitleHint()
             );
-            List<String> errors = validateService.validate(dto, command.getTargetDurationSec());
+            List<String> errors = new java.util.ArrayList<>(
+                    validateService.validate(dto, command.getTargetDurationSec()));
+            if (aigenProperties.getVisual() != null
+                    && aigenProperties.getVisual().isEnforceTopicKeywords()) {
+                errors.addAll(topicRelevanceService.validateShotlist(dto, command.getPrompt()));
+            }
             if (!errors.isEmpty()) {
                 int maxRepair = Math.max(0, aigenProperties.getLlm().getMaxRepairAttempts());
                 if (maxRepair > 0) {
                     log.warn("镜头表校验失败，repair: {}", errors);
+                    String anchors = String.join(", ",
+                            topicRelevanceService.extractAnchors(command.getPrompt()));
                     String repairUser = "以下 JSON 不合法，错误: " + errors
-                            + "\n请输出修复后的完整镜头表 JSON：\n"
+                            + "\n用户原主题: " + command.getPrompt()
+                            + (anchors.isBlank() ? "" : "\n必须写入各镜的主题关键词: " + anchors)
+                            + "\n请输出修复后的完整镜头表 JSON（每镜 prompt + promptEn 都必须扣题）：\n"
                             + objectMapper.writeValueAsString(dto);
                     String repaired = invoke(
-                            "你是 JSON 修复器，只输出合法 vt-1.0 镜头表 JSON，不要 markdown。",
+                            "你是镜头表修复器，只输出合法 vt-1.0 JSON，不要 markdown。"
+                                    + "修复时确保每镜 visual.prompt 与 visual.promptEn 都包含用户主题主体，"
+                                    + "禁止空镜赛博都市代替主题。",
                             repairUser, command.getLlmProvider(), command.getLlmModel(), options);
                     dto = parse(repaired);
                     dto = normalizeService.normalize(
@@ -81,7 +94,12 @@ public class LangChain4jDirectorAdapter implements DirectorPort {
                             command.getAudioMode(),
                             command.getTitleHint()
                     );
-                    errors = validateService.validate(dto, command.getTargetDurationSec());
+                    errors = new java.util.ArrayList<>(
+                            validateService.validate(dto, command.getTargetDurationSec()));
+                    if (aigenProperties.getVisual() != null
+                            && aigenProperties.getVisual().isEnforceTopicKeywords()) {
+                        errors.addAll(topicRelevanceService.validateShotlist(dto, command.getPrompt()));
+                    }
                 }
             }
             if (!errors.isEmpty()) {
@@ -195,8 +213,9 @@ public class LangChain4jDirectorAdapter implements DirectorPort {
                     "narration":"可选口播",
                     "visual":{
                       "type":"ai_image",
-                      "prompt":"具体画面描述（与用户同语言）",
-                      "negativePrompt":"text, watermark, logo, blurry, low quality, deformed"
+                      "prompt":"具体画面描述（与用户同语言，必须含主题主体）",
+                      "promptEn":"English image prompt with the same subject entities (Ethereum, blockchain, etc.), cinematic, no long readable text",
+                      "negativePrompt":"unrelated cityscape, random people, watermark, blurry, low quality, deformed, wrong subject"
                     },
                     "motion":{
                       "type":"punch_in",
@@ -230,13 +249,14 @@ public class LangChain4jDirectorAdapter implements DirectorPort {
 
                 硬性规则：
                 1. shots 数量 %d～%d，总时长约 %d 秒
-                2. visual.type 默认 ai_image；prompt 与用户同语言，禁止 http URL，长度尽量 40～220 字（或英文 25～90 词）
-                3. 每一镜 visual.prompt 前 30 字内必须出现与用户主题直接相关的主体名词（勿整句只写氛围）
-                4. 至少一半镜头 overlay.layout=none（纯画面动效）
-                5. 不要输出 audio 文件路径；audio.mode 保持为 %s
-                6. %s
+                2. visual.type 默认 ai_image；prompt 与用户同语言，禁止 http URL，长度尽量 40～220 字
+                3. 每一镜必须同时写 visual.prompt（用户语言）与 visual.promptEn（英文出图用，25～90 词）
+                4. prompt 与 promptEn 前部都必须出现主题实体（专有名词可中英对应，如 以太坊/Ethereum、ETH）
+                5. 至少一半镜头 overlay.layout=none（纯画面动效）
+                6. 不要输出 audio 文件路径；audio.mode 保持为 %s
                 7. %s
-                8. 相邻镜头主体/景别要有变化，但都必须服务同一用户主题
+                8. %s
+                9. 相邻镜头主体/景别要有变化，但都必须服务同一用户主题；禁止整片空洞霓虹都市
                 """.formatted(
                 style,
                 lang,
