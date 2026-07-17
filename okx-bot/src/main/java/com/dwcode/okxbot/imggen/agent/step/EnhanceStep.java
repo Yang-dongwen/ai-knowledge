@@ -66,9 +66,10 @@ public class EnhanceStep implements PipelineStep {
         }
 
         try {
+            // languageHint 仅作偏好；适配器会与用户原文同语言润色，不强制英文化
             String enhanced = promptEnhancePort.enhance(
                     ctx.getTask().getPrompt(),
-                    "zh",
+                    "auto",
                     ctx.getTask().getLlmProvider(),
                     ctx.getTask().getLlmModel()
             );

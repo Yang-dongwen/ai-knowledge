@@ -85,6 +85,12 @@ export interface ChatConversation {
   title: string
   provider: string
   model: string
+  /** 会话温度 0~2 */
+  temperature?: number | null
+  /** 会话 max_tokens */
+  maxTokens?: number | null
+  /** 自定义 system prompt */
+  systemPrompt?: string | null
   createdAt: string
   updatedAt: string
 }
@@ -94,6 +100,28 @@ export interface ChatRequest {
   conversationId?: string
   provider?: string
   model?: string
+  temperature?: number
+  maxTokens?: number
+}
+
+export interface UpdateConversationRequest {
+  title?: string
+  provider?: string
+  model?: string
+  temperature?: number
+  maxTokens?: number
+  systemPrompt?: string
+  clearSystemPrompt?: boolean
+}
+
+export interface EditResendRequest {
+  conversationId: string
+  messageId: string
+  message: string
+  provider?: string
+  model?: string
+  temperature?: number
+  maxTokens?: number
 }
 
 export interface ChatResponse {

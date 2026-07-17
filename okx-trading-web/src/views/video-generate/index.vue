@@ -253,7 +253,14 @@
           </a-button>
         </div>
 
-        <a-empty v-if="!listLoading && !tasks.length" description="暂无任务，输入提示词开始生成" />
+        <EmptyState
+          v-if="!listLoading && !tasks.length"
+          scene="tasks"
+          compact
+          tone="soft"
+          title="还没有视频任务"
+          description="输入主题，规划分镜并生成短片"
+        />
 
         <div v-else class="task-list">
           <div
@@ -729,7 +736,12 @@
             </div>
           </div>
         </template>
-        <a-empty v-else description="选择左侧任务查看详情" />
+        <EmptyState
+          v-else
+          scene="detail"
+          title="选择左侧任务查看详情"
+          description="生成完成后可在此预览分镜与成片"
+        />
       </section>
     </div>
   </div>
@@ -758,6 +770,7 @@ import { videoApi } from '@/api/video.api'
 import { connectAigenTaskEvents } from '@/api/aigen.events'
 import { useAuthStore } from '@/stores/auth.store'
 import ModelManageModal from '@/views/video-extract/ModelManageModal.vue'
+import EmptyState from '@/components/EmptyState.vue'
 import type { AigenTaskItem, AigenTemplate, AiProvider, ImgGenImageModel } from '@/types/api'
 
 const auth = useAuthStore()

@@ -2,7 +2,7 @@
   <header class="app-header">
     <div class="header-inner">
       <!-- Logo -->
-      <div class="logo" @click="router.push('/video-extract')">
+      <div class="logo" @click="router.push('/home')">
         <div class="logo-mark">
           <span class="logo-mark-inner">AI</span>
         </div>
@@ -174,7 +174,8 @@ import {
   SyncOutlined,
   BellOutlined,
   DownOutlined,
-  TeamOutlined
+  TeamOutlined,
+  AppstoreOutlined
 } from '@ant-design/icons-vue'
 import { useSystemStore } from '@/stores/system.store'
 import ProfileCardModal from '@/components/ProfileCardModal.vue'
@@ -211,7 +212,7 @@ const TRADING_KEYS = new Set([
   'system-settings'
 ])
 
-const TOOLS_KEYS = new Set(['video-extract', 'video-generate', 'image-generate', 'ai-chat'])
+const TOOLS_KEYS = new Set(['home', 'video-extract', 'video-generate', 'image-generate', 'ai-chat'])
 
 /** 系统管理（仅超级管理员） */
 const ADMIN_KEYS = new Set(['user-manage'])
@@ -223,12 +224,20 @@ const ALL_MENU_GROUPS: MenuGroup[] = [
   {
     key: 'tools',
     title: 'AI 工具',
-    description: '对话、视频提取、视频生成与文生图',
+    description: '工作台、对话、视频与文生图',
     icon: markRaw(ToolOutlined),
     accent: '#7C3AED',
     accentSoft: '#F3E8FF',
     cols: 2,
     children: [
+      {
+        key: 'home',
+        title: '工作台',
+        description: '工具门户与快捷入口',
+        icon: markRaw(AppstoreOutlined),
+        iconBg: '#EEF2FF',
+        iconColor: '#4F46E5'
+      },
       {
         key: 'ai-chat',
         title: 'AI 对话',
@@ -392,7 +401,7 @@ const currentRouteKey = computed(() => route.path.split('/')[1] || 'video-extrac
 const isTradingRoute = computed(() => TRADING_KEYS.has(currentRouteKey.value))
 
 const activeGroupKey = computed(() => {
-  if (TOOLS_KEYS.has(currentRouteKey.value)) return 'tools'
+  if (currentRouteKey.value === 'home' || TOOLS_KEYS.has(currentRouteKey.value)) return 'tools'
   if (TRADING_KEYS.has(currentRouteKey.value)) return 'trading'
   if (ADMIN_KEYS.has(currentRouteKey.value)) return 'admin'
   return ''
@@ -424,7 +433,15 @@ onMounted(() => {
   document.addEventListener('click', onDocumentClick)
   // 登录后刷新角色，避免 localStorage 旧缓存导致菜单权限不准
   if (auth.isLoggedIn) {
-    auth.fetchMe().catch(() => undefined)
+    auth
+      .fetchMe()
+      .then(() => {
+        // 交易系统状态仅超管可读；勿在普通用户登录后请求
+        if (auth.isSuperAdmin) {
+          systemStore.fetchSystemStatus()
+        }
+      })
+      .catch(() => undefined)
   }
 })
 
@@ -485,10 +502,13 @@ function handleEmergencyStop() {
   top: 0;
   z-index: 200;
   height: 64px;
-  background: rgba(255, 255, 255, 0.86);
-  backdrop-filter: blur(14px);
-  border-bottom: 1px solid rgba(229, 231, 235, 0.9);
-  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.8) inset, 0 8px 24px rgba(15, 23, 42, 0.04);
+  background: rgba(255, 255, 255, 0.7);
+  backdrop-filter: saturate(180%) blur(18px);
+  -webkit-backdrop-filter: saturate(180%) blur(18px);
+  border-bottom: 1px solid rgba(226, 232, 240, 0.72);
+  box-shadow:
+    0 1px 0 rgba(255, 255, 255, 0.9) inset,
+    0 10px 30px rgba(99, 102, 241, 0.07);
 }
 
 .header-inner {
@@ -518,14 +538,26 @@ function handleEmergencyStop() {
 }
 
 .logo-mark {
-  width: 36px;
-  height: 36px;
-  border-radius: 10px;
-  background: linear-gradient(135deg, #6366F1 0%, #8B5CF6 50%, #A855F7 100%);
+  width: 38px;
+  height: 38px;
+  border-radius: 14px;
+  background: linear-gradient(135deg, #6366F1 0%, #7C3AED 48%, #A855F7 100%);
   display: flex;
   align-items: center;
   justify-content: center;
-  box-shadow: 0 6px 14px rgba(99, 102, 241, 0.35);
+  box-shadow:
+    0 8px 20px rgba(99, 102, 241, 0.38),
+    0 0 0 1px rgba(255, 255, 255, 0.25) inset;
+  position: relative;
+
+  &::after {
+    content: '';
+    position: absolute;
+    inset: 1px;
+    border-radius: 13px;
+    background: linear-gradient(180deg, rgba(255, 255, 255, 0.28), transparent 50%);
+    pointer-events: none;
+  }
 }
 
 .logo-mark-inner {
@@ -584,23 +616,28 @@ function handleEmergencyStop() {
   height: 40px;
   padding: 0 14px;
   border: 1px solid transparent;
-  border-radius: 10px;
+  border-radius: 999px;
   background: transparent;
-  color: #4B5563;
+  color: #475569;
   cursor: pointer;
   transition: all 0.18s ease;
   font-size: 14px;
 
   &:hover,
   &.open {
-    background: #F3F4F6;
-    color: #111827;
+    background: rgba(248, 250, 252, 0.95);
+    border-color: rgba(226, 232, 240, 0.9);
+    color: #0f172a;
+    box-shadow: 0 4px 14px rgba(15, 23, 42, 0.05);
   }
 
   &.active {
-    background: linear-gradient(180deg, #F5F3FF 0%, #EEF2FF 100%);
-    border-color: #E0E7FF;
+    background: linear-gradient(135deg, rgba(245, 243, 255, 0.98) 0%, rgba(238, 242, 255, 0.98) 100%);
+    border-color: rgba(199, 210, 254, 0.95);
     color: #4338CA;
+    box-shadow:
+      0 0 0 3px rgba(99, 102, 241, 0.08),
+      0 6px 16px rgba(99, 102, 241, 0.1);
 
     .nav-trigger-icon {
       color: #6366F1;
@@ -648,13 +685,14 @@ function handleEmergencyStop() {
   left: 0;
   min-width: 320px;
   max-width: min(920px, calc(100vw - 32px));
-  padding: 10px;
-  border-radius: 16px;
-  background: #fff;
-  border: 1px solid #E5E7EB;
+  padding: 12px;
+  border-radius: 20px;
+  background: rgba(255, 255, 255, 0.92);
+  backdrop-filter: blur(16px);
+  border: 1px solid rgba(226, 232, 240, 0.9);
   box-shadow:
-    0 4px 6px -1px rgba(15, 23, 42, 0.06),
-    0 18px 40px -12px rgba(15, 23, 42, 0.18);
+    0 4px 6px -1px rgba(15, 23, 42, 0.05),
+    0 22px 48px -12px rgba(79, 70, 229, 0.18);
   z-index: 50;
 
   /* 单列工具菜单：固定舒适宽度，条目纵向排列 */
@@ -743,10 +781,10 @@ function handleEmergencyStop() {
   text-align: left;
   padding: 12px 12px;
   border: 1px solid transparent;
-  border-radius: 12px;
+  border-radius: 14px;
   background: transparent;
   cursor: pointer;
-  transition: background 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease;
+  transition: background 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease, transform 0.15s ease;
   box-sizing: border-box;
 
   &:hover {
@@ -954,10 +992,10 @@ function handleEmergencyStop() {
 .icon-btn {
   width: 36px;
   height: 36px;
-  border: none;
-  border-radius: 10px;
+  border: 1px solid transparent;
+  border-radius: 999px;
   background: transparent;
-  color: #6B7280;
+  color: #64748b;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -966,8 +1004,10 @@ function handleEmergencyStop() {
   font-size: 16px;
 
   &:hover {
-    background: #F3F4F6;
-    color: #111827;
+    background: rgba(248, 250, 252, 0.95);
+    border-color: #e2e8f0;
+    color: #0f172a;
+    box-shadow: 0 4px 12px rgba(15, 23, 42, 0.05);
   }
 }
 
@@ -978,13 +1018,14 @@ function handleEmergencyStop() {
   padding: 4px 6px 4px 4px;
   margin-left: 2px;
   border-radius: 999px;
-  border: 1px solid #E5E7EB;
-  background: #fff;
+  border: 1px solid rgba(226, 232, 240, 0.95);
+  background: rgba(255, 255, 255, 0.88);
+  box-shadow: 0 2px 10px rgba(99, 102, 241, 0.05);
   transition: all 0.16s ease;
 
   &:hover {
-    border-color: #D1D5DB;
-    box-shadow: 0 2px 8px rgba(15, 23, 42, 0.06);
+    border-color: #c7d2fe;
+    box-shadow: 0 6px 18px rgba(99, 102, 241, 0.12);
   }
 }
 

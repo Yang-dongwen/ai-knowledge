@@ -23,7 +23,10 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.BooleanSupplier;
 import java.util.function.Consumer;
+
+import com.dwcode.okxbot.chat.stream.StreamCancelledException;
 
 /**
  * 统一 LLM Chat 门面（Phase A）。
@@ -156,18 +159,27 @@ public class LlmChatGateway {
      * 有 token 持续输出时可以超过该秒数，仅当空闲达到阈值才中断。
      * 底层 HTTP readTimeout 与应用层 idle watchdog 双重保障。
      *
-     * @return 完整助手文本
+     * @param cancelled 用户停止时返回 true；为 null 表示不可取消
+     * @return 完整助手文本；若被取消则抛出 {@link StreamCancelledException}（携带部分内容）
      */
     public String chatStream(List<ChatMessage> messages,
                              String providerKey,
                              String modelId,
                              LlmCallOptions options,
                              Consumer<String> onPartial) {
+        return chatStream(messages, providerKey, modelId, options, onPartial, null);
+    }
+
+    public String chatStream(List<ChatMessage> messages,
+                             String providerKey,
+                             String modelId,
+                             LlmCallOptions options,
+                             Consumer<String> onPartial,
+                             BooleanSupplier cancelled) {
         if (messages == null || messages.isEmpty()) {
             throw new BusinessException("LLM messages 不能为空");
         }
         LlmCallOptions opts = options != null ? options : LlmCallOptions.builder().build();
-        // 空闲超时：流式期间两次输出之间的最长等待
         int idleSec = opts.getTimeoutSeconds() != null
                 ? Math.max(1, opts.getTimeoutSeconds())
                 : 20;
@@ -176,7 +188,6 @@ public class LlmChatGateway {
         log.info("调用 LLM(langchain4j stream): provider={}, model={}, messages={}, idleTimeout={}s",
                 resolved.providerKey(), resolved.modelId(), messages.size(), idleSec);
 
-        // HTTP readTimeout = 空闲超时（有数据持续到达时不会因总时长被切断）
         LlmCallOptions streamOpts = LlmCallOptions.builder()
                 .temperature(opts.getTemperature())
                 .maxTokens(opts.getMaxTokens())
@@ -193,8 +204,11 @@ public class LlmChatGateway {
         AtomicReference<Throwable> errorRef = new AtomicReference<>();
         AtomicLong lastOutputAtMs = new AtomicLong(System.currentTimeMillis());
         AtomicBoolean finished = new AtomicBoolean(false);
+        AtomicBoolean userCancelled = new AtomicBoolean(false);
 
-        // 应用层空闲看门狗：连续 idleSec 无 token 则强制结束（不限制总生成时长）
+        BooleanSupplier isCancelled = () ->
+                (cancelled != null && cancelled.getAsBoolean()) || userCancelled.get();
+
         java.util.concurrent.ScheduledExecutorService idleWatch =
                 java.util.concurrent.Executors.newSingleThreadScheduledExecutor(r -> {
                     Thread t = new Thread(r, "llm-stream-idle-watch");
@@ -203,6 +217,13 @@ public class LlmChatGateway {
                 });
         idleWatch.scheduleAtFixedRate(() -> {
             if (finished.get()) {
+                return;
+            }
+            // 用户取消优先
+            if (isCancelled.getAsBoolean()) {
+                userCancelled.set(true);
+                finished.set(true);
+                done.countDown();
                 return;
             }
             long idleMs = System.currentTimeMillis() - lastOutputAtMs.get();
@@ -214,32 +235,51 @@ public class LlmChatGateway {
                 finished.set(true);
                 done.countDown();
             }
-        }, idleSec, 1, TimeUnit.SECONDS);
+        }, 200, 200, TimeUnit.MILLISECONDS);
 
         try {
             streaming.chat(messages, new StreamingChatResponseHandler() {
                 @Override
                 public void onPartialResponse(String partialResponse) {
+                    if (finished.get() || isCancelled.getAsBoolean()) {
+                        userCancelled.set(true);
+                        finished.set(true);
+                        done.countDown();
+                        return;
+                    }
                     if (partialResponse == null || partialResponse.isEmpty()) {
                         return;
                     }
-                    // 有输出则刷新空闲时钟
                     lastOutputAtMs.set(System.currentTimeMillis());
                     full.append(partialResponse);
                     if (onPartial != null) {
-                        onPartial.accept(partialResponse);
+                        try {
+                            onPartial.accept(partialResponse);
+                        } catch (Exception ex) {
+                            // 下游 SSE 断开：视为取消
+                            log.debug("onPartial 失败，视为取消: {}", ex.getMessage());
+                            userCancelled.set(true);
+                            finished.set(true);
+                            done.countDown();
+                        }
                     }
                 }
 
                 @Override
                 public void onCompleteResponse(ChatResponse response) {
+                    if (isCancelled.getAsBoolean()) {
+                        userCancelled.set(true);
+                        finished.set(true);
+                        done.countDown();
+                        return;
+                    }
                     try {
                         if (full.isEmpty() && response != null) {
                             String text = LlmContentHelper.extractText(response);
                             if (text != null && !text.isEmpty()) {
                                 lastOutputAtMs.set(System.currentTimeMillis());
                                 full.append(text);
-                                if (onPartial != null) {
+                                if (onPartial != null && !isCancelled.getAsBoolean()) {
                                     onPartial.accept(text);
                                 }
                             }
@@ -254,8 +294,9 @@ public class LlmChatGateway {
 
                 @Override
                 public void onError(Throwable error) {
-                    // 映射底层读超时为统一空闲文案
-                    if (isTimeoutError(error != null ? error.getMessage() : null)) {
+                    if (isCancelled.getAsBoolean()) {
+                        userCancelled.set(true);
+                    } else if (isTimeoutError(error != null ? error.getMessage() : null)) {
                         errorRef.compareAndSet(null,
                                 new BusinessException("模型 " + idleSec + " 秒未响应，已强制停止。"));
                     } else {
@@ -266,17 +307,23 @@ public class LlmChatGateway {
                 }
             });
 
-            // 总等待上限仅作兜底（约 30 分钟），正常长回复靠「空闲超时」打断，而非总时长 20s
             boolean completed = done.await(30, TimeUnit.MINUTES);
             if (!completed) {
                 throw new BusinessException("模型响应时间过长，已强制停止。");
             }
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
+            if (isCancelled.getAsBoolean() || !full.isEmpty()) {
+                throw new StreamCancelledException(full.toString());
+            }
             throw new BusinessException("LLM 流式调用被中断");
         } finally {
             finished.set(true);
             idleWatch.shutdownNow();
+        }
+
+        if (isCancelled.getAsBoolean() || userCancelled.get()) {
+            throw new StreamCancelledException(full.toString());
         }
 
         Throwable err = errorRef.get();

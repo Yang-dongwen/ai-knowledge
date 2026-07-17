@@ -4,12 +4,17 @@ import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.dwcode.okxbot.auth.security.SecurityUtils;
 import com.dwcode.okxbot.chat.config.AiProperties;
 import com.dwcode.okxbot.chat.config.AiProperties.ProviderConfig;
+import com.dwcode.okxbot.chat.stream.ChatStreamHandle;
+import com.dwcode.okxbot.chat.stream.ChatStreamRegistry;
+import com.dwcode.okxbot.chat.stream.StreamCancelledException;
 import com.dwcode.okxbot.common.ai.LlmCallOptions;
 import com.dwcode.okxbot.common.ai.LlmChatGateway;
 import com.dwcode.okxbot.common.exception.BusinessException;
 import com.dwcode.okxbot.video.service.AiModelConfigService;
 import com.dwcode.okxbot.chat.dto.ChatMessageDTO;
 import com.dwcode.okxbot.chat.dto.ChatRequest;
+import com.dwcode.okxbot.chat.dto.EditResendRequest;
+import com.dwcode.okxbot.chat.dto.UpdateConversationRequest;
 import com.dwcode.okxbot.chat.entity.ChatConversationEntity;
 import com.dwcode.okxbot.chat.entity.ChatMessageEntity;
 import com.dwcode.okxbot.chat.mapper.ChatConversationMapper;
@@ -72,6 +77,7 @@ public class ChatService {
     private final AiProperties aiProperties;
     private final AiModelConfigService aiModelConfigService;
     private final LlmChatGateway llmChatGateway;
+    private final ChatStreamRegistry chatStreamRegistry;
 
     /** 按 ai.response-timeout-seconds 构建；未响应即中断 */
     private OkHttpClient httpClient;
@@ -130,14 +136,24 @@ public class ChatService {
 
     /**
      * 当前登录用户的会话列表，按更新时间倒序。
+     *
+     * @param keyword 可选，标题模糊匹配
      */
-    public List<ChatConversationEntity> listConversations() {
+    public List<ChatConversationEntity> listConversations(String keyword) {
         Long userId = SecurityUtils.requireCurrentUserId();
-        return conversationMapper.selectList(
-                new LambdaQueryWrapper<ChatConversationEntity>()
-                        .eq(ChatConversationEntity::getUserId, userId)
-                        .orderByDesc(ChatConversationEntity::getUpdatedAt)
-        );
+        LambdaQueryWrapper<ChatConversationEntity> q = new LambdaQueryWrapper<ChatConversationEntity>()
+                .eq(ChatConversationEntity::getUserId, userId)
+                .orderByDesc(ChatConversationEntity::getUpdatedAt);
+        if (keyword != null && !keyword.isBlank()) {
+            String kw = keyword.trim();
+            q.like(ChatConversationEntity::getTitle, kw);
+        }
+        return conversationMapper.selectList(q);
+    }
+
+    /** 兼容无参调用 */
+    public List<ChatConversationEntity> listConversations() {
+        return listConversations(null);
     }
 
     /**
@@ -178,6 +194,65 @@ public class ChatService {
                         .eq(ChatMessageEntity::getConversationId, conv.getId())
         );
         conversationMapper.deleteById(conv.getId());
+    }
+
+    /**
+     * 重命名当前用户的会话。
+     */
+    public ChatConversationEntity renameConversation(Long conversationId, String title) {
+        UpdateConversationRequest req = new UpdateConversationRequest();
+        req.setTitle(title);
+        return updateConversation(conversationId, req);
+    }
+
+    /**
+     * 更新会话标题 / 模型 / 生成参数 / 系统提示。
+     */
+    public ChatConversationEntity updateConversation(Long conversationId, UpdateConversationRequest request) {
+        Long userId = SecurityUtils.requireCurrentUserId();
+        ChatConversationEntity conv = requireOwnedConversation(conversationId, userId);
+        if (request == null) {
+            return conv;
+        }
+        if (request.getTitle() != null) {
+            String t = request.getTitle().trim();
+            if (t.isEmpty()) {
+                throw new BusinessException(400, "标题不能为空");
+            }
+            if (t.length() > 100) {
+                t = t.substring(0, 100);
+            }
+            conv.setTitle(t);
+        }
+        if (request.getProvider() != null && !request.getProvider().isBlank()) {
+            conv.setProvider(request.getProvider().trim());
+        }
+        if (request.getModel() != null && !request.getModel().isBlank()) {
+            conv.setModel(request.getModel().trim());
+        }
+        if (request.getTemperature() != null) {
+            double t = request.getTemperature();
+            if (t < 0 || t > 2) {
+                throw new BusinessException(400, "temperature 需在 0~2");
+            }
+            conv.setTemperature(t);
+        }
+        if (request.getMaxTokens() != null) {
+            int m = request.getMaxTokens();
+            if (m < 64 || m > 16000) {
+                throw new BusinessException(400, "maxTokens 需在 64~16000");
+            }
+            conv.setMaxTokens(m);
+        }
+        if (Boolean.TRUE.equals(request.getClearSystemPrompt())) {
+            conv.setSystemPrompt(null);
+        } else if (request.getSystemPrompt() != null) {
+            String sp = request.getSystemPrompt().trim();
+            conv.setSystemPrompt(sp.isEmpty() ? null : sp);
+        }
+        conv.setUpdatedAt(LocalDateTime.now());
+        conversationMapper.updateById(conv);
+        return conv;
     }
 
     // ==================== 消息管理 ====================
@@ -252,13 +327,15 @@ public class ChatService {
      * </ul>
      */
     public void sendMessageStream(ChatRequest request, SseEmitter emitter) {
-        // 线程池不继承 ThreadLocal，显式传递 SecurityContext（含 userId），避免异步阶段鉴权丢失
         SecurityContext securityContext = SecurityContextHolder.getContext();
         streamExecutor.execute(() -> {
             SecurityContextHolder.setContext(securityContext);
+            ChatStreamHandle streamHandle = null;
+            Long userId = null;
+            Long conversationId = null;
             try {
-                Long userId = SecurityUtils.requireCurrentUserId();
-                Long conversationId = request.getConversationId();
+                userId = SecurityUtils.requireCurrentUserId();
+                conversationId = request.getConversationId();
 
                 ProviderConfig providerConfig = resolveProvider(request.getProvider());
                 String modelId = resolveModelId(providerConfig, request.getModel());
@@ -281,52 +358,336 @@ public class ChatService {
                 userMsg.setCreatedAt(LocalDateTime.now());
                 messageMapper.insert(userMsg);
 
+                // 请求级参数写回会话（便于下次打开仍生效）
+                applyRequestOptionsToConversation(conversationId, userId, request);
+
+                streamHandle = chatStreamRegistry.register(userId, conversationId);
+                bindEmitterCancel(emitter, streamHandle);
+
                 Map<String, Object> meta = new HashMap<>();
                 meta.put("conversationId", String.valueOf(conversationId));
+                meta.put("streamId", streamHandle.getStreamId());
                 meta.put("provider", providerKey);
                 meta.put("model", modelId);
                 emitter.send(SseEmitter.event().name("meta").data(objectMapper.writeValueAsString(meta)));
 
-                String aiReply = callAiApiStream(conversationId, providerKey, providerConfig, modelId, emitter);
+                ChatConversationEntity convSnap = conversationMapper.selectById(conversationId);
+                String aiReply = callAiApiStream(
+                        conversationId, providerKey, providerConfig, modelId,
+                        emitter, streamHandle, convSnap, request);
 
-                ChatMessageEntity assistantMsg = new ChatMessageEntity();
-                assistantMsg.setConversationId(conversationId);
-                assistantMsg.setRole("assistant");
-                assistantMsg.setContent(aiReply);
-                assistantMsg.setCreatedAt(LocalDateTime.now());
-                messageMapper.insert(assistantMsg);
+                persistAssistantAndComplete(conversationId, userId, request.getMessage(),
+                        aiReply, false, emitter);
 
-                touchConversationTitle(conversationId, userId, request.getMessage());
-
-                Map<String, Object> done = new HashMap<>();
-                done.put("messageId", String.valueOf(assistantMsg.getId()));
-                emitter.send(SseEmitter.event().name("done").data(objectMapper.writeValueAsString(done)));
-                emitter.complete();
-
+            } catch (StreamCancelledException e) {
+                handleStreamCancelled(conversationId, userId, e, request.getMessage(), emitter);
             } catch (BusinessException e) {
                 log.warn("SSE 业务拒绝: {}", e.getMessage());
-                try {
-                    Map<String, Object> error = new HashMap<>();
-                    error.put("message", e.getMessage() != null ? e.getMessage() : "无权限或请求无效");
-                    emitter.send(SseEmitter.event().name("error").data(objectMapper.writeValueAsString(error)));
-                    emitter.complete();
-                } catch (Exception ex) {
-                    emitter.completeWithError(ex);
-                }
+                sendSseErrorAndComplete(emitter, e.getMessage() != null ? e.getMessage() : "无权限或请求无效");
             } catch (Exception e) {
                 log.error("SSE 流式响应异常", e);
-                try {
-                    Map<String, Object> error = new HashMap<>();
-                    error.put("message", "AI 服务出现异常，请稍后重试。");
-                    emitter.send(SseEmitter.event().name("error").data(objectMapper.writeValueAsString(error)));
-                    emitter.complete();
-                } catch (Exception ex) {
-                    emitter.completeWithError(ex);
-                }
+                sendSseErrorAndComplete(emitter, "AI 服务出现异常，请稍后重试。");
             } finally {
+                if (streamHandle != null) {
+                    chatStreamRegistry.unregister(streamHandle);
+                }
                 SecurityContextHolder.clearContext();
             }
         });
+    }
+
+    /**
+     * 停止当前用户的活跃流（真取消：后端停止推送并只保留部分内容）。
+     *
+     * @return true 找到并标记取消
+     */
+    public boolean stopStream(String streamId, Long conversationId) {
+        Long userId = SecurityUtils.requireCurrentUserId();
+        if (conversationId != null) {
+            // 防止停别人的会话（即使 streamId 猜错）
+            requireOwnedConversation(conversationId, userId);
+        }
+        boolean ok = chatStreamRegistry.cancel(userId, streamId, conversationId);
+        log.info("stopStream: userId={}, streamId={}, conv={}, ok={}",
+                userId, streamId, conversationId, ok);
+        return ok;
+    }
+
+    /**
+     * 重新生成最后一条 AI 回复（SSE）。
+     * <ol>
+     *   <li>校验会话归属</li>
+     *   <li>删除末尾连续的 assistant 消息</li>
+     *   <li>要求此时最后一条为 user</li>
+     *   <li>不插入新 user，直接流式生成新 assistant</li>
+     * </ol>
+     */
+    public void regenerateStream(ChatRequest request, SseEmitter emitter) {
+        SecurityContext securityContext = SecurityContextHolder.getContext();
+        streamExecutor.execute(() -> {
+            SecurityContextHolder.setContext(securityContext);
+            ChatStreamHandle streamHandle = null;
+            Long userId = null;
+            Long conversationId = null;
+            try {
+                userId = SecurityUtils.requireCurrentUserId();
+                conversationId = request.getConversationId();
+                if (conversationId == null) {
+                    throw new BusinessException(400, "重新生成需要指定会话");
+                }
+                requireOwnedConversation(conversationId, userId);
+
+                ProviderConfig providerConfig = resolveProvider(request.getProvider());
+                String modelId = resolveModelId(providerConfig, request.getModel());
+                String providerKey = resolveProviderKey(request.getProvider(), providerConfig);
+                updateConversationModel(conversationId, userId, request.getProvider(), request.getModel());
+
+                List<ChatMessageEntity> history = messageMapper.selectList(
+                        new LambdaQueryWrapper<ChatMessageEntity>()
+                                .eq(ChatMessageEntity::getConversationId, conversationId)
+                                .orderByDesc(ChatMessageEntity::getCreatedAt)
+                                .last("LIMIT 20")
+                );
+                for (ChatMessageEntity msg : history) {
+                    if ("assistant".equalsIgnoreCase(msg.getRole())) {
+                        messageMapper.deleteById(msg.getId());
+                    } else {
+                        break;
+                    }
+                }
+
+                ChatMessageEntity last = messageMapper.selectOne(
+                        new LambdaQueryWrapper<ChatMessageEntity>()
+                                .eq(ChatMessageEntity::getConversationId, conversationId)
+                                .orderByDesc(ChatMessageEntity::getCreatedAt)
+                                .last("LIMIT 1")
+                );
+                if (last == null || !"user".equalsIgnoreCase(last.getRole())) {
+                    throw new BusinessException(400, "没有可重新生成的用户消息");
+                }
+
+                applyRequestOptionsToConversation(conversationId, userId, request);
+
+                streamHandle = chatStreamRegistry.register(userId, conversationId);
+                bindEmitterCancel(emitter, streamHandle);
+
+                Map<String, Object> meta = new HashMap<>();
+                meta.put("conversationId", String.valueOf(conversationId));
+                meta.put("streamId", streamHandle.getStreamId());
+                meta.put("provider", providerKey);
+                meta.put("model", modelId);
+                meta.put("regenerate", true);
+                emitter.send(SseEmitter.event().name("meta").data(objectMapper.writeValueAsString(meta)));
+
+                ChatConversationEntity convSnap = conversationMapper.selectById(conversationId);
+                String aiReply = callAiApiStream(
+                        conversationId, providerKey, providerConfig, modelId,
+                        emitter, streamHandle, convSnap, request);
+
+                persistAssistantAndComplete(conversationId, userId, null, aiReply, false, emitter);
+
+            } catch (StreamCancelledException e) {
+                handleStreamCancelled(conversationId, userId, e, null, emitter);
+            } catch (BusinessException e) {
+                log.warn("SSE regenerate 业务拒绝: {}", e.getMessage());
+                sendSseErrorAndComplete(emitter, e.getMessage() != null ? e.getMessage() : "无权限或请求无效");
+            } catch (Exception e) {
+                log.error("SSE regenerate 异常", e);
+                sendSseErrorAndComplete(emitter, "AI 服务出现异常，请稍后重试。");
+            } finally {
+                if (streamHandle != null) {
+                    chatStreamRegistry.unregister(streamHandle);
+                }
+                SecurityContextHolder.clearContext();
+            }
+        });
+    }
+
+    /**
+     * 编辑用户消息并从此重发（SSE）。
+     */
+    public void editResendStream(EditResendRequest request, SseEmitter emitter) {
+        SecurityContext securityContext = SecurityContextHolder.getContext();
+        streamExecutor.execute(() -> {
+            SecurityContextHolder.setContext(securityContext);
+            ChatStreamHandle streamHandle = null;
+            Long userId = null;
+            Long conversationId = null;
+            try {
+                userId = SecurityUtils.requireCurrentUserId();
+                conversationId = request.getConversationId();
+                requireOwnedConversation(conversationId, userId);
+
+                ChatMessageEntity target = messageMapper.selectById(request.getMessageId());
+                if (target == null || !conversationId.equals(target.getConversationId())) {
+                    throw new BusinessException(404, "消息不存在");
+                }
+                if (!"user".equalsIgnoreCase(target.getRole())) {
+                    throw new BusinessException(400, "只能编辑用户消息");
+                }
+
+                // 删除该消息之后的所有消息
+                messageMapper.delete(
+                        new LambdaQueryWrapper<ChatMessageEntity>()
+                                .eq(ChatMessageEntity::getConversationId, conversationId)
+                                .gt(ChatMessageEntity::getCreatedAt, target.getCreatedAt())
+                );
+                // 同秒多条时用 id 再扫一遍更稳：删除 id 更大的
+                messageMapper.delete(
+                        new LambdaQueryWrapper<ChatMessageEntity>()
+                                .eq(ChatMessageEntity::getConversationId, conversationId)
+                                .gt(ChatMessageEntity::getId, target.getId())
+                );
+
+                String newText = request.getMessage().trim();
+                target.setContent(newText);
+                messageMapper.updateById(target);
+
+                ProviderConfig providerConfig = resolveProvider(request.getProvider());
+                String modelId = resolveModelId(providerConfig, request.getModel());
+                String providerKey = resolveProviderKey(request.getProvider(), providerConfig);
+                updateConversationModel(conversationId, userId, request.getProvider(), request.getModel());
+
+                ChatRequest optReq = new ChatRequest();
+                optReq.setTemperature(request.getTemperature());
+                optReq.setMaxTokens(request.getMaxTokens());
+                applyRequestOptionsToConversation(conversationId, userId, optReq);
+
+                streamHandle = chatStreamRegistry.register(userId, conversationId);
+                bindEmitterCancel(emitter, streamHandle);
+
+                Map<String, Object> meta = new HashMap<>();
+                meta.put("conversationId", String.valueOf(conversationId));
+                meta.put("streamId", streamHandle.getStreamId());
+                meta.put("provider", providerKey);
+                meta.put("model", modelId);
+                meta.put("editResend", true);
+                meta.put("messageId", String.valueOf(target.getId()));
+                emitter.send(SseEmitter.event().name("meta").data(objectMapper.writeValueAsString(meta)));
+
+                ChatConversationEntity convSnap = conversationMapper.selectById(conversationId);
+                String aiReply = callAiApiStream(
+                        conversationId, providerKey, providerConfig, modelId,
+                        emitter, streamHandle, convSnap, optReq);
+
+                persistAssistantAndComplete(conversationId, userId, newText, aiReply, false, emitter);
+
+            } catch (StreamCancelledException e) {
+                handleStreamCancelled(conversationId, userId, e, null, emitter);
+            } catch (BusinessException e) {
+                log.warn("SSE edit-resend 业务拒绝: {}", e.getMessage());
+                sendSseErrorAndComplete(emitter, e.getMessage() != null ? e.getMessage() : "无权限或请求无效");
+            } catch (Exception e) {
+                log.error("SSE edit-resend 异常", e);
+                sendSseErrorAndComplete(emitter, "AI 服务出现异常，请稍后重试。");
+            } finally {
+                if (streamHandle != null) {
+                    chatStreamRegistry.unregister(streamHandle);
+                }
+                SecurityContextHolder.clearContext();
+            }
+        });
+    }
+
+    private void bindEmitterCancel(SseEmitter emitter, ChatStreamHandle handle) {
+        // 客户端断开 SSE 时也标记取消，避免后台继续跑完写库
+        emitter.onCompletion(() -> {
+            if (handle != null) {
+                handle.cancel();
+            }
+        });
+        emitter.onTimeout(() -> {
+            if (handle != null) {
+                handle.cancel();
+            }
+        });
+        emitter.onError(e -> {
+            if (handle != null) {
+                handle.cancel();
+            }
+        });
+    }
+
+    private void handleStreamCancelled(Long conversationId,
+                                       Long userId,
+                                       StreamCancelledException e,
+                                       String userMessageForTitle,
+                                       SseEmitter emitter) {
+        try {
+            String partial = e.getPartialContent();
+            if (conversationId != null && userId != null && partial != null && !partial.isBlank()) {
+                persistAssistantAndComplete(conversationId, userId, userMessageForTitle, partial, true, emitter);
+            } else {
+                Map<String, Object> done = new HashMap<>();
+                done.put("cancelled", true);
+                done.put("messageId", "");
+                emitter.send(SseEmitter.event().name("done").data(objectMapper.writeValueAsString(done)));
+                emitter.complete();
+            }
+        } catch (Exception ex) {
+            log.warn("处理取消结果失败: {}", ex.getMessage());
+            try {
+                emitter.complete();
+            } catch (Exception ignored) {
+            }
+        }
+    }
+
+    private void persistAssistantAndComplete(Long conversationId,
+                                             Long userId,
+                                             String userMessageForTitle,
+                                             String aiReply,
+                                             boolean cancelled,
+                                             SseEmitter emitter) throws Exception {
+        String content = aiReply != null ? aiReply : "";
+        if (cancelled && !content.isBlank() && !content.contains("已停止生成")) {
+            content = content + "\n\n（已停止生成）";
+        }
+        if (content.isBlank()) {
+            Map<String, Object> done = new HashMap<>();
+            done.put("cancelled", cancelled);
+            done.put("messageId", "");
+            emitter.send(SseEmitter.event().name("done").data(objectMapper.writeValueAsString(done)));
+            emitter.complete();
+            return;
+        }
+
+        ChatMessageEntity assistantMsg = new ChatMessageEntity();
+        assistantMsg.setConversationId(conversationId);
+        assistantMsg.setRole("assistant");
+        assistantMsg.setContent(content);
+        assistantMsg.setCreatedAt(LocalDateTime.now());
+        messageMapper.insert(assistantMsg);
+
+        if (userMessageForTitle != null) {
+            touchConversationTitle(conversationId, userId, userMessageForTitle);
+        } else {
+            ChatConversationEntity conv = conversationMapper.selectById(conversationId);
+            if (conv != null && conv.getUserId() != null && conv.getUserId().equals(userId)) {
+                conv.setUpdatedAt(LocalDateTime.now());
+                conversationMapper.updateById(conv);
+            }
+        }
+
+        Map<String, Object> done = new HashMap<>();
+        done.put("messageId", String.valueOf(assistantMsg.getId()));
+        done.put("cancelled", cancelled);
+        emitter.send(SseEmitter.event().name("done").data(objectMapper.writeValueAsString(done)));
+        emitter.complete();
+    }
+
+    private void sendSseErrorAndComplete(SseEmitter emitter, String message) {
+        try {
+            Map<String, Object> error = new HashMap<>();
+            error.put("message", message);
+            emitter.send(SseEmitter.event().name("error").data(objectMapper.writeValueAsString(error)));
+            emitter.complete();
+        } catch (Exception ex) {
+            try {
+                emitter.completeWithError(ex);
+            } catch (Exception ignored) {
+            }
+        }
     }
 
     /**
@@ -449,35 +810,97 @@ public class ChatService {
 
     // ==================== AI 调用 ====================
 
-    private LlmCallOptions chatCallOptions() {
+    private static final double DEFAULT_TEMPERATURE = 0.7;
+    private static final int DEFAULT_MAX_TOKENS = 2000;
+
+    private void applyRequestOptionsToConversation(Long conversationId, Long userId, ChatRequest request) {
+        if (request == null || conversationId == null) {
+            return;
+        }
+        boolean need = request.getTemperature() != null || request.getMaxTokens() != null;
+        if (!need) {
+            return;
+        }
+        ChatConversationEntity conv = conversationMapper.selectOne(
+                new LambdaQueryWrapper<ChatConversationEntity>()
+                        .eq(ChatConversationEntity::getId, conversationId)
+                        .eq(ChatConversationEntity::getUserId, userId)
+        );
+        if (conv == null) {
+            return;
+        }
+        if (request.getTemperature() != null) {
+            conv.setTemperature(clampTemperature(request.getTemperature()));
+        }
+        if (request.getMaxTokens() != null) {
+            conv.setMaxTokens(clampMaxTokens(request.getMaxTokens()));
+        }
+        conv.setUpdatedAt(LocalDateTime.now());
+        conversationMapper.updateById(conv);
+    }
+
+    private LlmCallOptions chatCallOptions(ChatConversationEntity conv, ChatRequest request) {
+        double temp = DEFAULT_TEMPERATURE;
+        int maxTok = DEFAULT_MAX_TOKENS;
+        if (conv != null && conv.getTemperature() != null) {
+            temp = conv.getTemperature();
+        }
+        if (conv != null && conv.getMaxTokens() != null) {
+            maxTok = conv.getMaxTokens();
+        }
+        if (request != null && request.getTemperature() != null) {
+            temp = clampTemperature(request.getTemperature());
+        }
+        if (request != null && request.getMaxTokens() != null) {
+            maxTok = clampMaxTokens(request.getMaxTokens());
+        }
         return LlmCallOptions.builder()
-                .temperature(0.7)
-                .maxTokens(2000)
+                .temperature(temp)
+                .maxTokens(maxTok)
                 .maxRetries(0)
                 .timeoutSeconds(responseTimeoutSeconds())
                 .build();
+    }
+
+    private static double clampTemperature(double t) {
+        return Math.max(0.0, Math.min(2.0, t));
+    }
+
+    private static int clampMaxTokens(int m) {
+        return Math.max(64, Math.min(16000, m));
+    }
+
+    private String resolveSystemPrompt(ChatConversationEntity conv) {
+        if (conv != null && conv.getSystemPrompt() != null && !conv.getSystemPrompt().isBlank()) {
+            return conv.getSystemPrompt().trim();
+        }
+        return SYSTEM_PROMPT;
     }
 
     private String callAiApi(Long conversationId, String providerKey, ProviderConfig provider, String modelId) {
         if (provider == null || provider.getApiKey() == null || provider.getApiKey().isEmpty()) {
             return buildOfflineReply();
         }
-
+        ChatConversationEntity conv = conversationMapper.selectById(conversationId);
         if (aiProperties.isLangChain4jChatEngine()) {
-            return callAiApiLangChain4j(conversationId, providerKey, modelId);
+            return callAiApiLangChain4j(conversationId, providerKey, modelId, conv, null);
         }
-        return callAiApiOkHttp(conversationId, provider, modelId);
+        return callAiApiOkHttp(conversationId, provider, modelId, conv, null);
     }
 
     /**
      * 流式调用 AI API，逐步将增量内容通过 SSE 推送给前端。
      * 返回完整的 AI 回复内容（用于持久化）。
+     * 若用户取消则抛出 {@link StreamCancelledException}。
      */
     private String callAiApiStream(Long conversationId,
                                    String providerKey,
                                    ProviderConfig provider,
                                    String modelId,
-                                   SseEmitter emitter) {
+                                   SseEmitter emitter,
+                                   ChatStreamHandle streamHandle,
+                                   ChatConversationEntity conv,
+                                   ChatRequest request) {
         if (provider == null || provider.getApiKey() == null || provider.getApiKey().isEmpty()) {
             String offlineReply = buildOfflineReply();
             sendStreamDelta(emitter, offlineReply);
@@ -485,19 +908,24 @@ public class ChatService {
         }
 
         if (aiProperties.isLangChain4jChatEngine()) {
-            return callAiApiStreamLangChain4j(conversationId, providerKey, modelId, emitter);
+            return callAiApiStreamLangChain4j(conversationId, providerKey, modelId, emitter, streamHandle, conv, request);
         }
-        return callAiApiStreamOkHttp(conversationId, provider, modelId, emitter);
+        return callAiApiStreamOkHttp(conversationId, provider, modelId, emitter, streamHandle, conv, request);
     }
 
     // ---------- LangChain4j（默认，与三工具共用 ai.chat-engine） ----------
 
-    private String callAiApiLangChain4j(Long conversationId, String providerKey, String modelId) {
+    private String callAiApiLangChain4j(Long conversationId,
+                                        String providerKey,
+                                        String modelId,
+                                        ChatConversationEntity conv,
+                                        ChatRequest request) {
         try {
-            List<dev.langchain4j.data.message.ChatMessage> messages = buildLangChainMessages(conversationId);
+            List<dev.langchain4j.data.message.ChatMessage> messages =
+                    buildLangChainMessages(conversationId, resolveSystemPrompt(conv));
             log.info("聊天调用 langchain4j: provider={}, model={}, messages={}",
                     providerKey, modelId, messages.size());
-            return llmChatGateway.chatMessages(messages, providerKey, modelId, chatCallOptions());
+            return llmChatGateway.chatMessages(messages, providerKey, modelId, chatCallOptions(conv, request));
         } catch (Exception e) {
             if (isTimeout(e)) {
                 log.warn("AI API 超时(langchain4j): provider={}, model={}, timeout={}s",
@@ -512,10 +940,14 @@ public class ChatService {
     private String callAiApiStreamLangChain4j(Long conversationId,
                                               String providerKey,
                                               String modelId,
-                                              SseEmitter emitter) {
+                                              SseEmitter emitter,
+                                              ChatStreamHandle streamHandle,
+                                              ChatConversationEntity conv,
+                                              ChatRequest request) {
         StringBuilder fullContent = new StringBuilder();
         try {
-            List<dev.langchain4j.data.message.ChatMessage> messages = buildLangChainMessages(conversationId);
+            List<dev.langchain4j.data.message.ChatMessage> messages =
+                    buildLangChainMessages(conversationId, resolveSystemPrompt(conv));
             log.info("聊天流式调用 langchain4j: provider={}, model={}, messages={}",
                     providerKey, modelId, messages.size());
 
@@ -523,18 +955,27 @@ public class ChatService {
                     messages,
                     providerKey,
                     modelId,
-                    chatCallOptions(),
+                    chatCallOptions(conv, request),
                     token -> {
+                        if (streamHandle != null && streamHandle.isCancelled()) {
+                            throw new StreamCancelledException(fullContent.toString());
+                        }
                         fullContent.append(token);
                         sendStreamDelta(emitter, token);
-                    });
+                    },
+                    () -> streamHandle != null && streamHandle.isCancelled());
             if (full == null || full.isBlank()) {
                 String fallback = "抱歉，AI 未返回有效回复。";
                 sendStreamDelta(emitter, fallback);
                 return fallback;
             }
             return full;
+        } catch (StreamCancelledException e) {
+            throw e;
         } catch (Exception e) {
+            if (streamHandle != null && streamHandle.isCancelled()) {
+                throw new StreamCancelledException(fullContent.toString());
+            }
             if (isTimeout(e)) {
                 log.warn("AI API 流式超时(langchain4j): provider={}, model={}, timeout={}s, partialChars={}",
                         providerKey, modelId, responseTimeoutSeconds(), fullContent.length());
@@ -549,15 +990,20 @@ public class ChatService {
 
     // ---------- OkHttp 回滚（ai.chat-engine=okhttp） ----------
 
-    private String callAiApiOkHttp(Long conversationId, ProviderConfig provider, String modelId) {
+    private String callAiApiOkHttp(Long conversationId,
+                                   ProviderConfig provider,
+                                   String modelId,
+                                   ChatConversationEntity conv,
+                                   ChatRequest request) {
         try {
-            List<Map<String, String>> messages = buildMessagesMap(conversationId);
+            List<Map<String, String>> messages = buildMessagesMap(conversationId, resolveSystemPrompt(conv));
+            LlmCallOptions opts = chatCallOptions(conv, request);
 
             Map<String, Object> requestBody = new HashMap<>();
             requestBody.put("model", modelId);
             requestBody.put("messages", messages);
-            requestBody.put("temperature", 0.7);
-            requestBody.put("max_tokens", 2000);
+            requestBody.put("temperature", opts.getTemperature());
+            requestBody.put("max_tokens", opts.getMaxTokens());
 
             String jsonBody = objectMapper.writeValueAsString(requestBody);
             String chatUrl = buildChatUrl(provider.getBaseUrl());
@@ -601,15 +1047,19 @@ public class ChatService {
     private String callAiApiStreamOkHttp(Long conversationId,
                                          ProviderConfig provider,
                                          String modelId,
-                                         SseEmitter emitter) {
+                                         SseEmitter emitter,
+                                         ChatStreamHandle streamHandle,
+                                         ChatConversationEntity conv,
+                                         ChatRequest request) {
         try {
-            List<Map<String, String>> messages = buildMessagesMap(conversationId);
+            List<Map<String, String>> messages = buildMessagesMap(conversationId, resolveSystemPrompt(conv));
+            LlmCallOptions opts = chatCallOptions(conv, request);
 
             Map<String, Object> requestBody = new HashMap<>();
             requestBody.put("model", modelId);
             requestBody.put("messages", messages);
-            requestBody.put("temperature", 0.7);
-            requestBody.put("max_tokens", 2000);
+            requestBody.put("temperature", opts.getTemperature());
+            requestBody.put("max_tokens", opts.getMaxTokens());
             requestBody.put("stream", true);
 
             String jsonBody = objectMapper.writeValueAsString(requestBody);
@@ -640,6 +1090,10 @@ public class ChatService {
                         new InputStreamReader(response.body().byteStream(), "UTF-8"))) {
                     String line;
                     while ((line = reader.readLine()) != null) {
+                        if (streamHandle != null && streamHandle.isCancelled()) {
+                            call.cancel();
+                            throw new StreamCancelledException(fullContent.toString());
+                        }
                         if (line.isEmpty()) {
                             continue;
                         }
@@ -663,10 +1117,16 @@ public class ChatService {
                                     sendStreamDelta(emitter, content);
                                 }
                             }
+                        } catch (StreamCancelledException sce) {
+                            throw sce;
                         } catch (Exception parseEx) {
                             log.debug("解析流式数据行失败: {}", data, parseEx);
                         }
                     }
+                }
+
+                if (streamHandle != null && streamHandle.isCancelled()) {
+                    throw new StreamCancelledException(fullContent.toString());
                 }
 
                 if (fullContent.isEmpty()) {
@@ -676,8 +1136,14 @@ public class ChatService {
                 }
 
                 return fullContent.toString();
+            } catch (StreamCancelledException e) {
+                call.cancel();
+                throw e;
             } catch (Exception e) {
                 call.cancel();
+                if (streamHandle != null && streamHandle.isCancelled()) {
+                    throw new StreamCancelledException(fullContent.toString());
+                }
                 if (isTimeout(e)) {
                     log.warn("AI API 流式超时(okhttp): provider={}, model={}, timeout={}s, partialChars={}",
                             provider.getName(), modelId, responseTimeoutSeconds(), fullContent.length());
@@ -685,6 +1151,8 @@ public class ChatService {
                 }
                 throw e;
             }
+        } catch (StreamCancelledException e) {
+            throw e;
         } catch (Exception e) {
             if (isTimeout(e)) {
                 log.warn("AI API 流式超时(okhttp): provider={}, model={}, timeout={}s",
@@ -738,10 +1206,11 @@ public class ChatService {
     /**
      * 构建 LangChain4j 多轮消息：system + 近期历史。
      */
-    private List<dev.langchain4j.data.message.ChatMessage> buildLangChainMessages(Long conversationId) {
+    private List<dev.langchain4j.data.message.ChatMessage> buildLangChainMessages(Long conversationId,
+                                                                                 String systemPrompt) {
         List<ChatMessageEntity> history = loadHistory(conversationId);
         List<dev.langchain4j.data.message.ChatMessage> messages = new ArrayList<>();
-        messages.add(SystemMessage.from(SYSTEM_PROMPT));
+        messages.add(SystemMessage.from(systemPrompt != null ? systemPrompt : SYSTEM_PROMPT));
         for (ChatMessageEntity msg : history) {
             String content = msg.getContent() != null ? msg.getContent() : "";
             if ("assistant".equalsIgnoreCase(msg.getRole())) {
@@ -754,14 +1223,14 @@ public class ChatService {
     }
 
     /**
-     * 构建 OkHttp 用 messages：固定 system + 近期历史。
+     * 构建 OkHttp 用 messages：system + 近期历史。
      */
-    private List<Map<String, String>> buildMessagesMap(Long conversationId) {
+    private List<Map<String, String>> buildMessagesMap(Long conversationId, String systemPrompt) {
         List<ChatMessageEntity> historyMessages = loadHistory(conversationId);
         List<Map<String, String>> messages = new ArrayList<>();
         Map<String, String> sysMsg = new HashMap<>();
         sysMsg.put("role", "system");
-        sysMsg.put("content", SYSTEM_PROMPT);
+        sysMsg.put("content", systemPrompt != null ? systemPrompt : SYSTEM_PROMPT);
         messages.add(sysMsg);
 
         for (ChatMessageEntity msg : historyMessages) {

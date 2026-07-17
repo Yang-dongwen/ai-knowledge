@@ -20,4 +20,10 @@ public class ChatRequest {
 
     /** 模型ID，不传则使用供应商默认模型 */
     private String model;
+
+    /** 本次温度覆盖（可选）；否则用会话设置 / 默认 0.7 */
+    private Double temperature;
+
+    /** 本次 max_tokens 覆盖（可选）；否则用会话设置 / 默认 2000 */
+    private Integer maxTokens;
 }

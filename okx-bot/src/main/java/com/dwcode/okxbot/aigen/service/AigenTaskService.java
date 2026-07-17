@@ -134,8 +134,9 @@ public class AigenTaskService {
         }
 
         String language = blankToNull(options.getLanguage());
-        if (language == null) {
-            language = "zh";
+        if (language == null || "auto".equalsIgnoreCase(language)) {
+            // 按用户提示词粗略判定，后续分镜/口播/画面 prompt 均跟随该语言
+            language = detectLanguageFromPrompt(prompt);
         }
 
         String llmProvider = blankToNull(options.getLlmProvider());
@@ -835,6 +836,24 @@ public class AigenTaskService {
     private static String deriveTitle(String prompt) {
         String t = prompt.trim().replaceAll("\\s+", " ");
         return t.length() <= 40 ? t : t.substring(0, 40) + "…";
+    }
+
+    /** 根据提示词字符粗略判定语言：含较多 CJK 则为 zh，否则 en */
+    private static String detectLanguageFromPrompt(String text) {
+        if (text == null || text.isBlank()) {
+            return "zh";
+        }
+        int cjk = 0;
+        for (int i = 0; i < text.length(); i++) {
+            Character.UnicodeScript script = Character.UnicodeScript.of(text.charAt(i));
+            if (script == Character.UnicodeScript.HAN
+                    || script == Character.UnicodeScript.HIRAGANA
+                    || script == Character.UnicodeScript.KATAKANA
+                    || script == Character.UnicodeScript.HANGUL) {
+                cjk++;
+            }
+        }
+        return cjk * 2 >= Math.max(1, text.length() / 4) ? "zh" : "en";
     }
 
     private static String blankToNull(String s) {

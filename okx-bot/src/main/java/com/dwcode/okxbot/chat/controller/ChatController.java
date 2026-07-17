@@ -1,6 +1,10 @@
 package com.dwcode.okxbot.chat.controller;
 
 import com.dwcode.okxbot.chat.dto.ChatRequest;
+import com.dwcode.okxbot.chat.dto.EditResendRequest;
+import com.dwcode.okxbot.chat.dto.RenameConversationRequest;
+import com.dwcode.okxbot.chat.dto.StopChatRequest;
+import com.dwcode.okxbot.chat.dto.UpdateConversationRequest;
 import com.dwcode.okxbot.chat.entity.ChatConversationEntity;
 import com.dwcode.okxbot.chat.service.ChatService;
 import com.dwcode.okxbot.common.response.ApiResult;
@@ -11,6 +15,7 @@ import org.springframework.http.MediaType;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -35,10 +40,33 @@ public class ChatController {
 
     /**
      * 获取会话列表。
+     *
+     * @param keyword 可选，按标题模糊搜索
      */
     @GetMapping("/conversations")
-    public ApiResult<List<ChatConversationEntity>> listConversations() {
-        return ApiResult.ok(chatService.listConversations());
+    public ApiResult<List<ChatConversationEntity>> listConversations(
+            @RequestParam(required = false) String keyword) {
+        return ApiResult.ok(chatService.listConversations(keyword));
+    }
+
+    /**
+     * 重命名会话（兼容旧客户端）。
+     */
+    @PatchMapping("/conversations/{conversationId}")
+    public ApiResult<ChatConversationEntity> renameConversation(
+            @PathVariable Long conversationId,
+            @Valid @RequestBody RenameConversationRequest request) {
+        return ApiResult.ok(chatService.renameConversation(conversationId, request.getTitle()));
+    }
+
+    /**
+     * 更新会话：标题 / 模型 / temperature / maxTokens / systemPrompt。
+     */
+    @PutMapping("/conversations/{conversationId}")
+    public ApiResult<ChatConversationEntity> updateConversation(
+            @PathVariable Long conversationId,
+            @Valid @RequestBody UpdateConversationRequest request) {
+        return ApiResult.ok(chatService.updateConversation(conversationId, request));
     }
 
     /**
@@ -60,16 +88,58 @@ public class ChatController {
      */
     @PostMapping(value = "/send", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
     public SseEmitter sendMessage(@Valid @RequestBody ChatRequest request) {
-        // 超时设置为 3 分钟
-        SseEmitter emitter = new SseEmitter(180_000L);
+        // 长回复兜底；空闲无输出由业务层 idle timeout 控制
+        SseEmitter emitter = new SseEmitter(30 * 60_000L);
 
         emitter.onCompletion(() -> log.debug("SSE 连接完成"));
         emitter.onTimeout(() -> log.warn("SSE 连接超时"));
         emitter.onError(e -> log.error("SSE 连接异常", e));
 
-        // 异步执行流式调用
         chatService.sendMessageStream(request, emitter);
 
+        return emitter;
+    }
+
+    /**
+     * 重新生成最后一条 AI 回复（SSE）。
+     * 删除会话末尾 assistant 消息后，基于已有 user 消息再次流式生成。
+     */
+    @PostMapping(value = "/regenerate", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
+    public SseEmitter regenerate(@RequestBody ChatRequest request) {
+        SseEmitter emitter = new SseEmitter(30 * 60_000L);
+
+        emitter.onCompletion(() -> log.debug("SSE regenerate 完成"));
+        emitter.onTimeout(() -> log.warn("SSE regenerate 超时"));
+        emitter.onError(e -> log.error("SSE regenerate 异常", e));
+
+        chatService.regenerateStream(request, emitter);
+
+        return emitter;
+    }
+
+    /**
+     * 停止当前流式生成（真取消后端推理与后续写库完整内容，仅保留已推送部分）。
+     * body: { "streamId": "...", "conversationId": 123 } 至少其一。
+     */
+    @PostMapping("/stop")
+    public ApiResult<Map<String, Object>> stop(@RequestBody(required = false) StopChatRequest request) {
+        StopChatRequest body = request != null ? request : new StopChatRequest();
+        boolean ok = chatService.stopStream(body.getStreamId(), body.getConversationId());
+        Map<String, Object> data = new HashMap<>();
+        data.put("stopped", ok);
+        return ApiResult.ok(data);
+    }
+
+    /**
+     * 编辑用户消息并从此重发（SSE）：截断后续消息，更新内容后重新流式生成。
+     */
+    @PostMapping(value = "/edit-resend", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
+    public SseEmitter editResend(@Valid @RequestBody EditResendRequest request) {
+        SseEmitter emitter = new SseEmitter(30 * 60_000L);
+        emitter.onCompletion(() -> log.debug("SSE edit-resend 完成"));
+        emitter.onTimeout(() -> log.warn("SSE edit-resend 超时"));
+        emitter.onError(e -> log.error("SSE edit-resend 异常", e));
+        chatService.editResendStream(request, emitter);
         return emitter;
     }
 

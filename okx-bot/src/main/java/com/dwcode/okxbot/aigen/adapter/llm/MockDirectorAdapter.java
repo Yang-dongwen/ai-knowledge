@@ -26,7 +26,11 @@ public class MockDirectorAdapter implements DirectorPort {
             topic = topic.substring(0, 40);
         }
 
-        String[] titles = {"开场", "展开", "对比", "洞察", "收束"};
+        boolean en = command.getLanguage() != null
+                && command.getLanguage().trim().toLowerCase(java.util.Locale.ROOT).startsWith("en");
+        String[] titles = en
+                ? new String[]{"Hook", "Develop", "Contrast", "Insight", "Close"}
+                : new String[]{"开场", "展开", "对比", "洞察", "收束"};
         String[] layouts = {"hook-center", "lower-third", "bullets-right", "caption", "hook-center"};
         for (int i = 0; i < 5; i++) {
             ShotDto s = new ShotDto();
@@ -34,16 +38,23 @@ public class MockDirectorAdapter implements DirectorPort {
             s.setDurationSec(command.getTargetDurationSec() / 5.0);
             ShotVisual v = new ShotVisual();
             v.setType("ai_image");
-            v.setPrompt("cinematic still, " + topic + ", shot " + (i + 1) + ", dramatic lighting, no text");
+            // mock 也跟随任务语言，避免演示数据强制英文
+            v.setPrompt(en
+                    ? ("cinematic still, " + topic + ", shot " + (i + 1) + ", dramatic lighting, no text")
+                    : ("电影感静帧，" + topic + "，第" + (i + 1) + "镜，戏剧光影，画面无文字"));
             s.setVisual(v);
             ShotOverlay o = new ShotOverlay();
             o.setLayout(layouts[i]);
-            o.setTitle(titles[i] + " · " + topic);
+            o.setTitle(titles[i] + (en ? " · " : " · ") + topic);
             if (i == 2) {
-                o.setBullets(List.of("要点 A", "要点 B", "要点 C"));
+                o.setBullets(en
+                        ? List.of("Point A", "Point B", "Point C")
+                        : List.of("要点 A", "要点 B", "要点 C"));
             }
             s.setOverlay(o);
-            s.setNarration(titles[i] + "。" + topic + "，请看这一镜。");
+            s.setNarration(en
+                    ? (titles[i] + ". " + topic + ", look at this shot.")
+                    : (titles[i] + "。" + topic + "，请看这一镜。"));
             list.getShots().add(s);
         }
 

@@ -36,6 +36,17 @@ public class ImgGenTaskController {
         return ApiResult.ok(taskService.listImageModels());
     }
 
+    /**
+     * 独立润色提示词：立即返回结果，不创建任务。
+     * 前端写回输入框，用户确认后再 POST /tasks 下发生图。
+     */
+    @PostMapping("/enhance-prompt")
+    public ApiResult<ImgGenEnhanceResponse> enhancePrompt(@Valid @RequestBody ImgGenEnhanceRequest request) {
+        log.info("独立润色: promptLen={}",
+                request.getPrompt() != null ? request.getPrompt().length() : 0);
+        return ApiResult.ok(taskService.enhancePrompt(request));
+    }
+
     @PostMapping("/tasks")
     public ApiResult<ImgGenTaskResponse> create(@Valid @RequestBody ImgGenCreateRequest request) {
         log.info("创建 imggen 任务: promptLen={}",

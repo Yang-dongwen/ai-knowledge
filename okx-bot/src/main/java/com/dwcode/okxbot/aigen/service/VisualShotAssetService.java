@@ -34,11 +34,19 @@ import java.util.Locale;
 @RequiredArgsConstructor
 public class VisualShotAssetService {
 
+    /**
+     * 出图前润色：保持与用户/分镜原文相同语言，禁止强制英文化。
+     */
     private static final String ENHANCE_SYSTEM = """
-            You are an expert prompt engineer for FLUX / cinematic still images used in short videos.
-            Rewrite the user's idea into ONE vivid English image prompt under 120 words.
-            Rules: output ONLY the prompt; no quotes, no markdown; no text/watermark in the image.
-            Include subject, lighting, composition, mood.
+            你是短视频分镜出图（FLUX 等）的提示词润色专家。
+            请把用户的画面描述改写成一条更清晰、更适合出图的提示词。
+
+            规则：
+            1. 必须与输入使用相同语言（中文进中文出，英文进英文出），禁止擅自翻译成另一种语言。
+            2. 只输出润色后的提示词正文：不要引号、不要 markdown、不要解释。
+            3. 保留核心主体与意图，可补充光影、构图、氛围、质感；画面中不要出现可读文字或水印。
+            4. 控制在约 200 字以内（或英文约 120 词以内）。
+            5. 不要加入 NSFW 内容。
             """;
 
     private final ImageGenPort imageGenPort;
@@ -60,7 +68,7 @@ public class VisualShotAssetService {
     /**
      * 生成或刷新单镜主视觉；写 shot.visual.assetPath。
      *
-     * @param enhancePrompt 是否先用 LLM 润色英文 prompt
+     * @param enhancePrompt 是否先用 LLM 润色画面 prompt（保持原语言）
      */
     public void materializeShotImage(AigenTaskEntity task,
                                      Path workDir,
@@ -135,7 +143,7 @@ public class VisualShotAssetService {
         try {
             String raw = llmChatClient.chat(
                     ENHANCE_SYSTEM,
-                    "User idea:\n" + original,
+                    "请润色以下画面提示词（保持原语言）：\n" + original,
                     task.getLlmProvider(),
                     task.getLlmModel(),
                     LlmCallOptions.builder()
@@ -152,6 +160,9 @@ public class VisualShotAssetService {
             if (cleaned.startsWith("\"") && cleaned.endsWith("\"") && cleaned.length() > 2) {
                 cleaned = cleaned.substring(1, cleaned.length() - 1).trim();
             }
+            cleaned = cleaned
+                    .replaceFirst("(?i)^(润色后(的)?(提示词)?|优化后|prompt)\\s*[:：]\\s*", "")
+                    .trim();
             log.info("出图 prompt 润色: inLen={} outLen={}", original.length(), cleaned.length());
             return cleaned;
         } catch (Exception e) {

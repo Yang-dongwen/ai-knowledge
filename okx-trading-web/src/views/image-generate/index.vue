@@ -12,12 +12,12 @@
           </a-tooltip>
         </div>
         <p class="page-subtitle">
-          输入提示词，调用 NVIDIA FLUX 生成图片 · 支持多比例与再生成
+          输入提示词，可先润色写回输入框确认后再生成 · 支持多比例与再生成
         </p>
         <div class="pipeline-row">
-          <span class="pipe-chip"><i>1</i>润色（可选）</span>
+          <span class="pipe-chip"><i>1</i>编写 / 润色</span>
           <span class="pipe-sep" />
-          <span class="pipe-chip"><i>2</i>FLUX 出图</span>
+          <span class="pipe-chip"><i>2</i>确认后出图</span>
           <span class="pipe-sep" />
           <span class="pipe-chip"><i>3</i>预览下载</span>
         </div>
@@ -31,26 +31,43 @@
             <em>{{ prompt.length }} / 2000</em>
           </span>
         </div>
-        <a-textarea
-          v-model:value="prompt"
-          :rows="4"
-          :maxlength="2000"
-          :show-count="false"
-          class="prompt-textarea"
-          placeholder="例如：赛博朋克风格的东京夜景，霓虹倒映在雨后街道，电影感光影"
-          @pressEnter.ctrl="handleSubmit"
-        />
-      </div>
-
-      <div class="form-block" style="margin-top: 12px">
-        <label class="field-label">负向提示词（可选）</label>
-        <a-textarea
-          v-model:value="negativePrompt"
-          :rows="2"
-          :maxlength="500"
-          class="prompt-textarea"
-          placeholder="blurry, low quality, text, watermark …"
-        />
+        <div class="prompt-box" :class="{ 'is-enhanced': !!promptBeforeEnhance }">
+          <a-textarea
+            v-model:value="prompt"
+            :rows="5"
+            :maxlength="2000"
+            :show-count="false"
+            class="prompt-textarea prompt-textarea-in-box"
+            placeholder="例如：赛博朋克风格的东京夜景，霓虹倒映在雨后街道，电影感光影"
+            @pressEnter.ctrl="handleSubmit"
+          />
+          <div class="prompt-box-actions">
+            <button
+              v-if="promptBeforeEnhance"
+              type="button"
+              class="prompt-corner-btn undo"
+              :disabled="enhancing"
+              @click="undoEnhance"
+            >
+              撤销
+            </button>
+            <a-tooltip :title="enhanceBtnTip">
+              <button
+                type="button"
+                class="prompt-corner-btn enhance"
+                :class="{ busy: enhancing }"
+                :disabled="enhancing || submitting"
+                @click="openEnhanceModal"
+              >
+                <HighlightOutlined />
+                <span>{{ enhancing ? '润色中…' : '一键润色' }}</span>
+              </button>
+            </a-tooltip>
+          </div>
+        </div>
+        <p v-if="promptBeforeEnhance" class="enhance-hint">
+          已润色写回输入框{{ lastEnhanceLatency != null ? `（${lastEnhanceLatency}ms）` : '' }}，确认后点击生成
+        </p>
       </div>
 
       <!-- 生图模型（数据库 capability=image） -->
@@ -94,74 +111,78 @@
         </div>
       </div>
 
-      <!-- Prompt 润色 + Chat 模型 -->
-      <div class="model-row" style="margin-top: 10px">
-        <div class="model-pick" style="flex-wrap: wrap; gap: 10px">
-          <span class="opt-label">Prompt 润色</span>
-          <a-switch v-model:checked="enhancePrompt" checked-children="开" un-checked-children="关" />
-          <template v-if="enhancePrompt">
-            <span class="opt-label">润色 Chat 模型</span>
-            <a-select
-              v-model:value="selectedLlmKey"
-              class="model-select"
-              size="large"
-              show-search
-              :options="llmSelectOptions"
-              :filter-option="filterOption"
-              :loading="llmModelsLoading"
-              placeholder="选择用于润色的 Chat 模型"
-            />
-            <a-button
-              size="large"
-              class="test-btn"
-              :loading="testingLlm"
-              :disabled="!selectedLlmKey"
-              @click="handleTestLlm"
-            >
-              <template #icon><ExperimentOutlined /></template>
-              测试可用性
-            </a-button>
-            <a-button
-              v-if="auth.isSuperAdmin"
-              size="large"
-              class="manage-btn"
-              @click="chatModelManageOpen = true"
-            >
-              <template #icon><SettingOutlined /></template>
-              Chat 模型
-            </a-button>
-          </template>
-        </div>
-        <div class="model-status" v-if="enhancePrompt && selectedLlmKey">
-          <a-tag v-if="testingLlm" color="processing">测试中…</a-tag>
-          <a-tag v-else-if="llmTestStatus === 'ok'" color="success">
-            ✓ 可用{{ llmTestLatency != null ? ` · ${llmTestLatency}ms` : '' }}
-          </a-tag>
-          <a-tag v-else-if="llmTestStatus === 'fail'" color="error">不可用</a-tag>
-          <a-tag v-else color="default">未测试（可选）</a-tag>
-        </div>
-        <div class="model-status muted" v-else-if="enhancePrompt && !llmModelsLoading && !llmSelectOptions.length">
-          <a-tag color="warning">
-            暂无 Chat 模型
-            <template v-if="auth.isSuperAdmin"> — 请打开「模型管理」添加</template>
-            <template v-else> — 请联系超级管理员配置</template>
-          </a-tag>
-        </div>
-      </div>
-
       <ModelManageModal
         v-if="auth.isSuperAdmin"
         v-model:open="modelManageOpen"
         capability="image"
         @changed="onImageModelsChanged"
       />
-      <!-- Chat 模型管理（润色用）单独入口：与视频页同一套 capability=chat -->
       <ModelManageModal
         v-if="auth.isSuperAdmin"
         v-model:open="chatModelManageOpen"
         capability="chat"
         @changed="onLlmModelsChanged"
       />
+
+      <!-- 一键润色：弹窗选择模型后再执行 -->
+      <a-modal
+        v-model:open="enhanceModalOpen"
+        title="一键润色提示词"
+        :ok-text="enhancing ? '润色中…' : '开始润色'"
+        cancel-text="取消"
+        :confirm-loading="enhancing"
+        :ok-button-props="{ disabled: !selectedLlmKey || !prompt.trim() }"
+        destroy-on-close
+        @ok="confirmEnhanceFromModal"
+      >
+        <p class="enhance-modal-desc">
+          选择 Chat 模型润色当前输入框内容，结果写回输入框，确认后再生成图片。
+        </p>
+        <div class="enhance-modal-field">
+          <div class="enhance-modal-label">润色模型</div>
+          <a-select
+            v-model:value="selectedLlmKey"
+            class="model-select"
+            show-search
+            :options="llmSelectOptions"
+            :filter-option="filterOption"
+            :loading="llmModelsLoading"
+            placeholder="选择润色用 Chat 模型"
+            style="width: 100%"
+          />
+        </div>
+        <div class="enhance-modal-actions">
+          <a-button
+            size="small"
+            :loading="testingLlm"
+            :disabled="!selectedLlmKey"
+            @click="handleTestLlm"
+          >
+            <template #icon><ExperimentOutlined /></template>
+            测试可用性
+          </a-button>
+          <a-button
+            v-if="auth.isSuperAdmin"
+            size="small"
+            @click="chatModelManageOpen = true"
+          >
+            <template #icon><SettingOutlined /></template>
+            Chat 模型管理
+          </a-button>
+          <a-tag v-if="testingLlm" color="processing">测试中…</a-tag>
+          <a-tag v-else-if="selectedLlmKey && llmTestStatus === 'ok'" color="success">
+            ✓ 可用{{ llmTestLatency != null ? ` · ${llmTestLatency}ms` : '' }}
+          </a-tag>
+          <a-tag v-else-if="selectedLlmKey && llmTestStatus === 'fail'" color="error">不可用</a-tag>
+        </div>
+        <div v-if="!llmModelsLoading && !llmSelectOptions.length" style="margin-top: 10px">
+          <a-tag color="warning">
+            暂无 Chat 模型
+            <template v-if="auth.isSuperAdmin"> — 请打开「Chat 模型管理」添加</template>
+            <template v-else> — 请联系超级管理员配置</template>
+          </a-tag>
+        </div>
+      </a-modal>
 
       <div class="options-grid">
         <div class="opt">
@@ -205,7 +226,7 @@
           生成图片
         </a-button>
         <span class="hint">
-          Ctrl + Enter 提交
+          输入框右下角可一键润色 · Ctrl + Enter 提交
           <template v-if="selectedImageModel"> · {{ selectedImageModel.name }}</template>
         </span>
       </div>
@@ -220,7 +241,14 @@
           </a-button>
         </div>
 
-        <a-empty v-if="!listLoading && !tasks.length" description="暂无任务，输入提示词开始生成" />
+        <EmptyState
+          v-if="!listLoading && !tasks.length"
+          scene="tasks"
+          compact
+          tone="soft"
+          title="还没有生成任务"
+          description="写好提示词，确认后即可出图"
+        />
 
         <div v-else class="task-list">
           <div
@@ -372,7 +400,7 @@
             </div>
           </div>
 
-          <!-- 再生成：可换生图模型 / 润色模型 -->
+          <!-- 再生成：可换生图模型（提示词已在创建时确认，任务内不再二次润色） -->
           <a-modal
             v-model:open="retryModalOpen"
             :title="retryTarget?.status === 'SUCCESS' ? '重新生成' : '重试任务'"
@@ -381,7 +409,7 @@
             :confirm-loading="retryingId === retryTarget?.id"
             @ok="submitRetry"
           >
-            <p class="retry-hint">可更换生图模型；若开启润色，可更换 Chat 模型。</p>
+            <p class="retry-hint">使用原任务提示词重新出图，可更换生图模型。</p>
             <div class="retry-model-row" style="margin-bottom: 12px">
               <span class="opt-label">生图模型</span>
               <a-select
@@ -389,21 +417,6 @@
                 class="model-select"
                 show-search
                 :options="imageModelOptions"
-                :filter-option="filterOption"
-                style="width: 100%; margin-top: 6px"
-              />
-            </div>
-            <div class="retry-model-row" style="margin-bottom: 12px">
-              <span class="opt-label">Prompt 润色</span>
-              <a-switch v-model:checked="retryEnhance" style="margin-left: 8px" />
-            </div>
-            <div class="retry-model-row" v-if="retryEnhance">
-              <span class="opt-label">润色 Chat 模型</span>
-              <a-select
-                v-model:value="retryLlmKey"
-                class="model-select"
-                show-search
-                :options="llmSelectOptions"
                 :filter-option="filterOption"
                 style="width: 100%; margin-top: 6px"
               />
@@ -427,25 +440,14 @@
               </div>
             </div>
             <div class="detail-row prompt-row" v-if="selected.enhancedPrompt">
-              <span class="k">润色后</span>
+              <span class="k">任务内润色</span>
               <div class="v prompt-cell">
                 <p class="prompt-text">{{ selected.enhancedPrompt }}</p>
               </div>
             </div>
-            <div class="detail-row" v-if="selected.negativePrompt">
-              <span class="k">负向词</span>
-              <span class="v">{{ selected.negativePrompt }}</span>
-            </div>
             <div class="detail-row">
               <span class="k">生图模型</span>
               <span class="v">{{ selected.provider || '—' }} / {{ selected.model || '—' }}</span>
-            </div>
-            <div class="detail-row">
-              <span class="k">润色模型</span>
-              <span class="v" v-if="selected.enhanceEnabled">
-                {{ selected.llmProvider || '—' }} / {{ selected.llmModel || '—' }}
-              </span>
-              <span class="v" v-else>未启用</span>
             </div>
           </div>
 
@@ -482,7 +484,12 @@
             <span v-else>生成成功后将在此预览图片</span>
           </div>
         </template>
-        <a-empty v-else description="选择左侧任务查看详情" />
+        <EmptyState
+          v-else
+          scene="detail"
+          title="选择左侧任务查看详情"
+          description="生成完成后可在此预览与下载图片"
+        />
       </section>
     </div>
 
@@ -510,23 +517,26 @@ import {
   DownloadOutlined,
   ExperimentOutlined,
   SettingOutlined,
-  ExclamationCircleOutlined
+  ExclamationCircleOutlined,
+  HighlightOutlined
 } from '@ant-design/icons-vue'
 import { imggenApi } from '@/api/imggen.api'
 import { connectImgGenTaskEvents } from '@/api/imggen.events'
 import { videoApi } from '@/api/video.api'
 import { useAuthStore } from '@/stores/auth.store'
 import ModelManageModal from '@/views/video-extract/ModelManageModal.vue'
+import EmptyState from '@/components/EmptyState.vue'
 import type { AiProvider, ImgGenImageFile, ImgGenImageModel, ImgGenTaskItem } from '@/types/api'
 
 const auth = useAuthStore()
 
 const prompt = ref('')
-const negativePrompt = ref('')
 const aspectRatio = ref('1:1')
 const imageCount = ref(1)
 const seed = ref<number | null>(null)
-const enhancePrompt = ref(false)
+/** 润色前原文，非空表示当前输入框内容来自润色，可撤销 */
+const promptBeforeEnhance = ref('')
+const lastEnhanceLatency = ref<number | null>(null)
 
 /** 生图模型（库表 capability=image；key = provider::modelId） */
 const imageModels = ref<ImgGenImageModel[]>([])
@@ -538,6 +548,8 @@ const availableProviders = ref<AiProvider[]>([])
 const llmModelsLoading = ref(false)
 const selectedLlmKey = ref('')
 const testingLlm = ref(false)
+const enhancing = ref(false)
+const enhanceModalOpen = ref(false)
 const testedOkKeys = ref<Set<string>>(new Set())
 const testedFailKeys = ref<Set<string>>(new Set())
 const llmTestLatency = ref<number | null>(null)
@@ -548,8 +560,6 @@ const chatModelManageOpen = ref(false)
 const retryModalOpen = ref(false)
 const retryTarget = ref<ImgGenTaskItem | null>(null)
 const retryImageKey = ref('')
-const retryEnhance = ref(false)
-const retryLlmKey = ref('')
 
 const submitting = ref(false)
 const listLoading = ref(false)
@@ -608,10 +618,15 @@ const llmTestStatus = computed<'ok' | 'fail' | 'none'>(() => {
 })
 
 const canSubmit = computed(() => {
-  if (!prompt.value.trim() || submitting.value) return false
+  if (!prompt.value.trim() || submitting.value || enhancing.value) return false
   if (!selectedImageKey.value) return false
-  if (enhancePrompt.value && !selectedLlmKey.value) return false
   return true
+})
+
+const enhanceBtnTip = computed(() => {
+  if (!prompt.value.trim()) return '请先填写提示词'
+  if (enhancing.value) return '正在润色…'
+  return '选择模型并润色，结果写回输入框'
 })
 
 const selected = computed(() => tasks.value.find((t) => t.id === selectedId.value) || null)
@@ -788,32 +803,94 @@ async function handleTestLlm() {
   }
 }
 
-async function handleSubmit() {
-  if (!canSubmit.value) return
-  if (enhancePrompt.value && !selectedLlmKey.value) {
-    message.warning('已开启润色，请选择 Chat 模型')
+function openEnhanceModal() {
+  if (!prompt.value.trim()) {
+    message.warning('请先填写创作提示词')
     return
   }
+  if (enhancing.value || submitting.value) return
+  enhanceModalOpen.value = true
+  if (!availableProviders.value.length) {
+    void loadLlmModels()
+  }
+}
+
+/**
+ * 弹窗确认后润色：结果写回输入框，不创建任务；用户确认后再 handleSubmit。
+ * ant-design-vue Modal @ok 返回 Promise 可阻止关闭失败时的自动关窗。
+ */
+async function confirmEnhanceFromModal() {
+  if (!prompt.value.trim()) {
+    message.warning('请先填写创作提示词')
+    return Promise.reject()
+  }
+  const llm = parseLlmKey(selectedLlmKey.value)
+  if (!llm) {
+    message.warning('请先选择润色 Chat 模型')
+    return Promise.reject()
+  }
+  const original = prompt.value.trim()
+  enhancing.value = true
+  lastEnhanceLatency.value = null
+  try {
+    const res = await imggenApi.enhancePrompt({
+      prompt: original,
+      llmProvider: llm.provider,
+      llmModel: llm.model,
+      languageHint: 'auto'
+    })
+    const enhanced = (res.data?.enhancedPrompt || '').trim()
+    if (!enhanced) {
+      message.error('润色结果为空')
+      return Promise.reject()
+    }
+    // 仅首次润色保留更早的原文，便于多次润色后仍可一次撤销到最初
+    if (!promptBeforeEnhance.value) {
+      promptBeforeEnhance.value = original
+    }
+    prompt.value = enhanced.slice(0, 2000)
+    lastEnhanceLatency.value = res.data?.latencyMs ?? null
+    enhanceModalOpen.value = false
+    message.success(
+      `已润色并写入输入框${lastEnhanceLatency.value != null ? `（${lastEnhanceLatency.value}ms）` : ''}，请确认后生成`
+    )
+  } catch (e: any) {
+    message.error(e?.message || '润色失败')
+    return Promise.reject(e)
+  } finally {
+    enhancing.value = false
+  }
+}
+
+function undoEnhance() {
+  if (!promptBeforeEnhance.value) return
+  prompt.value = promptBeforeEnhance.value
+  promptBeforeEnhance.value = ''
+  lastEnhanceLatency.value = null
+  message.info('已恢复润色前原文')
+}
+
+async function handleSubmit() {
+  if (!canSubmit.value) return
   submitting.value = true
   try {
-    const llm = enhancePrompt.value ? parseLlmKey(selectedLlmKey.value) : null
     const img = parseLlmKey(selectedImageKey.value)
+    // 润色已在输入框完成并由用户确认；任务内不再二次润色
     const res = await imggenApi.createTask({
       prompt: prompt.value.trim(),
-      negativePrompt: negativePrompt.value.trim() || undefined,
       options: {
         aspectRatio: aspectRatio.value,
         n: imageCount.value,
         seed: seed.value ?? null,
         imageModel: img?.model,
         imageProvider: img?.provider,
-        enhancePrompt: enhancePrompt.value,
-        llmProvider: llm?.provider,
-        llmModel: llm?.model
+        enhancePrompt: false
       }
     })
     const task = res.data
     message.success('任务已提交')
+    promptBeforeEnhance.value = ''
+    lastEnhanceLatency.value = null
     tasks.value = [task, ...tasks.value.filter((t) => t.id !== task.id)]
     selectedId.value = task.id
   } catch (e: any) {
@@ -873,32 +950,19 @@ function openRetryModal(task: ImgGenTaskItem) {
   } else {
     retryImageKey.value = selectedImageKey.value
   }
-  retryEnhance.value = !!task.enhanceEnabled
-  if (task.llmProvider && task.llmModel) {
-    retryLlmKey.value = `${task.llmProvider}::${task.llmModel}`
-  } else {
-    retryLlmKey.value = selectedLlmKey.value
-  }
   retryModalOpen.value = true
 }
 
 async function submitRetry() {
   const task = retryTarget.value
   if (!task) return
-  if (retryEnhance.value && !retryLlmKey.value) {
-    message.warning('已开启润色，请选择 Chat 模型')
-    return
-  }
   retryingId.value = task.id
   try {
-    const llm = retryEnhance.value ? parseLlmKey(retryLlmKey.value) : null
     const img = parseLlmKey(retryImageKey.value)
     const res = await imggenApi.retryTask(task.id, {
       imageModel: img?.model,
       imageProvider: img?.provider,
-      enhancePrompt: retryEnhance.value,
-      llmProvider: llm?.provider,
-      llmModel: llm?.model
+      enhancePrompt: false
     })
     mergeTask(res.data)
     selectedId.value = task.id
@@ -1099,5 +1163,138 @@ onUnmounted(() => {
 .img-meta {
   font-size: 11px;
   color: #64748b;
+}
+
+/* 输入框 + 右下角一键润色（覆盖 aigen-ui 表单默认边框） */
+.prompt-box {
+  position: relative;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  background: #f8fafc;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease, background 0.15s ease;
+
+  &:focus-within {
+    background: #fff;
+    border-color: #a78bfa;
+    box-shadow: 0 0 0 3px rgba(124, 58, 237, 0.12);
+  }
+
+  &.is-enhanced {
+    border-color: #86efac;
+    box-shadow: 0 0 0 2px rgba(34, 197, 94, 0.12);
+  }
+
+  :deep(.prompt-textarea-in-box.ant-input),
+  :deep(.prompt-textarea-in-box textarea.ant-input),
+  :deep(.prompt-textarea-in-box textarea) {
+    border: none !important;
+    box-shadow: none !important;
+    background: transparent !important;
+    padding: 12px 14px 44px !important;
+    border-radius: 12px !important;
+    resize: vertical;
+    min-height: 120px;
+
+    &:hover,
+    &:focus {
+      border: none !important;
+      box-shadow: none !important;
+      background: transparent !important;
+    }
+  }
+}
+
+.prompt-box-actions {
+  position: absolute;
+  right: 10px;
+  bottom: 10px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  z-index: 2;
+  pointer-events: none;
+
+  > * {
+    pointer-events: auto;
+  }
+}
+
+.prompt-corner-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 28px;
+  padding: 0 10px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1;
+  border: 1px solid transparent;
+  cursor: pointer;
+  transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease, opacity 0.15s ease;
+  user-select: none;
+
+  &:disabled {
+    opacity: 0.55;
+    cursor: not-allowed;
+  }
+
+  &.enhance {
+    color: #6d28d9;
+    background: #f5f3ff;
+    border-color: #ddd6fe;
+
+    &:hover:not(:disabled) {
+      background: #ede9fe;
+      border-color: #c4b5fd;
+    }
+
+    &.busy {
+      color: #7c3aed;
+    }
+  }
+
+  &.undo {
+    color: #64748b;
+    background: #f8fafc;
+    border-color: #e2e8f0;
+
+    &:hover:not(:disabled) {
+      color: #334155;
+      background: #f1f5f9;
+    }
+  }
+}
+
+.enhance-hint {
+  margin: 8px 0 0;
+  font-size: 12px;
+  color: #16a34a;
+  line-height: 1.4;
+}
+
+.enhance-modal-desc {
+  margin: 0 0 14px;
+  font-size: 13px;
+  color: #64748b;
+  line-height: 1.5;
+}
+
+.enhance-modal-field {
+  margin-bottom: 12px;
+}
+
+.enhance-modal-label {
+  font-size: 13px;
+  font-weight: 500;
+  color: #334155;
+  margin-bottom: 6px;
+}
+
+.enhance-modal-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
 }
 </style>

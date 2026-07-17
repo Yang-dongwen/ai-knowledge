@@ -9,10 +9,34 @@ import type {
 /**
  * AI 文生图 API（/api/v1/imggen/*）
  */
+export interface ImgGenEnhanceRequest {
+  prompt: string
+  llmProvider?: string
+  llmModel?: string
+  /** auto / zh / en，默认 auto */
+  languageHint?: string
+}
+
+export interface ImgGenEnhanceResult {
+  originalPrompt: string
+  enhancedPrompt: string
+  llmProvider?: string
+  llmModel?: string
+  latencyMs?: number
+}
+
 export const imggenApi = {
   /** 生图模型目录（FLUX 等，yml 配置） */
   listImageModels(): Promise<{ data: ImgGenImageModel[] }> {
     return request.get('/v1/imggen/models')
+  },
+
+  /**
+   * 独立润色提示词：立即返回结果写回输入框，不创建任务。
+   * 用户确认后再 createTask。
+   */
+  enhancePrompt(data: ImgGenEnhanceRequest): Promise<{ data: ImgGenEnhanceResult }> {
+    return request.post('/v1/imggen/enhance-prompt', data, { timeout: 60000 })
   },
 
   createTask(data: ImgGenCreateRequest): Promise<{ data: ImgGenTaskItem }> {

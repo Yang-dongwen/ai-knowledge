@@ -44,10 +44,10 @@
         </a-button>
       </div>
 
-      <!-- LLM 模型选择 + 连通性测试 -->
+      <!-- 总结用 Chat 模型（可选配置库） -->
       <div class="model-row">
         <div class="model-pick">
-          <span class="opt-label">LLM 模型</span>
+          <span class="opt-label">总结 LLM</span>
           <a-select
             v-model:value="selectedModelKey"
             class="model-select"
@@ -55,7 +55,7 @@
             show-search
             :options="modelSelectOptions"
             :filter-option="filterModelOption"
-            placeholder="选择用于总结的模型（数据库配置）"
+            placeholder="选择用于总结的 Chat 模型"
             :loading="modelsLoading"
             @change="onModelChange"
           />
@@ -76,7 +76,7 @@
             @click="modelManageOpen = true"
           >
             <template #icon><SettingOutlined /></template>
-            模型管理
+            Chat 模型
           </a-button>
         </div>
         <div class="model-status" v-if="selectedModelKey">
@@ -92,19 +92,12 @@
         </div>
         <div class="model-status muted" v-else-if="!modelsLoading && availableProviders.length === 0">
           <a-tag color="warning">
-            暂无可用模型
-            <template v-if="auth.isSuperAdmin"> — 请打开「模型管理」添加，并确认 yml 中配置了 api-key</template>
+            暂无 Chat 模型
+            <template v-if="auth.isSuperAdmin"> — 请打开「Chat 模型」添加，并确认 yml 中配置了 api-key</template>
             <template v-else> — 请联系超级管理员配置模型</template>
           </a-tag>
         </div>
       </div>
-
-      <ModelManageModal
-        v-if="auth.isSuperAdmin"
-        v-model:open="modelManageOpen"
-        capability="chat"
-        @changed="onModelsChanged"
-      />
 
       <div class="options-row">
         <a-space wrap :size="16">
@@ -131,6 +124,70 @@
           <span class="hint-chip">小红书</span>
         </div>
       </div>
+
+      <!-- 带画面理解时：必须选择视频理解模型（库表 video_omni，不写死后端） -->
+      <div v-if="needsOmniModel" class="model-row" style="margin-top: 10px">
+        <div class="model-pick">
+          <span class="opt-label">视频理解模型</span>
+          <a-select
+            v-model:value="selectedOmniKey"
+            class="model-select"
+            size="large"
+            show-search
+            :options="omniSelectOptions"
+            :filter-option="filterModelOption"
+            placeholder="选择视频多模态理解模型"
+            :loading="omniModelsLoading"
+          />
+          <a-button
+            size="large"
+            class="test-btn"
+            :loading="testingOmni"
+            :disabled="!selectedOmniKey"
+            @click="handleTestOmni"
+          >
+            <template #icon><ExperimentOutlined /></template>
+            测试可用性
+          </a-button>
+          <a-button
+            v-if="auth.isSuperAdmin"
+            size="large"
+            class="manage-btn"
+            @click="omniModelManageOpen = true"
+          >
+            <template #icon><SettingOutlined /></template>
+            理解模型
+          </a-button>
+        </div>
+        <div class="model-status" v-if="selectedOmniKey">
+          <a-tag v-if="testingOmni" color="processing">测试中…</a-tag>
+          <a-tag v-else-if="omniTestStatus === 'ok'" color="success">
+            ✓ 可用{{ omniTestLatency != null ? ` · ${omniTestLatency}ms` : '' }}
+          </a-tag>
+          <a-tag v-else-if="omniTestStatus === 'fail'" color="error">不可用</a-tag>
+          <a-tag v-else color="purple">混合/仅画面将使用此模型</a-tag>
+        </div>
+        <div class="model-status muted" v-else-if="!omniModelsLoading && !omniProviders.length">
+          <a-tag color="warning">
+            暂无视频理解模型
+            <template v-if="auth.isSuperAdmin"> — 请打开「理解模型」添加 capability=video_omni</template>
+            <template v-else> — 请联系超级管理员配置</template>
+          </a-tag>
+        </div>
+      </div>
+
+      <ModelManageModal
+        v-if="auth.isSuperAdmin"
+        v-model:open="modelManageOpen"
+        capability="chat"
+        @changed="onModelsChanged"
+      />
+      <ModelManageModal
+        v-if="auth.isSuperAdmin"
+        v-model:open="omniModelManageOpen"
+        capability="video_omni"
+        @changed="onOmniModelsChanged"
+      />
     </div>
 
     <!-- 主体：左列表 + 右详情 -->
@@ -211,7 +268,14 @@
             </div>
           </div>
         </div>
-        <a-empty v-else description="暂无任务，粘贴链接开始吧" :image-style="{ height: '48px' }" />
+        <EmptyState
+          v-else
+          scene="tasks"
+          compact
+          tone="soft"
+          title="还没有任务"
+          description="粘贴链接，一键提取核心内容"
+        />
 
         <div class="list-footer" v-if="taskTotal > tasks.length">
           <a-button type="link" size="small" :loading="listLoading" @click="loadMore">加载更多</a-button>
@@ -222,11 +286,11 @@
       <main class="detail-panel page-card">
         <template v-if="!selectedId">
           <div class="empty-detail">
-            <div class="empty-visual">
-              <VideoCameraOutlined />
-            </div>
-            <h3>选择或创建一个任务</h3>
-            <p>提交链接后，可在此查看进度、要点、转录时间轴与原始视频</p>
+            <EmptyState
+              scene="detail"
+              title="选择或创建一个任务"
+              description="提交链接后，可在此查看进度、要点、转录时间轴与原始视频"
+            />
             <div class="pipeline-preview">
               <div class="pipe-step" v-for="s in pipelineSteps" :key="s.key">
                 <div class="pipe-icon">{{ s.icon }}</div>
@@ -253,7 +317,14 @@
               <div class="detail-sub">
                 <span v-if="detail.platform" class="platform-badge">{{ platformLabel(detail.platform) }}</span>
                 <span v-if="detail.llmModel" class="platform-badge llm-badge" :title="detail.llmProvider || ''">
-                  {{ shortModelName(detail.llmModel) }}
+                  总结:{{ shortModelName(detail.llmModel) }}
+                </span>
+                <span
+                  v-if="detail.omniModel"
+                  class="platform-badge llm-badge"
+                  :title="detail.omniProvider || ''"
+                >
+                  理解:{{ shortModelName(detail.omniModel) }}
                 </span>
                 <span v-if="detail.durationSeconds">时长 {{ formatDuration(detail.durationSeconds) }}</span>
                 <span v-if="detail.createdAt">创建于 {{ detail.createdAt }}</span>
@@ -446,26 +517,46 @@
             @ok="submitRetry"
           >
             <p class="retry-hint">
-              <template v-if="retryTarget?.status === 'SUCCESS'">
-                将清空当前结果并重新执行：下载 → 转录 → 总结。可更换 LLM 模型（测试可用性可选）。
-              </template>
-              <template v-else>
-                将重新执行：下载 → 转录 → 总结。可更换 LLM 模型（测试可用性可选）。
-              </template>
+              将重新执行流水线。可更换总结 LLM；若使用画面理解，请选择视频理解模型。
             </p>
             <div class="retry-url" v-if="retryTarget">
               <span class="muted">链接</span>
               <div class="url-text">{{ retryTarget.url }}</div>
             </div>
+            <div class="retry-model-row" style="margin-bottom: 12px">
+              <span class="opt-label">理解模式</span>
+              <a-radio-group
+                v-model:value="retryUnderstandingMode"
+                size="small"
+                button-style="solid"
+                style="margin-top: 6px; display: block"
+              >
+                <a-radio-button value="audio_only">仅音频</a-radio-button>
+                <a-radio-button value="hybrid">混合</a-radio-button>
+                <a-radio-button value="omni_only">仅画面</a-radio-button>
+              </a-radio-group>
+            </div>
             <div class="retry-model-row">
-              <span class="opt-label">LLM 模型</span>
+              <span class="opt-label">总结 LLM</span>
               <a-select
                 v-model:value="retryModelKey"
                 class="model-select"
                 show-search
                 :options="modelSelectOptions"
                 :filter-option="filterModelOption"
-                placeholder="选择模型"
+                placeholder="选择 Chat 模型"
+                style="width: 100%; margin-top: 6px"
+              />
+            </div>
+            <div class="retry-model-row" v-if="retryNeedsOmni" style="margin-top: 12px">
+              <span class="opt-label">视频理解模型</span>
+              <a-select
+                v-model:value="retryOmniKey"
+                class="model-select"
+                show-search
+                :options="omniSelectOptions"
+                :filter-option="filterModelOption"
+                placeholder="选择 video_omni 模型"
                 style="width: 100%; margin-top: 6px"
               />
             </div>
@@ -476,7 +567,7 @@
                 :disabled="!retryModelKey"
                 @click="testRetryModel"
               >
-                测试可用性
+                测试总结模型
               </a-button>
               <a-tag v-if="retryTestOk" color="success">✓ 可用</a-tag>
               <a-tag v-else-if="retryTestFail" color="error">不可用</a-tag>
@@ -713,6 +804,7 @@ import { videoApi } from '@/api/video.api'
 import { connectVideoTaskEvents, type VideoTaskSseEvent } from '@/api/video.events'
 import type { VideoTaskItem, TranscriptionSegment, AiProvider } from '@/types/api'
 import ModelManageModal from './ModelManageModal.vue'
+import EmptyState from '@/components/EmptyState.vue'
 import { useAuthStore } from '@/stores/auth.store'
 
 const auth = useAuthStore()
@@ -729,7 +821,7 @@ const options = reactive({
   understandingMode: 'audio_only'
 })
 
-/** provider::modelId */
+/** provider::modelId — 总结 Chat */
 const selectedModelKey = ref('')
 const availableProviders = ref<AiProvider[]>([])
 const modelsLoading = ref(false)
@@ -740,6 +832,16 @@ const testedOkKeys = ref<Set<string>>(new Set())
 const testedFailKeys = ref<Set<string>>(new Set())
 const testErrorMsg = ref('')
 const lastTestLatency = ref<number | null>(null)
+
+/** provider::modelId — 视频理解 video_omni */
+const selectedOmniKey = ref('')
+const omniProviders = ref<AiProvider[]>([])
+const omniModelsLoading = ref(false)
+const omniModelManageOpen = ref(false)
+const testingOmni = ref(false)
+const omniTestedOkKeys = ref<Set<string>>(new Set())
+const omniTestedFailKeys = ref<Set<string>>(new Set())
+const omniTestLatency = ref<number | null>(null)
 
 const tasks = ref<VideoTaskItem[]>([])
 const taskTotal = ref(0)
@@ -758,14 +860,36 @@ const pausingId = ref('')
 const retryModalOpen = ref(false)
 const retryTarget = ref<VideoTaskItem | null>(null)
 const retryModelKey = ref('')
+const retryOmniKey = ref('')
+const retryUnderstandingMode = ref('audio_only')
 const retryTesting = ref(false)
 const retryTestOk = ref(false)
 const retryTestFail = ref(false)
 
 let pollTimer: ReturnType<typeof setTimeout> | null = null
 
+const needsOmniModel = computed(
+  () => options.understandingMode === 'hybrid' || options.understandingMode === 'omni_only'
+)
+
+const retryNeedsOmni = computed(
+  () =>
+    retryUnderstandingMode.value === 'hybrid' || retryUnderstandingMode.value === 'omni_only'
+)
+
 const modelSelectOptions = computed(() =>
   availableProviders.value.map((p) => ({
+    label: p.name,
+    options: (p.models || []).map((m) => ({
+      label: m.name || m.id,
+      value: `${p.key}::${m.id}`,
+      title: m.id
+    }))
+  }))
+)
+
+const omniSelectOptions = computed(() =>
+  omniProviders.value.map((p) => ({
     label: p.name,
     options: (p.models || []).map((m) => ({
       label: m.name || m.id,
@@ -782,9 +906,18 @@ const currentModelTestStatus = computed<'ok' | 'fail' | 'none'>(() => {
   return 'none'
 })
 
-const canSubmit = computed(
-  () => !!urlInput.value.trim() && !!selectedModelKey.value && !submitting.value
-)
+const omniTestStatus = computed<'ok' | 'fail' | 'none'>(() => {
+  if (!selectedOmniKey.value) return 'none'
+  if (omniTestedOkKeys.value.has(selectedOmniKey.value)) return 'ok'
+  if (omniTestedFailKeys.value.has(selectedOmniKey.value)) return 'fail'
+  return 'none'
+})
+
+const canSubmit = computed(() => {
+  if (!urlInput.value.trim() || !selectedModelKey.value || submitting.value) return false
+  if (needsOmniModel.value && !selectedOmniKey.value) return false
+  return true
+})
 
 function parseModelKey(key: string): { provider: string; model: string } | null {
   const i = key.indexOf('::')
@@ -810,28 +943,33 @@ function onModelChange() {
   lastTestLatency.value = null
 }
 
+function pickDefaultKey(
+  providers: AiProvider[],
+  current: string
+): { key: string; cleared: boolean } {
+  if (current) {
+    const still = providers.some((p) =>
+      (p.models || []).some((m) => `${p.key}::${m.id}` === current)
+    )
+    if (still) return { key: current, cleared: false }
+    return { key: '', cleared: true }
+  }
+  if (providers.length && providers[0].models?.length) {
+    return { key: `${providers[0].key}::${providers[0].models![0].id}`, cleared: false }
+  }
+  return { key: '', cleared: false }
+}
+
 async function loadModels() {
   modelsLoading.value = true
   try {
-    const res = await videoApi.listModels()
+    const res = await videoApi.listModels('chat')
     availableProviders.value = res.data || []
-    // 若当前选中已不在列表中，清空
-    if (selectedModelKey.value) {
-      const still = availableProviders.value.some((p) =>
-        (p.models || []).some((m) => `${p.key}::${m.id}` === selectedModelKey.value)
-      )
-      if (!still) {
-        selectedModelKey.value = ''
-        testedOkKeys.value = new Set()
-        testedFailKeys.value = new Set()
-      }
-    }
-    // 默认选中第一个供应商的第一个模型
-    if (!selectedModelKey.value && availableProviders.value.length) {
-      const p = availableProviders.value[0]
-      if (p.models?.length) {
-        selectedModelKey.value = `${p.key}::${p.models[0].id}`
-      }
+    const picked = pickDefaultKey(availableProviders.value, selectedModelKey.value)
+    selectedModelKey.value = picked.key
+    if (picked.cleared) {
+      testedOkKeys.value = new Set()
+      testedFailKeys.value = new Set()
     }
   } catch {
     availableProviders.value = []
@@ -840,8 +978,75 @@ async function loadModels() {
   }
 }
 
+async function loadOmniModels() {
+  omniModelsLoading.value = true
+  try {
+    const res = await videoApi.listModels('video_omni')
+    omniProviders.value = res.data || []
+    const picked = pickDefaultKey(omniProviders.value, selectedOmniKey.value)
+    selectedOmniKey.value = picked.key
+    if (picked.cleared) {
+      omniTestedOkKeys.value = new Set()
+      omniTestedFailKeys.value = new Set()
+    }
+  } catch {
+    omniProviders.value = []
+  } finally {
+    omniModelsLoading.value = false
+  }
+}
+
 async function onModelsChanged() {
   await loadModels()
+}
+
+async function onOmniModelsChanged() {
+  await loadOmniModels()
+}
+
+watch(
+  () => options.understandingMode,
+  (mode) => {
+    if ((mode === 'hybrid' || mode === 'omni_only') && !omniProviders.value.length) {
+      void loadOmniModels()
+    }
+  }
+)
+
+async function handleTestOmni() {
+  const parsed = parseModelKey(selectedOmniKey.value)
+  if (!parsed) {
+    message.warning('请先选择视频理解模型')
+    return
+  }
+  testingOmni.value = true
+  omniTestLatency.value = null
+  try {
+    const res = await videoApi.testModel({
+      provider: parsed.provider,
+      model: parsed.model
+    })
+    const result = res.data
+    omniTestLatency.value = result.latencyMs ?? null
+    if (result.available) {
+      omniTestedOkKeys.value = new Set([...omniTestedOkKeys.value, selectedOmniKey.value])
+      const nextFail = new Set(omniTestedFailKeys.value)
+      nextFail.delete(selectedOmniKey.value)
+      omniTestedFailKeys.value = nextFail
+      message.success(`视频理解模型可用${result.latencyMs != null ? `（${result.latencyMs}ms）` : ''}`)
+    } else {
+      omniTestedFailKeys.value = new Set([...omniTestedFailKeys.value, selectedOmniKey.value])
+      const nextOk = new Set(omniTestedOkKeys.value)
+      nextOk.delete(selectedOmniKey.value)
+      omniTestedOkKeys.value = nextOk
+      message.error(result.errorMessage || '模型不可用')
+    }
+  } catch (e: any) {
+    omniTestedFailKeys.value = new Set([...omniTestedFailKeys.value, selectedOmniKey.value])
+    message.error(e?.message || '测试请求失败')
+  } finally {
+    testingOmni.value = false
+  }
 }
 
 async function handleTestModel() {
@@ -1206,8 +1411,16 @@ async function handleSubmit() {
   }
   const parsed = parseModelKey(selectedModelKey.value)
   if (!parsed) {
-    message.warning('请选择 LLM 模型')
+    message.warning('请选择总结用 Chat 模型')
     return
+  }
+  let omniParsed: { provider: string; model: string } | null = null
+  if (needsOmniModel.value) {
+    omniParsed = parseModelKey(selectedOmniKey.value)
+    if (!omniParsed) {
+      message.warning('混合/仅画面模式请选择视频理解模型')
+      return
+    }
   }
   submitting.value = true
   try {
@@ -1219,7 +1432,9 @@ async function handleSubmit() {
         generateRepurposeScript: options.generateRepurposeScript,
         llmProvider: parsed.provider,
         llmModel: parsed.model,
-        understandingMode: options.understandingMode
+        understandingMode: options.understandingMode,
+        omniProvider: omniParsed?.provider,
+        omniModel: omniParsed?.model
       }
     })
     message.success('任务已提交，后台处理中')
@@ -1318,23 +1533,32 @@ function canRetry(task?: VideoTaskItem | null) {
   return ['FAILED', 'PAUSED', 'SUCCESS'].includes(String(task.status).toUpperCase())
 }
 
-/** 打开重试弹窗（可改 LLM） */
+/** 打开重试弹窗（可改总结 LLM / 理解模式 / 视频理解模型） */
 function openRetryModal(task: VideoTaskItem) {
   if (!canRetry(task)) {
     message.warning('仅失败、已暂停或已成功的任务可重试')
     return
   }
   retryTarget.value = task
-  // 默认用原任务模型，否则用当前页选中模型
   if (task.llmProvider && task.llmModel) {
     retryModelKey.value = `${task.llmProvider}::${task.llmModel}`
   } else {
     retryModelKey.value = selectedModelKey.value || ''
   }
+  retryUnderstandingMode.value =
+    (task.understandingMode as string) || options.understandingMode || 'audio_only'
+  if (task.omniProvider && task.omniModel) {
+    retryOmniKey.value = `${task.omniProvider}::${task.omniModel}`
+  } else {
+    retryOmniKey.value = selectedOmniKey.value || ''
+  }
   retryTestOk.value = false
   retryTestFail.value = false
   retryModalOpen.value = true
-  loadModels()
+  void loadModels()
+  if (retryUnderstandingMode.value === 'hybrid' || retryUnderstandingMode.value === 'omni_only') {
+    void loadOmniModels()
+  }
 }
 
 async function testRetryModel() {
@@ -1370,21 +1594,32 @@ async function testRetryModel() {
 }
 
 /**
- * 确认重试：可带新 LLM 模型。
+ * 确认重试：可带新总结 LLM / 理解模式 / 视频理解模型。
  */
 async function submitRetry() {
   const task = retryTarget.value
   if (!task) return Promise.reject()
   const parsed = parseModelKey(retryModelKey.value)
   if (!parsed) {
-    message.warning('请选择 LLM 模型')
+    message.warning('请选择总结用 Chat 模型')
     return Promise.reject()
+  }
+  let omniParsed: { provider: string; model: string } | null = null
+  if (retryNeedsOmni.value) {
+    omniParsed = parseModelKey(retryOmniKey.value)
+    if (!omniParsed) {
+      message.warning('画面理解模式请选择视频理解模型')
+      return Promise.reject()
+    }
   }
   retryingId.value = task.taskId
   try {
     const res = await videoApi.retryTask(task.taskId, {
       llmProvider: parsed.provider,
-      llmModel: parsed.model
+      llmModel: parsed.model,
+      understandingMode: retryUnderstandingMode.value,
+      omniProvider: omniParsed?.provider,
+      omniModel: omniParsed?.model
     })
     message.success(
       task.status === 'SUCCESS' ? '已重新排队，开始重新提取' : '已重新排队，开始重试'
@@ -1407,7 +1642,10 @@ async function submitRetry() {
         totalDurationMs: null,
         finishedAt: null,
         llmProvider: parsed.provider,
-        llmModel: parsed.model
+        llmModel: parsed.model,
+        understandingMode: retryUnderstandingMode.value,
+        omniProvider: omniParsed?.provider ?? null,
+        omniModel: omniParsed?.model ?? null
       }
       await refreshDetail()
     }
@@ -1771,7 +2009,7 @@ watch(
 )
 
 onMounted(async () => {
-  await Promise.all([loadModels(), loadTasks(true)])
+  await Promise.all([loadModels(), loadOmniModels(), loadTasks(true)])
   startSse()
   ensurePolling()
   startLiveHintClock()
@@ -1798,30 +2036,50 @@ onUnmounted(() => {
 .video-extract-page {
   max-width: 1400px;
   margin: 0 auto;
+  padding-bottom: 12px;
 }
 
 .submit-hero {
-  margin-bottom: 18px;
-  padding: 24px 26px 20px;
-  border-radius: 20px;
+  margin-bottom: 20px;
+  padding: 28px 30px 22px;
+  border-radius: 24px;
   background:
-    linear-gradient(145deg, rgba(255, 255, 255, 0.98) 0%, rgba(239, 246, 255, 0.96) 50%, rgba(236, 253, 245, 0.92) 100%);
-  border: 1px solid rgba(59, 130, 246, 0.12);
+    linear-gradient(
+      145deg,
+      rgba(255, 255, 255, 0.96) 0%,
+      rgba(239, 246, 255, 0.94) 48%,
+      rgba(245, 243, 255, 0.92) 100%
+    );
+  border: 1px solid rgba(199, 210, 254, 0.7);
   box-shadow:
-    0 1px 2px rgba(15, 23, 42, 0.04),
-    0 12px 36px rgba(37, 99, 235, 0.07);
+    0 1px 2px rgba(15, 23, 42, 0.03),
+    0 16px 48px rgba(99, 102, 241, 0.1),
+    0 0 0 1px rgba(255, 255, 255, 0.55) inset;
   position: relative;
   overflow: hidden;
+  backdrop-filter: blur(12px);
 
   &::after {
     content: '';
     position: absolute;
-    right: -40px;
-    top: -40px;
-    width: 200px;
-    height: 200px;
+    right: -50px;
+    top: -50px;
+    width: 240px;
+    height: 240px;
     border-radius: 50%;
-    background: radial-gradient(circle, rgba(37, 99, 235, 0.14), transparent 70%);
+    background: radial-gradient(circle, rgba(99, 102, 241, 0.22), transparent 70%);
+    pointer-events: none;
+  }
+
+  &::before {
+    content: '';
+    position: absolute;
+    left: -30px;
+    bottom: -50px;
+    width: 180px;
+    height: 180px;
+    border-radius: 50%;
+    background: radial-gradient(circle, rgba(56, 189, 248, 0.14), transparent 70%);
     pointer-events: none;
   }
 
@@ -1947,21 +2205,25 @@ onUnmounted(() => {
 
       :deep(.ant-input-affix-wrapper),
       :deep(input) {
-        border-radius: 10px;
+        border-radius: 14px;
+        min-height: 46px;
       }
     }
 
     .submit-btn {
-      height: 44px;
-      border-radius: 12px;
-      padding: 0 24px;
+      height: 46px;
+      border-radius: 999px;
+      padding: 0 26px;
       font-weight: 650;
       border: none;
-      background: linear-gradient(135deg, #2563eb, #4f46e5 55%, #6366f1);
-      box-shadow: 0 10px 22px rgba(37, 99, 235, 0.28);
+      background: linear-gradient(135deg, #4f46e5, #7c3aed 55%, #8b5cf6);
+      box-shadow:
+        0 12px 26px rgba(79, 70, 229, 0.32),
+        0 0 0 1px rgba(255, 255, 255, 0.2) inset;
 
       &:hover:not(:disabled) {
-        filter: brightness(1.04);
+        filter: brightness(1.05);
+        transform: translateY(-1px);
       }
     }
 
@@ -1971,12 +2233,15 @@ onUnmounted(() => {
   }
 
   .model-row {
+    position: relative;
+    z-index: 1;
     margin-top: 14px;
-    padding: 14px 16px;
-    background: rgba(255, 255, 255, 0.8);
-    border: 1px solid rgba(148, 163, 184, 0.22);
-    border-radius: 16px;
-    backdrop-filter: blur(8px);
+    padding: 16px 18px;
+    background: rgba(255, 255, 255, 0.74);
+    border: 1px solid rgba(199, 210, 254, 0.55);
+    border-radius: 18px;
+    backdrop-filter: blur(10px);
+    box-shadow: 0 4px 18px rgba(99, 102, 241, 0.05);
 
     .model-pick {
       display: flex;
@@ -2055,7 +2320,7 @@ onUnmounted(() => {
 .workspace {
   display: grid;
   grid-template-columns: 300px 1fr;
-  gap: 16px;
+  gap: 18px;
   min-height: calc(100vh - 280px);
 }
 
@@ -2065,6 +2330,13 @@ onUnmounted(() => {
   padding: 0;
   overflow: hidden;
   max-height: calc(100vh - 220px);
+  border-radius: 22px !important;
+  border: 1px solid rgba(226, 232, 240, 0.9) !important;
+  box-shadow:
+    0 1px 2px rgba(15, 23, 42, 0.03),
+    0 14px 36px rgba(99, 102, 241, 0.07) !important;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.96), rgba(255, 255, 255, 0.9)) !important;
+  backdrop-filter: blur(10px);
 
   .panel-header {
     display: flex;
@@ -2093,20 +2365,23 @@ onUnmounted(() => {
 }
 
 .task-item {
-  padding: 12px;
-  border-radius: 10px;
+  padding: 12px 14px;
+  border-radius: 14px;
   cursor: pointer;
-  transition: all 0.15s;
+  transition: all 0.16s ease;
   border: 1px solid transparent;
-  margin-bottom: 4px;
+  margin-bottom: 6px;
+  background: rgba(248, 250, 252, 0.65);
 
   &:hover {
-    background: #f5f7fa;
+    background: rgba(238, 242, 255, 0.75);
+    border-color: rgba(199, 210, 254, 0.7);
   }
 
   &.active {
-    background: #ebf5ff;
-    border-color: rgba(22, 119, 255, 0.25);
+    background: linear-gradient(135deg, rgba(238, 242, 255, 0.98), rgba(248, 250, 252, 0.95));
+    border-color: rgba(99, 102, 241, 0.28);
+    box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.08);
   }
 
   .task-item-top {
@@ -2213,7 +2488,14 @@ onUnmounted(() => {
   min-height: 520px;
   max-height: calc(100vh - 220px);
   overflow-y: auto;
-  padding: 20px 22px;
+  padding: 22px 24px;
+  border-radius: 22px !important;
+  border: 1px solid rgba(226, 232, 240, 0.9) !important;
+  box-shadow:
+    0 1px 2px rgba(15, 23, 42, 0.03),
+    0 14px 36px rgba(99, 102, 241, 0.07) !important;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.96), rgba(255, 255, 255, 0.9)) !important;
+  backdrop-filter: blur(10px);
 }
 
 .empty-detail {

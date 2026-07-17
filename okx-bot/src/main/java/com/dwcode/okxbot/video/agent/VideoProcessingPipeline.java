@@ -14,6 +14,7 @@ import com.dwcode.okxbot.video.exception.UnderstandingDegradedException;
 import com.dwcode.okxbot.video.mapper.VideoTaskMapper;
 import com.dwcode.okxbot.video.port.VideoUnderstandingCommand;
 import com.dwcode.okxbot.video.port.VisualUnderstandingResult;
+import com.dwcode.okxbot.video.service.AiModelConfigService;
 import com.dwcode.okxbot.video.service.StorageService;
 import com.dwcode.okxbot.video.service.SummarizationService;
 import com.dwcode.okxbot.video.service.TranscriptionService;
@@ -52,6 +53,7 @@ public class VideoProcessingPipeline {
     private final VideoTaskMapper videoTaskMapper;
     private final ObjectMapper objectMapper;
     private final VideoProperties videoProperties;
+    private final AiModelConfigService aiModelConfigService;
     private final VideoTaskScheduler taskScheduler;
     private final VideoTaskEventPublisher eventPublisher;
 
@@ -143,19 +145,32 @@ public class VideoProcessingPipeline {
                 updateStatus(task, VideoTaskStatus.UNDERSTANDING, "正在多模态理解画面");
                 t0 = System.currentTimeMillis();
                 try {
+                    if (task.getOmniProvider() == null || task.getOmniProvider().isBlank()
+                            || task.getOmniModel() == null || task.getOmniModel().isBlank()) {
+                        throw new IllegalStateException(
+                                "任务未指定视频理解模型（omniProvider/omniModel），请重新提交并选择模型");
+                    }
+                    // 协议优先用库表模型配置，其次 yml 默认（非模型 ID）
+                    String omniProtocol = videoProperties.getUnderstanding().getProtocol();
+                    try {
+                        var omniCfg = aiModelConfigService.findEnabledVideoOmniModel(
+                                task.getOmniProvider(), task.getOmniModel());
+                        if (omniCfg != null && omniCfg.getProtocol() != null
+                                && !omniCfg.getProtocol().isBlank()) {
+                            omniProtocol = omniCfg.getProtocol();
+                        }
+                    } catch (Exception ignored) {
+                        // 沿用 yml protocol
+                    }
                     VideoUnderstandingCommand cmd = VideoUnderstandingCommand.builder()
                             .taskId(taskIdStr)
                             .videoPath(download.getVideoPath())
                             .audioPath(download.getAudioPath())
                             .durationSeconds(task.getDurationSeconds())
                             .language(task.getLanguage())
-                            .providerKey(task.getOmniProvider() != null
-                                    ? task.getOmniProvider()
-                                    : videoProperties.getUnderstanding().getProvider())
-                            .modelId(task.getOmniModel() != null
-                                    ? task.getOmniModel()
-                                    : videoProperties.getUnderstanding().getModel())
-                            .protocol(videoProperties.getUnderstanding().getProtocol())
+                            .providerKey(task.getOmniProvider())
+                            .modelId(task.getOmniModel())
+                            .protocol(omniProtocol)
                             .stripAudio(mode == UnderstandingMode.HYBRID
                                     && videoProperties.getUnderstanding().isStripAudioOnVisualChunks())
                             .useAudioInVideo(mode == UnderstandingMode.OMNI_ONLY)

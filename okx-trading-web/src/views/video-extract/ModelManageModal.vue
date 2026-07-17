@@ -30,8 +30,8 @@
           <span class="mono muted">{{ record.provider }}</span>
         </template>
         <template v-else-if="column.key === 'capability'">
-          <a-tag :color="record.capability === 'image' ? 'green' : 'blue'">
-            {{ record.capability === 'image' ? '文生图' : 'Chat' }}
+          <a-tag :color="capabilityColor(record.capability)">
+            {{ capabilityLabel(record.capability) }}
           </a-tag>
         </template>
         <template v-else-if="column.key === 'modelId'">
@@ -72,6 +72,7 @@
           <a-radio-group v-model:value="form.capability" button-style="solid" :disabled="!!lockedCapability">
             <a-radio-button value="chat">Chat（对话/润色/分镜）</a-radio-button>
             <a-radio-button value="image">文生图 Image</a-radio-button>
+            <a-radio-button value="video_omni">视频理解 Omni</a-radio-button>
           </a-radio-group>
         </a-form-item>
         <a-form-item label="供应商" required>
@@ -84,24 +85,20 @@
         <a-form-item label="模型 ID（调用 API 用）" required>
           <a-input
             v-model:value="form.modelId"
-            :placeholder="
-              form.capability === 'image'
-                ? '例如 black-forest-labs/flux.1-schnell'
-                : '例如 deepseek-ai/deepseek-v4-flash'
-            "
+            :placeholder="modelIdPlaceholder"
           />
         </a-form-item>
         <a-form-item label="显示名称" required>
           <a-input
             v-model:value="form.modelName"
-            :placeholder="form.capability === 'image' ? '例如 FLUX.1-schnell（快速）' : '例如 DeepSeek V4 Flash'"
+            :placeholder="modelNamePlaceholder"
           />
         </a-form-item>
         <template v-if="form.capability === 'image'">
           <a-form-item label="协议" required>
             <a-select
               v-model:value="form.protocol"
-              :options="protocolOptions"
+              :options="imageProtocolOptions"
               placeholder="选择生图协议"
             />
           </a-form-item>
@@ -116,6 +113,15 @@
           </a-form-item>
           <a-form-item label="最大步数">
             <a-input-number v-model:value="form.maxSteps" :min="1" :max="100" style="width: 100%" />
+          </a-form-item>
+        </template>
+        <template v-else-if="form.capability === 'video_omni'">
+          <a-form-item label="协议" required>
+            <a-select
+              v-model:value="form.protocol"
+              :options="omniProtocolOptions"
+              placeholder="选择视频理解协议"
+            />
           </a-form-item>
         </template>
         <a-form-item label="排序（越小越靠前）">
@@ -143,10 +149,10 @@ const props = withDefaults(
   defineProps<{
     open: boolean
     /**
-     * 锁定能力：打开时只管理该类型（image-generate 页传 image，视频页传 chat）。
+     * 锁定能力：打开时只管理该类型。
      * 不传则展示全部，表单可切换类型。
      */
-    capability?: 'chat' | 'image'
+    capability?: 'chat' | 'image' | 'video_omni'
   }>(),
   { capability: undefined }
 )
@@ -161,12 +167,19 @@ const lockedCapability = computed(() => props.capability || null)
 const modalTitle = computed(() => {
   if (props.capability === 'image') return '文生图模型管理'
   if (props.capability === 'chat') return 'Chat 模型管理'
+  if (props.capability === 'video_omni') return '视频理解模型管理'
   return 'AI 模型管理'
 })
 
 const modalHint = computed(() => {
   if (props.capability === 'image') {
     return '生图模型存库（capability=image）。须填 Invoke URL；供应商 API Key 在 yml ai.providers。'
+  }
+  if (props.capability === 'video_omni') {
+    return '视频多模态理解模型（capability=video_omni）。模型 ID 由前端任务选择，不写死在后端 yml。'
+  }
+  if (props.capability === 'chat') {
+    return 'Chat 模型存库（对话/润色/分镜/总结）。供应商 API Key 在 yml ai.providers。'
   }
   return '模型保存在数据库，供应商 API Key 仍在后端 yml 的 ai.providers 中配置。'
 })
@@ -180,7 +193,7 @@ const editingId = ref<string | null>(null)
 const togglingId = ref('')
 
 const form = reactive({
-  capability: 'chat' as 'chat' | 'image',
+  capability: 'chat' as 'chat' | 'image' | 'video_omni',
   provider: 'nvidia',
   modelId: '',
   modelName: '',
@@ -193,27 +206,73 @@ const form = reactive({
   remark: ''
 })
 
-const protocolOptions = [
+const imageProtocolOptions = [
   { value: 'nvidia-flux', label: 'nvidia-flux（NVIDIA FLUX 云端 GenAI）' }
+]
+
+const omniProtocolOptions = [
+  { value: 'auto', label: 'auto（按供应商自动）' },
+  { value: 'nvidia-omni-chat', label: 'nvidia-omni-chat（NVIDIA 视频 Omni）' },
+  { value: 'frame-vlm', label: 'frame-vlm（抽帧 + VLM）' }
 ]
 
 const invokePlaceholder = computed(() => {
   return 'https://ai.api.nvidia.com/v1/genai/black-forest-labs/flux.1-schnell'
 })
 
+const modelIdPlaceholder = computed(() => {
+  if (form.capability === 'image') return '例如 black-forest-labs/flux.1-schnell'
+  if (form.capability === 'video_omni') return '例如 nvidia/nemotron-3-nano-omni-30b-a3b-reasoning'
+  return '例如 deepseek-ai/deepseek-v4-flash'
+})
+
+const modelNamePlaceholder = computed(() => {
+  if (form.capability === 'image') return '例如 FLUX.1-schnell（快速）'
+  if (form.capability === 'video_omni') return '例如 Nemotron Omni 视频理解'
+  return '例如 DeepSeek V4 Flash'
+})
+
+function capabilityLabel(cap?: string | null) {
+  if (cap === 'image') return '文生图'
+  if (cap === 'video_omni') return '视频理解'
+  return 'Chat'
+}
+
+function capabilityColor(cap?: string | null) {
+  if (cap === 'image') return 'green'
+  if (cap === 'video_omni') return 'purple'
+  return 'blue'
+}
+
 const columns = computed(() => {
   const cols: any[] = [
     { title: '供应商', key: 'provider', width: 140 },
-    { title: '类型', key: 'capability', width: 80 },
+    { title: '类型', key: 'capability', width: 100 },
     { title: '显示名称', dataIndex: 'modelName', key: 'modelName', width: 140 },
     { title: '模型 ID', key: 'modelId', width: 200 }
   ]
   if (props.capability === 'image' || !props.capability) {
     cols.push({ title: 'Invoke URL', key: 'invokeUrl', width: 160 })
-    cols.push({ title: '步数', key: 'steps', width: 80, customRender: ({ record }: any) => {
-      if (record.capability !== 'image') return '—'
-      return `${record.defaultSteps ?? '—'} / ${record.maxSteps ?? '—'}`
-    }})
+    cols.push({
+      title: '步数',
+      key: 'steps',
+      width: 80,
+      customRender: ({ record }: any) => {
+        if (record.capability !== 'image') return '—'
+        return `${record.defaultSteps ?? '—'} / ${record.maxSteps ?? '—'}`
+      }
+    })
+  }
+  if (props.capability === 'video_omni' || !props.capability) {
+    cols.push({
+      title: '协议',
+      key: 'protocol',
+      width: 140,
+      customRender: ({ record }: any) =>
+        record.capability === 'video_omni' || record.capability === 'image'
+          ? record.protocol || '—'
+          : '—'
+    })
   }
   cols.push(
     { title: '排序', dataIndex: 'sortOrder', key: 'sortOrder', width: 60 },
@@ -238,9 +297,16 @@ function shortUrl(u?: string | null) {
   return u.slice(0, 18) + '…' + u.slice(-14)
 }
 
-function inferProtocol(_modelId?: string | null, _invokeUrl?: string | null) {
-  // 系统仅支持 NVIDIA FLUX 云端 GenAI
-  return 'nvidia-flux'
+function defaultProtocolFor(cap: string) {
+  if (cap === 'image') return 'nvidia-flux'
+  if (cap === 'video_omni') return 'nvidia-omni-chat'
+  return ''
+}
+
+function normalizeCap(cap?: string | null): 'chat' | 'image' | 'video_omni' {
+  if (cap === 'image') return 'image'
+  if (cap === 'video_omni') return 'video_omni'
+  return 'chat'
 }
 
 async function loadAll() {
@@ -265,14 +331,14 @@ async function loadAll() {
 function openForm(row?: AiModelConfig) {
   if (row) {
     editingId.value = row.id
-    form.capability = (row.capability === 'image' ? 'image' : 'chat')
+    form.capability = normalizeCap(row.capability)
     form.provider = row.provider
     form.modelId = row.modelId
     form.modelName = row.modelName
     form.invokeUrl = row.invokeUrl || ''
     form.defaultSteps = row.defaultSteps ?? 4
     form.maxSteps = row.maxSteps ?? 50
-    form.protocol = row.protocol || inferProtocol(row.modelId, row.invokeUrl)
+    form.protocol = row.protocol || defaultProtocolFor(form.capability)
     form.enabled = row.enabled
     form.sortOrder = row.sortOrder ?? 0
     form.remark = row.remark || ''
@@ -282,13 +348,13 @@ function openForm(row?: AiModelConfig) {
     form.provider = providerOptions.value[0]?.key || 'nvidia'
     form.modelId = ''
     form.modelName = ''
-    form.protocol = form.capability === 'image' ? 'nvidia-flux' : 'nvidia-flux'
+    form.protocol = defaultProtocolFor(form.capability)
     form.invokeUrl =
       form.capability === 'image'
         ? 'https://ai.api.nvidia.com/v1/genai/black-forest-labs/flux.1-schnell'
         : ''
-    form.defaultSteps = form.capability === 'image' ? 4 : 4
-    form.maxSteps = form.capability === 'image' ? 50 : 50
+    form.defaultSteps = 4
+    form.maxSteps = 50
     form.enabled = true
     form.sortOrder = (list.value.length + 1) * 10
     form.remark = ''
@@ -320,7 +386,9 @@ async function submitForm() {
       body.invokeUrl = form.invokeUrl.trim()
       body.defaultSteps = form.defaultSteps ?? 4
       body.maxSteps = form.maxSteps ?? 50
-      body.protocol = form.protocol || inferProtocol(form.modelId, form.invokeUrl)
+      body.protocol = form.protocol || 'nvidia-flux'
+    } else if (form.capability === 'video_omni') {
+      body.protocol = form.protocol || 'nvidia-omni-chat'
     }
     if (editingId.value) {
       await videoApi.updateModelConfig(editingId.value, body)

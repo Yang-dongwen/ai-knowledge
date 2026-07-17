@@ -25,8 +25,14 @@ const routes: RouteRecordRaw[] = [
   {
     path: '/',
     component: BasicLayout,
-    redirect: '/video-extract',
+    redirect: '/home',
     children: [
+      {
+        path: 'home',
+        name: 'Home',
+        component: () => import('@/views/home/index.vue'),
+        meta: { title: '工作台', group: 'home' }
+      },
       {
         path: 'dashboard',
         name: 'Dashboard',
@@ -103,7 +109,8 @@ const routes: RouteRecordRaw[] = [
         path: 'ai-chat',
         name: 'AiChat',
         component: () => import('@/views/ai-chat/index.vue'),
-        meta: { title: 'AI 对话', group: 'tools' }
+        // immersive：占满视口、隐藏页脚，由页面内部滚动（仅消息区）
+        meta: { title: 'AI 对话', group: 'tools', immersive: true }
       }
     ]
   }
@@ -126,16 +133,16 @@ router.beforeEach(async (to) => {
     }
   }
   if (isPublic && auth.isLoggedIn && (to.path === '/login' || to.path === '/register')) {
-    return { path: '/video-extract' }
+    return { path: '/home' }
   }
-  // 交易管理等超管页面：无权限则回工具页
+  // 交易管理等超管页面：无权限则回工作台
   if (to.meta?.requiresSuperAdmin && auth.isLoggedIn && !auth.isSuperAdmin) {
-    // 尝试刷新一次角色（避免 localStorage 旧数据）
+    // 尝试刷新一次角色（避免 localStorage 旧缓存）
     if (!auth.user?.role) {
       await auth.fetchMe()
     }
     if (!auth.isSuperAdmin) {
-      return { path: '/video-extract' }
+      return { path: '/home' }
     }
   }
   return true
@@ -144,6 +151,8 @@ router.beforeEach(async (to) => {
 router.afterEach((to) => {
   const pageTitle = (to.meta?.title as string | undefined) || ''
   document.title = pageTitle ? `${pageTitle} · ${APP_TITLE}` : APP_TITLE
+  // 沉浸式页面：锁死 body 滚动，只允许内部聊天区域滚动
+  document.documentElement.classList.toggle('immersive-page', to.meta?.immersive === true)
 })
 
 export default router

@@ -206,6 +206,49 @@ public class AiModelConfigService {
         return e != null ? e.getModelId() : null;
     }
 
+    /**
+     * 校验并返回启用的视频理解（video_omni）模型；须由前端显式选择，不读 yml 写死模型。
+     */
+    public AiModelConfigEntity requireEnabledVideoOmniModel(String provider, String modelId) {
+        if (modelId == null || modelId.isBlank()) {
+            throw new BusinessException(400,
+                    "请选择视频理解模型（capability=video_omni），可在「模型管理」中配置");
+        }
+        LambdaQueryWrapper<AiModelConfigEntity> q = new LambdaQueryWrapper<AiModelConfigEntity>()
+                .eq(AiModelConfigEntity::getModelId, modelId.trim())
+                .eq(AiModelConfigEntity::getEnabled, 1);
+        applyCapabilityFilter(q, CAP_VIDEO_OMNI);
+        if (provider != null && !provider.isBlank()) {
+            q.eq(AiModelConfigEntity::getProvider, provider.trim());
+        }
+        q.orderByAsc(AiModelConfigEntity::getSortOrder).last("LIMIT 1");
+        AiModelConfigEntity e = aiModelConfigMapper.selectOne(q);
+        if (e == null) {
+            throw new BusinessException(400, "视频理解模型不存在或未启用: "
+                    + (provider != null ? provider + " / " : "") + modelId
+                    + "（请在模型管理添加 capability=video_omni 的配置）");
+        }
+        ProviderConfig pc = aiProperties.getProvider(e.getProvider());
+        if (pc == null || pc.getApiKey() == null || pc.getApiKey().isBlank()) {
+            throw new BusinessException(400, "视频理解供应商未配置 api-key: " + e.getProvider());
+        }
+        return e;
+    }
+
+    /**
+     * 查找启用的 video_omni 模型（可选）；找不到返回 null。
+     */
+    public AiModelConfigEntity findEnabledVideoOmniModel(String provider, String modelId) {
+        if (modelId == null || modelId.isBlank()) {
+            return null;
+        }
+        try {
+            return requireEnabledVideoOmniModel(provider, modelId);
+        } catch (BusinessException e) {
+            return null;
+        }
+    }
+
     public List<Map<String, String>> listProviders() {
         List<Map<String, String>> result = new ArrayList<>();
         for (Map.Entry<String, ProviderConfig> e : aiProperties.getAllAvailableProviders()) {

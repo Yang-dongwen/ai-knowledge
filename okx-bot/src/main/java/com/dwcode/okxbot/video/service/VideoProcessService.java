@@ -98,34 +98,17 @@ public class VideoProcessService {
                 options.getUnderstandingMode() != null
                         ? options.getUnderstandingMode()
                         : videoProperties.getUnderstanding().getMode());
+        // 画面理解模型：必须由前端选择（库表 capability=video_omni），禁止 yml 写死模型 ID
         String omniProvider = blankToNull(options.getOmniProvider());
         String omniModel = blankToNull(options.getOmniModel());
-        if (mode.needsOmni()) {
-            if (omniProvider == null) {
-                omniProvider = blankToNull(videoProperties.getUnderstanding().getProvider());
+        if (mode.needsOmni() && !videoProperties.getUnderstanding().isMock()) {
+            if (omniProvider == null || omniModel == null) {
+                throw new BusinessException(400,
+                        "混合/仅画面模式请选择「视频理解模型」（capability=video_omni，可在模型管理中配置）");
             }
-            if (omniModel == null) {
-                omniModel = blankToNull(videoProperties.getUnderstanding().getModel());
-            }
-            if (!videoProperties.getUnderstanding().isMock()) {
-                if (omniProvider == null) {
-                    throw new BusinessException("多模态模式需要 omniProvider 或配置 video.understanding.provider");
-                }
-                ProviderConfig opc = aiProperties.getProvider(omniProvider);
-                if (opc == null || opc.getApiKey() == null || opc.getApiKey().isEmpty()) {
-                    throw new BusinessException("多模态供应商不可用或未配置 api-key: " + omniProvider);
-                }
-                if (omniModel == null) {
-                    omniModel = aiModelConfigService.firstEnabledModelId(
-                            omniProvider, AiModelConfigService.CAP_VIDEO_OMNI);
-                }
-                if (omniModel == null) {
-                    omniModel = blankToNull(videoProperties.getUnderstanding().getModel());
-                }
-                if (omniModel == null) {
-                    throw new BusinessException("未配置可用 video_omni 模型，请在模型管理添加或配置 yml model");
-                }
-            }
+            var omniCfg = aiModelConfigService.requireEnabledVideoOmniModel(omniProvider, omniModel);
+            omniProvider = omniCfg.getProvider();
+            omniModel = omniCfg.getModelId();
         }
 
         VideoTaskEntity entity = new VideoTaskEntity();
@@ -250,11 +233,32 @@ public class VideoProcessService {
             }
             String op = blankToNull(request.getOmniProvider());
             String om = blankToNull(request.getOmniModel());
-            if (op != null) {
-                entity.setOmniProvider(op);
-            }
-            if (om != null) {
-                entity.setOmniModel(om);
+            UnderstandingMode retryMode = UnderstandingMode.from(entity.getUnderstandingMode());
+            if (retryMode.needsOmni() && !videoProperties.getUnderstanding().isMock()) {
+                // 重试画面模式：请求显式指定，或沿用任务上已有模型
+                String useOp = op != null ? op : blankToNull(entity.getOmniProvider());
+                String useOm = om != null ? om : blankToNull(entity.getOmniModel());
+                if (useOp == null || useOm == null) {
+                    throw new BusinessException(400,
+                            "画面理解模式请选择视频理解模型（capability=video_omni）");
+                }
+                var omniCfg = aiModelConfigService.requireEnabledVideoOmniModel(useOp, useOm);
+                entity.setOmniProvider(omniCfg.getProvider());
+                entity.setOmniModel(omniCfg.getModelId());
+            } else {
+                if (op != null) {
+                    entity.setOmniProvider(op);
+                }
+                if (om != null) {
+                    entity.setOmniModel(om);
+                }
+                if (!retryMode.needsOmni()
+                        && request.getUnderstandingMode() != null
+                        && !request.getUnderstandingMode().isBlank()) {
+                    // 切回仅音频时清空 omni
+                    entity.setOmniProvider(null);
+                    entity.setOmniModel(null);
+                }
             }
         }
 

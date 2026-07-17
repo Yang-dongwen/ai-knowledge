@@ -134,15 +134,30 @@ public class LangChain4jDirectorAdapter implements DirectorPort {
     private static String narrationRule(String audioMode) {
         String m = audioMode != null ? audioMode.trim().toLowerCase() : "";
         if ("tts".equals(m) || "tts_bgm".equals(m)) {
-            return "当前需要口播：每镜必须填 narration（中文口语，完整句子，禁止空字符串）；"
+            return "当前需要口播：每镜必须填 narration（与用户提示词同语言，口语化完整句子，禁止空字符串）；"
                     + "可与 overlay 标题呼应，但 narration 不能省略";
         }
-        return "当前无强制口播：narration 可省略；若填写须为中文";
+        return "当前无强制口播：narration 可省略；若填写须与用户提示词同语言";
+    }
+
+    /**
+     * 语言策略：以用户提示词语言为准，禁止强制英文化。
+     */
+    private static String languagePolicy(String language) {
+        String lang = language != null ? language.trim().toLowerCase(java.util.Locale.ROOT) : "zh";
+        if (lang.startsWith("en")) {
+            return "语言：用户提示词为英文语境时，narration / overlay / visual.prompt 全部使用英文，勿擅自译成中文。";
+        }
+        return "语言：必须与用户提示词使用相同语言。"
+                + "用户写中文则 narration、overlay 文案、visual.prompt 全部用中文；"
+                + "用户写英文则全部用英文。"
+                + "禁止把画面 prompt 强制翻译成英文，也禁止擅自改写用户语言。";
     }
 
     private String buildSystem(DirectorCommand cmd) {
         int minS = aigenProperties.getVisual().getMinShots();
         int maxS = aigenProperties.getVisual().getMaxShots();
+        String lang = cmd.getLanguage() != null ? cmd.getLanguage() : "zh";
         return """
                 你是短视频视觉导演。只输出一个 JSON 对象（vt-1.0 镜头表），不要 markdown，不要解释。
                 字段：
@@ -152,25 +167,26 @@ public class LangChain4jDirectorAdapter implements DirectorPort {
                   "audio":{"mode":"%s"},
                   "shots":[{
                     "id":"shot-1","durationSec":3.5,
-                    "narration":"中文口播，口语化，15～40字",
-                    "visual":{"type":"ai_image","prompt":"English cinematic image prompt, no text in image"},
+                    "narration":"与用户同语言的口播，口语化，15～40字",
+                    "visual":{"type":"ai_image","prompt":"与用户同语言的画面描述，电影感光影构图，画面无文字"},
                     "motion":{"type":"ken_burns"},
                     "transition":{"type":"crossfade","durationFrames":12},
-                    "overlay":{"layout":"hook-center","title":"中文大标题","subtitle":"","bullets":[]}
+                    "overlay":{"layout":"hook-center","title":"与用户同语言的大标题","subtitle":"","bullets":[]}
                   }]
                 }
                 硬性规则：
                 1. shots 数量 %d～%d，总时长约 %d 秒
-                2. visual.type 默认 ai_image；prompt 必须是英文画面描述，禁止 http URL
+                2. visual.type 默认 ai_image；prompt 为画面描述，必须与用户提示词同语言（勿强制英文），禁止 http URL；画面中不要出现可读文字/水印
                 3. overlay.layout 只能是: none, hook-center, lower-third, bullets-right, caption
                 4. motion.type: static 或 ken_burns 或 pan_left 或 pan_right 或 zoom_in 或 zoom_out
-                5. 中文叠字简短有力；画面 prompt 丰富具体
+                5. 叠字简短有力、与用户同语言；画面 prompt 丰富具体且同语言
                 6. 叙事建议：钩子 → 展开 → 对比/洞察 → 收束
                 7. 不要输出 audio 文件路径；audio.mode 保持为 %s
                 8. %s
+                9. %s
                 风格预设 %s：据此调整画面与叠字语气。
                 """.formatted(
-                cmd.getLanguage() != null ? cmd.getLanguage() : "zh",
+                lang,
                 cmd.getAspectRatio() != null ? cmd.getAspectRatio() : "9:16",
                 cmd.getTargetDurationSec(),
                 cmd.getStylePreset() != null ? cmd.getStylePreset() : "cinematic-dark",
@@ -179,6 +195,7 @@ public class LangChain4jDirectorAdapter implements DirectorPort {
                 cmd.getTargetDurationSec(),
                 cmd.getAudioMode() != null ? cmd.getAudioMode() : "bgm_only",
                 narrationRule(cmd.getAudioMode()),
+                languagePolicy(lang),
                 cmd.getStylePreset() != null ? cmd.getStylePreset() : "cinematic-dark"
         );
     }

@@ -13,6 +13,7 @@ import com.dwcode.okxbot.imggen.entity.ImgGenTaskEntity;
 import com.dwcode.okxbot.imggen.enums.ImgGenTaskStatus;
 import com.dwcode.okxbot.imggen.event.ImgGenTaskEventPublisher;
 import com.dwcode.okxbot.imggen.mapper.ImgGenTaskMapper;
+import com.dwcode.okxbot.imggen.port.PromptEnhancePort;
 import com.dwcode.okxbot.imggen.util.AspectRatioMapper;
 import com.dwcode.okxbot.video.service.AiModelConfigService;
 import com.fasterxml.jackson.databind.JsonNode;
@@ -56,7 +57,83 @@ public class ImgGenTaskService {
     private final ImgGenProperties properties;
     private final AiProperties aiProperties;
     private final AiModelConfigService aiModelConfigService;
+    private final PromptEnhancePort promptEnhancePort;
     private final ObjectMapper objectMapper;
+
+    /**
+     * 独立润色：即时返回结果，不创建任务。由用户确认后再提交生图。
+     */
+    public ImgGenEnhanceResponse enhancePrompt(ImgGenEnhanceRequest request) {
+        if (!properties.isEnabled()) {
+            throw new BusinessException(400, "文生图功能未启用");
+        }
+        String original = request.getPrompt() != null ? request.getPrompt().trim() : "";
+        if (original.isEmpty()) {
+            throw new BusinessException(400, "prompt 不能为空");
+        }
+        if ("off".equalsIgnoreCase(properties.getSteps().getEnhance())) {
+            throw new BusinessException(400, "润色步骤已关闭（imggen.steps.enhance=off）");
+        }
+
+        LlmPair llm = resolveEnhanceLlm(request.getLlmProvider(), request.getLlmModel());
+        String languageHint = blankToNull(request.getLanguageHint());
+        if (languageHint == null || "auto".equalsIgnoreCase(languageHint)) {
+            languageHint = detectLanguageHint(original);
+        }
+
+        long t0 = System.currentTimeMillis();
+        try {
+            if ("mock".equalsIgnoreCase(properties.getSteps().getEnhance()) || properties.isMockPipeline()) {
+                String mock = original + "，画面细腻，光影自然，构图均衡，高清质感";
+                return ImgGenEnhanceResponse.builder()
+                        .originalPrompt(original)
+                        .enhancedPrompt(mock)
+                        .llmProvider(llm.provider())
+                        .llmModel(llm.model())
+                        .latencyMs(System.currentTimeMillis() - t0)
+                        .build();
+            }
+            String enhanced = promptEnhancePort.enhance(
+                    original, languageHint, llm.provider(), llm.model());
+            if (enhanced == null || enhanced.isBlank()) {
+                throw new BusinessException(500, "润色结果为空");
+            }
+            long latency = System.currentTimeMillis() - t0;
+            log.info("独立润色完成: userId={} inLen={} outLen={} latencyMs={} llm={}/{}",
+                    SecurityUtils.requireCurrentUserId(), original.length(), enhanced.length(),
+                    latency, llm.provider(), llm.model());
+            return ImgGenEnhanceResponse.builder()
+                    .originalPrompt(original)
+                    .enhancedPrompt(enhanced.trim())
+                    .llmProvider(llm.provider())
+                    .llmModel(llm.model())
+                    .latencyMs(latency)
+                    .build();
+        } catch (BusinessException e) {
+            throw e;
+        } catch (Exception e) {
+            log.warn("独立润色失败: {}", e.getMessage());
+            throw new BusinessException(500, "润色失败: " + e.getMessage());
+        }
+    }
+
+    /** 粗略语言提示：含较多中日韩字符则 zh，否则 en */
+    private static String detectLanguageHint(String text) {
+        if (text == null || text.isEmpty()) {
+            return "zh";
+        }
+        int cjk = 0;
+        for (int i = 0; i < text.length(); i++) {
+            char c = text.charAt(i);
+            if (Character.UnicodeScript.of(c) == Character.UnicodeScript.HAN
+                    || Character.UnicodeScript.of(c) == Character.UnicodeScript.HIRAGANA
+                    || Character.UnicodeScript.of(c) == Character.UnicodeScript.KATAKANA
+                    || Character.UnicodeScript.of(c) == Character.UnicodeScript.HANGUL) {
+                cjk++;
+            }
+        }
+        return cjk * 2 >= text.length() / 4 ? "zh" : "en";
+    }
 
     public ImgGenTaskResponse create(ImgGenCreateRequest request) {
         if (!properties.isEnabled()) {

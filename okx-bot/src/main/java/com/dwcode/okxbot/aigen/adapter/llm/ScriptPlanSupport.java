@@ -20,6 +20,7 @@ public final class ScriptPlanSupport {
         int[] wh = "16:9".equals(cmd.getAspectRatio())
                 ? new int[]{1920, 1080}
                 : ("1:1".equals(cmd.getAspectRatio()) ? new int[]{1080, 1080} : new int[]{1080, 1920});
+        String lang = cmd.getLanguage() != null ? cmd.getLanguage() : "zh";
         String common = """
                 你是短视频分镜编剧。只输出一个 JSON 对象，不要 markdown，不要解释。
                 通用约束：
@@ -27,15 +28,16 @@ public final class ScriptPlanSupport {
                 2. meta.templateId 固定为 %s
                 3. meta.language=%s, meta.fps=%d, meta.width=%d, meta.height=%d
                 4. scenes 4～8 个；每场 type 只能是: %s
-                5. 每场必须有 id、type、narration（口播，中文口语，口语化）、props
+                5. 每场必须有 id、type、narration（口播，口语化）、props
                 6. props 必须是 JSON 对象（花括号），禁止数组！正确: "props":{"title":"标题","eyebrow":"标签"}；错误: "props":["title=标题"]
                 7. items/leftItems/rightItems 必须是字符串数组，例如 ["要点一","要点二"]，禁止对象数组
                 8. 画面 props 字段值为短短语，口播 narration 可稍长
                 9. 总时长约 %d 秒；可给 durationInFrames，系统会再规范化
                 10. 不要输出任何 http(s) URL 或文件路径；audio 与 subtitles 可省略
+                11. 语言必须与用户提示词一致：用户写中文则 narration/props 用中文，写英文则用英文；禁止擅自翻译成另一种语言
                 """.formatted(
                 cmd.getTemplateId(),
-                cmd.getLanguage() != null ? cmd.getLanguage() : "zh",
+                lang,
                 fps, wh[0], wh[1],
                 allowedTypes,
                 cmd.getTargetDurationSec()

@@ -30,6 +30,15 @@ public class ChatConversationEntity {
     /** 模型ID，如 deepseek-chat */
     private String model;
 
+    /** 会话温度 0~2；null 用默认 */
+    private Double temperature;
+
+    /** 会话 max_tokens；null 用默认 */
+    private Integer maxTokens;
+
+    /** 会话自定义 system prompt；null/空 用全局默认 */
+    private String systemPrompt;
+
     @TableField(fill = FieldFill.INSERT)
     private LocalDateTime createdAt;
 

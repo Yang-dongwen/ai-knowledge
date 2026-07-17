@@ -151,9 +151,10 @@ video:
     mode: audio_only
     # true=不调云端 Omni，走 Mock 画面结果（联调用）
     mock: false
+    # 任务用模型 ID 由前端选择（库表 capability=video_omni），以下 provider/model 仅作遗留兼容，运行时不再默认写入任务
     provider: nvidia
-    model: nvidia/nemotron-3-nano-omni-30b-a3b-reasoning
-    # auto | nvidia-omni-chat | frame-vlm | mock
+    model: ""
+    # auto | nvidia-omni-chat | frame-vlm | mock — 模型未配 protocol 时的回退
     protocol: auto
     timeout-seconds: 600
     write-timeout-seconds: 120
@@ -255,7 +256,7 @@ imggen:
   cleanup-on-delete: true
   max-n: 4
   steps:
-    enhance: real     # off | real | mock — 用户勾选「Prompt 润色」时生效；real=LlmChatClient
+    enhance: real     # off | real | mock — 独立润色 API / 任务内润色；real=LlmChatClient
     generate: real    # real=NVIDIA FLUX；mock=本地渐变假图
   prompt-enhance:
     fallback-on-error: true
