@@ -11,6 +11,7 @@ import com.dwcode.okxbot.auth.security.AuthUserPrincipal;
 import com.dwcode.okxbot.auth.security.JwtService;
 import com.dwcode.okxbot.auth.security.SecurityUtils;
 import com.dwcode.okxbot.common.exception.BusinessException;
+import com.dwcode.okxbot.member.service.MemberStatusService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.security.crypto.password.PasswordEncoder;
@@ -29,6 +30,7 @@ public class AuthService {
     private final PasswordEncoder passwordEncoder;
     private final JwtService jwtService;
     private final AuthProperties authProperties;
+    private final MemberStatusService memberStatusService;
 
     public void sendRegisterCode(String email) {
         String normalized = EmailCodeService.normalizeEmail(email);
@@ -114,9 +116,11 @@ public class AuthService {
 
     /**
      * 查询当前登录用户完整资料（走数据库，非 JWT 缓存字段）。
+     * 先惰性降级过期 MEMBER，再返回 memberActive。
      */
     public AuthUserResponse me() {
         AuthUserPrincipal p = SecurityUtils.requireCurrentUser();
+        memberStatusService.demoteIfExpired(p.getId());
         SysUserEntity user = sysUserMapper.selectById(p.getId());
         if (user == null) {
             throw new BusinessException(401, "用户不存在或已删除");
@@ -149,6 +153,8 @@ public class AuthService {
                 .status(user.getStatus())
                 .lastLoginAt(user.getLastLoginAt())
                 .createdAt(user.getCreatedAt())
+                .memberExpireAt(user.getMemberExpireAt())
+                .memberActive(memberStatusService.isActive(user))
                 .build();
     }
 

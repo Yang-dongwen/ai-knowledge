@@ -56,17 +56,34 @@ public class TopicRelevanceService {
             }
         }
 
+        // 中文：优先 2～4 字实体片段（避免整句连成超长锚点导致分镜无法命中）
         Matcher cm = CJK_RUN.matcher(text);
+        List<String> cjkCandidates = new ArrayList<>();
         while (cm.find()) {
             String w = cm.group();
-            if (STOP_CJK.contains(w)) {
+            if (w == null || w.isBlank()) {
                 continue;
             }
-            // 过滤纯虚词短串
-            if (w.length() == 2 && STOP_CJK.contains(w)) {
+            if (w.length() <= 4) {
+                if (!STOP_CJK.contains(w)) {
+                    cjkCandidates.add(w);
+                }
                 continue;
             }
-            out.add(w);
+            // 长串滑窗 4→2 字
+            for (int len = 4; len >= 2; len--) {
+                for (int i = 0; i + len <= w.length(); i++) {
+                    String sub = w.substring(i, i + len);
+                    if (!STOP_CJK.contains(sub)) {
+                        cjkCandidates.add(sub);
+                    }
+                }
+            }
+        }
+        // 长词优先，去重后截断
+        cjkCandidates.sort((a, b) -> Integer.compare(b.length(), a.length()));
+        for (String c : cjkCandidates) {
+            out.add(c);
             if (out.size() >= 12) {
                 break;
             }

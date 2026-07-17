@@ -184,44 +184,107 @@ function runFfmpeg(args) {
   });
 }
 
-/**
- * 用 FFmpeg 把分镜 TTS 按 startFrame 混入成片，覆盖 Remotion 可能产出的静音轨。
- * 这是成片「有声」的可靠路径。
- */
-async function muxNarrationWithFfmpeg(videoPath, workDir, storyboard) {
-  const fps = Number(storyboard?.meta?.fps) || 30;
-  const scenes = Array.isArray(storyboard?.scenes) ? storyboard.scenes : [];
-  const tracks = Array.isArray(storyboard?.audio?.tracks)
-    ? storyboard.audio.tracks
-    : [];
+function resolveWorkRelFile(workDir, rel) {
+  if (!rel || typeof rel !== "string") return null;
+  let r = rel.trim().replace(/\\/g, "/");
+  if (!r || r.includes("..")) return null;
+  if (r.startsWith("http://") || r.startsWith("https://")) {
+    const m = r.match(/\/media\/[^/]+\/(.+)$/i);
+    if (!m) return null;
+    r = m[1];
+  }
+  if (path.isAbsolute(r) || /^[A-Za-z]:[\\/]/.test(r)) {
+    return fs.existsSync(r) ? r : null;
+  }
+  r = r.replace(/^\//, "");
+  if (r.toLowerCase().endsWith(".txt") || r.toLowerCase().includes("mock")) {
+    return null;
+  }
+  const full = path.resolve(workDir, r);
+  return fs.existsSync(full) ? full : null;
+}
 
+/**
+ * 收集需 mux 的音频：
+ * - template：audio.tracks + scenes.startFrame
+ * - visual：shots[].audioSrc + startFrame，以及 audio.bgmSrc
+ */
+function collectMixClips(workDir, props) {
+  const fps = Number(props?.meta?.fps) || 30;
   const clips = [];
+
+  // —— template 路径 ——
+  const scenes = Array.isArray(props?.scenes) ? props.scenes : [];
+  const tracks = Array.isArray(props?.audio?.tracks) ? props.audio.tracks : [];
   for (const t of tracks) {
     const file = resolveLocalAudioFile(workDir, t);
     if (!file) continue;
     const scene = scenes.find((s) => s.id === t.sceneId);
     const startFrame = scene ? Number(scene.startFrame) || 0 : 0;
     const delayMs = Math.max(0, Math.round((startFrame * 1000) / fps));
-    clips.push({ file, delayMs, sceneId: t.sceneId });
+    clips.push({ file, delayMs, volume: 1.2, id: t.sceneId || "track" });
   }
+
+  // —— visual 路径：每镜 TTS ——
+  const shots = Array.isArray(props?.shots) ? props.shots : [];
+  for (const shot of shots) {
+    const rel = shot?.audioSrc || shot?.audioPath;
+    if (!rel) continue;
+    const file = resolveWorkRelFile(workDir, rel);
+    if (!file) {
+      console.warn("[aigen-remotion] visual shot audio missing:", rel);
+      continue;
+    }
+    const startFrame = Number(shot.startFrame) || 0;
+    const delayMs = Math.max(0, Math.round((startFrame * 1000) / fps));
+    clips.push({
+      file,
+      delayMs,
+      volume: 1.15,
+      id: shot.id || "shot",
+    });
+  }
+
+  // —— BGM（visual / 可选）——
+  const bgmRel =
+    props?.audio?.bgmSrc || props?.audio?.bgmPath || props?.audio?.bgmUrl;
+  if (bgmRel) {
+    const bgmFile = resolveWorkRelFile(workDir, String(bgmRel));
+    if (bgmFile) {
+      clips.push({ file: bgmFile, delayMs: 0, volume: 0.28, id: "bgm" });
+    } else {
+      console.warn("[aigen-remotion] bgm file missing:", bgmRel);
+    }
+  }
+
+  return { clips, fps };
+}
+
+/**
+ * 用 FFmpeg 把 TTS/BGM 按时间轴混入成片，覆盖 Remotion 可能产出的静音轨。
+ * 同时支持 template（scenes/tracks）与 visual（shots/audioSrc）。
+ */
+async function muxNarrationWithFfmpeg(videoPath, workDir, storyboard) {
+  const { clips } = collectMixClips(workDir, storyboard);
 
   if (!clips.length) {
     console.warn(
-      "[aigen-remotion] no local narration files for ffmpeg mix — keep remotion audio as-is"
+      "[aigen-remotion] no local audio for ffmpeg mix — keep remotion audio as-is"
     );
-    return { mixed: false, clipCount: 0 };
+    return { mixed: false, clipCount: 0, mode: "none" };
   }
 
   const tmpOut = videoPath + ".narration.mp4";
 
-  // 各旁白：统一 48k stereo，按场景 start 延迟，再 amix
+  // 各轨：统一 48k stereo，按 delay 对齐，再 amix（丢弃 remotion 原音轨，保证可听）
   const filters = [];
   const labels = [];
   for (let i = 0; i < clips.length; i++) {
     const d = clips[i].delayMs;
+    const vol = Number(clips[i].volume) > 0 ? Number(clips[i].volume) : 1;
     filters.push(
       `[${i + 1}:a]aformat=sample_fmts=fltp:sample_rates=48000:channel_layouts=stereo,` +
-        `adelay=${d}|${d}:all=1,volume=1.2[a${i}]`
+        `adelay=${d}|${d}:all=1,volume=${vol}[a${i}]`
     );
     labels.push(`[a${i}]`);
   }
@@ -244,6 +307,7 @@ async function muxNarrationWithFfmpeg(videoPath, workDir, storyboard) {
     "aac",
     "-b:a",
     "192k",
+    // 不用 -shortest：避免 TTS 短于画面时把视频裁短（与 template 混音策略一致）
     "-movflags",
     "+faststart",
     tmpOut
@@ -252,7 +316,6 @@ async function muxNarrationWithFfmpeg(videoPath, workDir, storyboard) {
   try {
     await runFfmpeg(args);
   } catch (e) {
-    // 清理半成品
     try {
       if (fs.existsSync(tmpOut)) fs.unlinkSync(tmpOut);
     } catch {
@@ -261,7 +324,6 @@ async function muxNarrationWithFfmpeg(videoPath, workDir, storyboard) {
     throw e;
   }
 
-  // 原子替换
   const bak = videoPath + ".silent.bak.mp4";
   try {
     if (fs.existsSync(bak)) fs.unlinkSync(bak);
@@ -273,7 +335,6 @@ async function muxNarrationWithFfmpeg(videoPath, workDir, storyboard) {
       /* keep bak if delete fails */
     }
   } catch (e) {
-    // 回滚
     try {
       if (fs.existsSync(bak) && !fs.existsSync(videoPath)) {
         fs.renameSync(bak, videoPath);
@@ -285,9 +346,9 @@ async function muxNarrationWithFfmpeg(videoPath, workDir, storyboard) {
   }
 
   console.log(
-    `[aigen-remotion] ffmpeg mixed ${clips.length} clips into ${path.basename(videoPath)}`
+    `[aigen-remotion] ffmpeg mixed ${clips.length} clips into ${path.basename(videoPath)} ids=${clips.map((c) => c.id).join(",")}`
   );
-  return { mixed: true, clipCount: clips.length };
+  return { mixed: true, clipCount: clips.length, mode: "ffmpeg" };
 }
 
 const app = express();
@@ -302,7 +363,7 @@ app.get("/health", (_req, res) => {
     ok: true,
     audioHttp: true,
     audioMix: true,
-    version: "3",
+    version: "4",
     ffmpeg: FFMPEG_BIN,
     activeRenders,
     maxConcurrent: MAX_CONCURRENT,
@@ -388,16 +449,29 @@ app.post("/render", async (req, res) => {
       throw new Error("output file missing after render");
     }
 
-    // 关键：FFmpeg 按时间轴混入 TTS，修复「有音轨但无声」
+    // 关键：FFmpeg 按时间轴混入 TTS/BGM（template + visual），修复「有音轨但无声」
     let mixInfo = { mixed: false, clipCount: 0 };
+    const planned = collectMixClips(wd, originalProps);
     try {
       mixInfo = await muxNarrationWithFfmpeg(out, wd, originalProps);
+      // 有本地音频素材却未混入 → 视为渲染失败（诚实失败，避免无声 SUCCESS）
+      if (planned.clips.length > 0 && !mixInfo.mixed) {
+        throw new Error(
+          `expected ffmpeg audio mix for ${planned.clips.length} clip(s) but mix skipped`
+        );
+      }
     } catch (mixErr) {
       console.error(
-        "[aigen-remotion] ffmpeg audio mix failed (video kept):",
+        "[aigen-remotion] ffmpeg audio mix failed:",
         mixErr?.message || mixErr
       );
-      // 不整单失败：至少有画面；前端可提示无声
+      if (planned.clips.length > 0) {
+        throw new Error(
+          "ffmpeg audio mix failed: " + (mixErr?.message || String(mixErr))
+        );
+      }
+      // 无旁白/BGM 素材时保持画面-only
+      mixInfo = { mixed: false, clipCount: 0, skipped: true };
     }
 
     console.log(

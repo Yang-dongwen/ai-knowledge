@@ -167,13 +167,20 @@ public class AssetStep implements PipelineStep {
         }
 
         int imageDone = done.get();
+        // 诚实素材：禁止大量占位图/虚路径冒充成功
+        assertVisualAssetsHonest(list, mockAsset, ctx.getWorkDir());
+
         String audioMode = list.getAudio() != null && list.getAudio().getMode() != null
                 ? list.getAudio().getMode().toLowerCase(Locale.ROOT)
                 : (ctx.getTask().getAudioMode() != null ? ctx.getTask().getAudioMode().toLowerCase(Locale.ROOT) : "none");
 
         // BGM
         if ("bgm_only".equals(audioMode) || "tts_bgm".equals(audioMode)) {
-            copyBgmIfPresent(ctx, list);
+            boolean bgmOk = copyBgmIfPresent(ctx, list);
+            if (!bgmOk && aigenProperties.getVisual().isRequireBgmWhenRequested() && !mockAsset) {
+                throw new IllegalStateException(
+                        "音频模式为 " + audioMode + " 但未找到可用 BGM（请配置 aigen.visual.bgm-dir 并放入 mp3）");
+            }
         }
 
         // Visual TTS（口播也并行，并发取 min(2, concurrency)）
@@ -184,10 +191,95 @@ public class AssetStep implements PipelineStep {
             publishProgress(ctx, "正在生成口播 0/" + total, 66, imageDone);
             runParallelTts(ctx, list, fps, total, ttsConcurrency);
             visualShotAssetService.realignShotlistTimeline(list);
+            assertVisualTtsHonest(list, mockAsset, ctx.getWorkDir());
         }
 
         persistShotlist(ctx, list, total, imageDone);
         publishProgress(ctx, "素材已就绪（画面 " + imageDone + "/" + total + "）", 70, imageDone);
+    }
+
+    private void assertVisualAssetsHonest(ShotlistDto list, boolean mockAsset, Path workDir) {
+        if (mockAsset || list == null || list.getShots() == null || list.getShots().isEmpty()) {
+            return;
+        }
+        int total = list.getShots().size();
+        int bad = 0;
+        Path root = workDir != null ? workDir.toAbsolutePath().normalize() : null;
+        for (ShotDto s : list.getShots()) {
+            String t = s.getVisual() != null && s.getVisual().getType() != null
+                    ? s.getVisual().getType().toLowerCase(Locale.ROOT) : "";
+            if ("gradient".equals(t) || "solid".equals(t)) {
+                bad++;
+                continue;
+            }
+            boolean ok = false;
+            if (root != null && s.getVisual() != null) {
+                for (String rel : new String[]{s.getVisual().getVideoPath(), s.getVisual().getAssetPath()}) {
+                    if (rel == null || rel.isBlank()) {
+                        continue;
+                    }
+                    Path p = root.resolve(rel).normalize();
+                    try {
+                        if (p.startsWith(root) && Files.isRegularFile(p) && Files.size(p) >= 256L) {
+                            ok = true;
+                            break;
+                        }
+                    } catch (Exception ignored) {
+                        // count as bad
+                    }
+                }
+            } else {
+                String ap = s.getVisual() != null ? s.getVisual().getAssetPath() : null;
+                ok = ap != null && !ap.isBlank();
+            }
+            if (!ok) {
+                bad++;
+            }
+        }
+        if (bad <= 0) {
+            return;
+        }
+        double ratio = bad / (double) total;
+        double maxRatio = aigenProperties.getVisual().getMaxPlaceholderRatio();
+        if (aigenProperties.getVisual().isFailOnShotError() || ratio >= maxRatio || bad == total) {
+            throw new IllegalStateException(String.format(Locale.ROOT,
+                    "画面素材不合格：%d/%d 镜为占位/缺失/文件无效（failOnShotError=%s, maxPlaceholderRatio=%.2f）",
+                    bad, total, aigenProperties.getVisual().isFailOnShotError(), maxRatio));
+        }
+        log.warn("部分镜头素材异常: {}/{}（仍继续）", bad, total);
+    }
+
+    private void assertVisualTtsHonest(ShotlistDto list, boolean mockAsset, Path workDir) {
+        if (mockAsset || list == null || list.getShots() == null) {
+            return;
+        }
+        int missing = 0;
+        Path root = workDir != null ? workDir.toAbsolutePath().normalize() : null;
+        for (ShotDto s : list.getShots()) {
+            String rel = s.getAudioSrc();
+            if (rel == null || rel.isBlank()) {
+                missing++;
+                continue;
+            }
+            String low = rel.toLowerCase(Locale.ROOT);
+            if (low.endsWith(".txt") || low.contains("mock")) {
+                missing++;
+                continue;
+            }
+            if (root != null) {
+                Path p = root.resolve(rel).normalize();
+                try {
+                    if (!p.startsWith(root) || !Files.isRegularFile(p) || Files.size(p) < 64L) {
+                        missing++;
+                    }
+                } catch (Exception e) {
+                    missing++;
+                }
+            }
+        }
+        if (missing > 0) {
+            throw new IllegalStateException("口播模式有 " + missing + " 镜缺少有效音频文件，拒绝继续渲染");
+        }
     }
 
     private void runParallelTts(PipelineContext ctx, ShotlistDto list, int fps,
@@ -295,12 +387,15 @@ public class AssetStep implements PipelineStep {
         ctx.setShotlist(list);
     }
 
-    private void copyBgmIfPresent(PipelineContext ctx, ShotlistDto list) {
+    /**
+     * @return true=已写入 bgmSrc
+     */
+    private boolean copyBgmIfPresent(PipelineContext ctx, ShotlistDto list) {
         try {
             Path bgmDir = Path.of(aigenProperties.getVisual().getBgmDir()).toAbsolutePath().normalize();
             if (!Files.isDirectory(bgmDir)) {
                 log.info("BGM 目录不存在，跳过: {}", bgmDir);
-                return;
+                return false;
             }
             if (list.getAudio() == null) {
                 list.setAudio(new com.dwcode.okxbot.aigen.domain.shot.ShotlistAudio());
@@ -328,7 +423,7 @@ public class AssetStep implements PipelineStep {
             }
             if (src == null) {
                 log.info("未找到预置 BGM 文件");
-                return;
+                return false;
             }
             Path audioDir = ctx.getWorkDir().resolve("assets").resolve("audio");
             Files.createDirectories(audioDir);
@@ -341,8 +436,10 @@ public class AssetStep implements PipelineStep {
             list.getAudio().setBgmId(src.getFileName().toString());
             ctx.getTask().setBgmId(list.getAudio().getBgmId());
             log.info("已拷贝 BGM: {} -> {}", src, dest);
+            return true;
         } catch (Exception e) {
             log.warn("拷贝 BGM 失败: {}", e.getMessage());
+            return false;
         }
     }
 

@@ -9,6 +9,7 @@ import com.dwcode.okxbot.auth.enums.UserRole;
 import com.dwcode.okxbot.auth.mapper.SysUserMapper;
 import com.dwcode.okxbot.auth.security.SecurityUtils;
 import com.dwcode.okxbot.common.exception.BusinessException;
+import com.dwcode.okxbot.member.service.MemberStatusService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -27,6 +28,7 @@ import java.util.stream.Collectors;
 public class AdminUserService {
 
     private final SysUserMapper sysUserMapper;
+    private final MemberStatusService memberStatusService;
 
     public AdminUserPageResponse listUsers(int page, int size, String keyword, String role, Integer status) {
         SecurityUtils.requireSuperAdmin();
@@ -112,6 +114,8 @@ public class AdminUserService {
                 .status(user.getStatus())
                 .lastLoginAt(user.getLastLoginAt())
                 .createdAt(user.getCreatedAt())
+                .memberExpireAt(user.getMemberExpireAt())
+                .memberActive(memberStatusService.isActive(user))
                 .build();
     }
 }

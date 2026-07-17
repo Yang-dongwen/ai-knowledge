@@ -140,10 +140,13 @@ public class AigenPipeline {
             // 成功前再扫一次磁盘：兼容历史「渲了文件但 path 未写入」的情况
             ensureOutputPathFromDisk(task, workDir);
 
+            // 诚实成功：无可用成片不得标 SUCCESS
+            if (!isPlayableOutput(task)) {
+                throw new IllegalStateException(
+                        "渲染流程结束但未产出可播放的 output.mp4（请检查 aigen-remotion / ffmpeg / 磁盘路径）");
+            }
             task.setStatus(AigenTaskStatus.SUCCESS.name());
-            boolean hasOutput = task.getOutputPath() != null && !task.getOutputPath().isBlank()
-                    && java.nio.file.Files.isRegularFile(Path.of(task.getOutputPath()));
-            task.setCurrentStep(hasOutput ? "生成完成" : "流程完成（无 MP4，请检查渲染配置）");
+            task.setCurrentStep("生成完成");
             task.setProgress(100);
             task.setFinishedAt(LocalDateTime.now());
             task.setTotalDurationMs(System.currentTimeMillis() - pipelineStart);
@@ -152,9 +155,9 @@ public class AigenPipeline {
             task.setUpdatedAt(LocalDateTime.now());
             aigenTaskMapper.updateById(task);
             eventPublisher.publishEntity(task, AigenTaskEventPublisher.TYPE_STATUS);
-            log.info("aigen 流水线完成: taskId={}, plan={}ms asset={}ms render={}ms total={}ms",
+            log.info("aigen 流水线完成: taskId={}, plan={}ms asset={}ms render={}ms total={}ms out={}",
                     taskId, task.getPlanDurationMs(), task.getAssetDurationMs(),
-                    task.getRenderDurationMs(), task.getTotalDurationMs());
+                    task.getRenderDurationMs(), task.getTotalDurationMs(), task.getOutputPath());
 
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
@@ -333,16 +336,34 @@ public class AigenPipeline {
         try {
             if (task.getOutputPath() != null && !task.getOutputPath().isBlank()
                     && java.nio.file.Files.isRegularFile(Path.of(task.getOutputPath()))) {
-                return;
+                long sz = java.nio.file.Files.size(Path.of(task.getOutputPath()));
+                if (sz >= 1024L) {
+                    task.setOutputSizeBytes(sz);
+                    return;
+                }
             }
             Path mp4 = workDir.resolve("output.mp4");
-            if (java.nio.file.Files.isRegularFile(mp4)) {
+            if (java.nio.file.Files.isRegularFile(mp4)
+                    && java.nio.file.Files.size(mp4) >= 1024L) {
                 task.setOutputPath(mp4.toAbsolutePath().normalize().toString());
                 task.setOutputSizeBytes(java.nio.file.Files.size(mp4));
                 log.info("从磁盘补全 outputPath: {}", task.getOutputPath());
             }
         } catch (Exception e) {
             log.debug("ensureOutputPathFromDisk: {}", e.getMessage());
+        }
+    }
+
+    /** 成片至少 1KB 的常规文件，避免空壳 SUCCESS。 */
+    private static boolean isPlayableOutput(AigenTaskEntity task) {
+        if (task == null || task.getOutputPath() == null || task.getOutputPath().isBlank()) {
+            return false;
+        }
+        try {
+            Path p = Path.of(task.getOutputPath());
+            return java.nio.file.Files.isRegularFile(p) && java.nio.file.Files.size(p) >= 1024L;
+        } catch (Exception e) {
+            return false;
         }
     }
 

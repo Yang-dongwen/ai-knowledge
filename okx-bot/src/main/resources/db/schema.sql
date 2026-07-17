@@ -95,6 +95,7 @@ CREATE TABLE IF NOT EXISTS sys_user (
     password_hash VARCHAR(100) NOT NULL COMMENT 'BCrypt密码哈希',
     nickname VARCHAR(64) COMMENT '昵称',
     role VARCHAR(32) NOT NULL DEFAULT 'USER' COMMENT 'USER普通/MEMBER会员/SUPER_ADMIN超管',
+    member_expire_at DATETIME(3) NULL COMMENT '会员到期时间，过期后仍保留展示',
     status TINYINT NOT NULL DEFAULT 1 COMMENT '1正常 0禁用',
     email_verified TINYINT NOT NULL DEFAULT 0 COMMENT '1已验证',
     last_login_at DATETIME(3) COMMENT '最后登录时间',
@@ -102,7 +103,8 @@ CREATE TABLE IF NOT EXISTS sys_user (
     updated_at DATETIME(3) NOT NULL COMMENT '更新时间',
     PRIMARY KEY (id),
     UNIQUE KEY uk_email (email),
-    INDEX idx_role (role)
+    INDEX idx_role (role),
+    INDEX idx_sys_user_member_expire (member_expire_at)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='系统用户表';
 
 -- 16. 邮箱验证码表
@@ -228,3 +230,80 @@ CREATE TABLE IF NOT EXISTS imggen_task (
     INDEX idx_imggen_user_created (user_id, created_at),
     INDEX idx_imggen_status (status)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='AI文生图任务';
+
+-- ============================================================
+-- 会员充值 / 支付（Member Pay）
+-- ============================================================
+
+CREATE TABLE IF NOT EXISTS member_plan (
+    id                    BIGINT         NOT NULL COMMENT '主键 snowflake',
+    code                  VARCHAR(64)    NOT NULL COMMENT 'month/quarter/year',
+    name                  VARCHAR(128)   NOT NULL,
+    description           VARCHAR(512)            ,
+    duration_days         INT            NOT NULL COMMENT '应用层校验 >0',
+    price_cents           INT            NOT NULL COMMENT '分；应用层校验 >0',
+    original_price_cents  INT                     ,
+    currency              VARCHAR(8)     NOT NULL DEFAULT 'CNY',
+    status                TINYINT        NOT NULL DEFAULT 1 COMMENT '1上架 0下架',
+    sort_order            INT            NOT NULL DEFAULT 0,
+    created_at            DATETIME(3)    NOT NULL,
+    updated_at            DATETIME(3)    NOT NULL,
+    PRIMARY KEY (id),
+    UNIQUE KEY uk_member_plan_code (code),
+    INDEX idx_member_plan_status_sort (status, sort_order)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='会员套餐';
+
+CREATE TABLE IF NOT EXISTS pay_order (
+    id                    BIGINT         NOT NULL,
+    order_no              VARCHAR(32)    NOT NULL COMMENT 'out_trade_no',
+    user_id               BIGINT         NOT NULL,
+    plan_id               BIGINT         NOT NULL,
+    plan_code             VARCHAR(64)    NOT NULL,
+    plan_name             VARCHAR(128)   NOT NULL,
+    duration_days         INT            NOT NULL,
+    channel               VARCHAR(16)    NOT NULL COMMENT 'alipay/wechat/mock',
+    client_type           VARCHAR(8)     NOT NULL DEFAULT 'PC',
+    amount_cents          INT            NOT NULL,
+    currency              VARCHAR(8)     NOT NULL DEFAULT 'CNY',
+    status                VARCHAR(16)    NOT NULL DEFAULT 'CREATED',
+    fulfilled             TINYINT        NOT NULL DEFAULT 0,
+    trade_no              VARCHAR(64)             ,
+    prepay_id             VARCHAR(128)            ,
+    code_url              VARCHAR(512)            ,
+    pay_url               VARCHAR(1024)           ,
+    channel_extra_json    TEXT                    ,
+    client_ip             VARCHAR(64)             ,
+    expire_at             DATETIME(3)    NOT NULL,
+    paid_at               DATETIME(3)             ,
+    closed_at             DATETIME(3)             ,
+    close_reason          VARCHAR(64)             ,
+    refund_status         VARCHAR(16)             COMMENT '标记用 NONE/SUCCESS 等',
+    refund_amount_cents   INT                     ,
+    version               INT            NOT NULL DEFAULT 0,
+    created_at            DATETIME(3)    NOT NULL,
+    updated_at            DATETIME(3)    NOT NULL,
+    PRIMARY KEY (id),
+    UNIQUE KEY uk_pay_order_no (order_no),
+    INDEX idx_pay_user_created (user_id, created_at),
+    INDEX idx_pay_status_expire (status, expire_at),
+    INDEX idx_pay_status_fulfilled (status, fulfilled, updated_at),
+    INDEX idx_pay_trade_no (trade_no),
+    INDEX idx_pay_channel_status (channel, status),
+    UNIQUE KEY uk_pay_channel_trade (channel, trade_no)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='支付订单';
+
+CREATE TABLE IF NOT EXISTS pay_notify_log (
+    id                    BIGINT         NOT NULL,
+    order_no              VARCHAR(32)             ,
+    channel               VARCHAR(16)    NOT NULL,
+    notify_id             VARCHAR(128)            ,
+    body_raw              MEDIUMTEXT              ,
+    headers_json          TEXT                    ,
+    verify_ok             TINYINT        NOT NULL DEFAULT 0,
+    process_result        VARCHAR(32)    NOT NULL,
+    error_message         VARCHAR(512)            ,
+    created_at            DATETIME(3)    NOT NULL,
+    PRIMARY KEY (id),
+    INDEX idx_notify_order (order_no),
+    INDEX idx_notify_created (created_at)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='支付异步通知日志';

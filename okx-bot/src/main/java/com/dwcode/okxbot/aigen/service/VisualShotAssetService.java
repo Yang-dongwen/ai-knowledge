@@ -156,6 +156,14 @@ public class VisualShotAssetService {
     }
 
     /**
+     * 对外：用户上传静图后补齐动效短片。
+     */
+    public void upgradeStillToMotion(AigenTaskEntity task, Path workDir, ShotDto shot,
+                                     Path stillFile, int width, int height, int seedIndex) {
+        applyImageToVideo(task, workDir, shot, stillFile, width, height, seedIndex);
+    }
+
+    /**
      * 将已有静图转为 mp4 动效片段（kinetic / 可选云端 SVD）；成功则 type=ai_video。
      */
     private void applyImageToVideo(AigenTaskEntity task, Path workDir, ShotDto shot, Path stillFile,
@@ -371,9 +379,15 @@ public class VisualShotAssetService {
 
     /**
      * 选择实际送入文生图模型的提示词。
-     * auto/en：优先 promptEn；再回退中文 prompt；统一加主题锚点前缀。
+     * <p>
+     * 默认跟随用户语言，不强行英文化：
+     * <ul>
+     *   <li>auto / follow_user：中文用户 → prompt（中文）；英文用户 → promptEn 或 prompt</li>
+     *   <li>en：仅显式配置/用户要求时优先英文 promptEn</li>
+     *   <li>zh：强制中文</li>
+     * </ul>
      */
-    String resolveImagePrompt(AigenTaskEntity task, ShotDto shot, String zhPromptAfterEnhance) {
+    String resolveImagePrompt(AigenTaskEntity task, ShotDto shot, String userLangPromptAfterEnhance) {
         String langMode = aigenProperties.getVisual() != null
                 ? aigenProperties.getVisual().getImagePromptLanguage()
                 : "auto";
@@ -381,45 +395,56 @@ public class VisualShotAssetService {
             langMode = "auto";
         }
         langMode = langMode.trim().toLowerCase(Locale.ROOT);
-
-        String en = shot != null && shot.getVisual() != null ? shot.getVisual().getPromptEn() : null;
-        String zh = zhPromptAfterEnhance != null ? zhPromptAfterEnhance
-                : (shot != null && shot.getVisual() != null ? shot.getVisual().getPrompt() : null);
-        if (zh == null) {
-            zh = "";
+        if ("follow_user".equals(langMode)) {
+            langMode = "auto";
         }
 
-        boolean preferEn = "auto".equals(langMode) || "en".equals(langMode);
+        String en = shot != null && shot.getVisual() != null ? shot.getVisual().getPromptEn() : null;
+        String userLang = userLangPromptAfterEnhance != null ? userLangPromptAfterEnhance
+                : (shot != null && shot.getVisual() != null ? shot.getVisual().getPrompt() : null);
+        if (userLang == null) {
+            userLang = "";
+        }
+
+        boolean userIsEnglish = isEnglishDominant(task, userLang);
+        boolean forceEn = "en".equals(langMode);
+        boolean forceZh = "zh".equals(langMode);
+
         String body;
         boolean englishBody;
-        if (preferEn && en != null && !en.isBlank()) {
-            body = en.trim();
+        if (forceEn) {
+            // 用户/配置明确要求英文出图
+            if (en != null && !en.isBlank()) {
+                body = en.trim();
+            } else {
+                body = userLang.trim();
+            }
             englishBody = true;
-        } else if ("zh".equals(langMode)) {
-            body = zh.trim();
+        } else if (forceZh) {
+            body = userLang.trim();
             englishBody = false;
-        } else if (preferEn) {
-            // 无 promptEn：中文 + 英文主题锚点双写，提高实体命中
-            String anchorEn = topicRelevanceService != null
-                    ? topicRelevanceService.buildAnchorPrefix(
-                    task != null ? task.getPrompt() : null, true)
-                    : "";
-            body = (anchorEn + zh.trim()).trim();
-            englishBody = false;
+        } else if (userIsEnglish) {
+            // 用户本身用英文：优先英文描述
+            if (en != null && !en.isBlank()) {
+                body = en.trim();
+            } else {
+                body = userLang.trim();
+            }
+            englishBody = true;
         } else {
-            body = zh.trim();
+            // 默认：跟随用户语言（中文提示 → 中文出图）
+            body = userLang.trim();
             englishBody = false;
         }
 
         String userTheme = task != null ? task.getPrompt() : null;
         String prefix = topicRelevanceService != null
-                ? topicRelevanceService.buildAnchorPrefix(userTheme, englishBody || preferEn)
+                ? topicRelevanceService.buildAnchorPrefix(userTheme, englishBody)
                 : "";
         if (prefix.isBlank()) {
             return anchorPromptToTaskTheme(task, body);
         }
         String lower = body.toLowerCase(Locale.ROOT);
-        // 已含锚点则不重复
         List<String> anchors = topicRelevanceService.extractAnchors(userTheme);
         boolean already = false;
         for (String a : anchors) {
@@ -432,6 +457,43 @@ public class VisualShotAssetService {
             return body;
         }
         return (prefix + body).trim();
+    }
+
+    /**
+     * 判断任务/提示是否以英文为主（用于 auto 跟随用户语言）。
+     */
+    static boolean isEnglishDominant(AigenTaskEntity task, String sampleText) {
+        if (task != null && task.getLanguage() != null) {
+            String lang = task.getLanguage().trim().toLowerCase(Locale.ROOT);
+            if (lang.startsWith("en")) {
+                return true;
+            }
+            if (lang.startsWith("zh") || lang.startsWith("cn") || "chinese".equals(lang)) {
+                return false;
+            }
+        }
+        String s = sampleText != null ? sampleText : "";
+        if (task != null && task.getPrompt() != null) {
+            s = task.getPrompt() + " " + s;
+        }
+        if (s.isBlank()) {
+            return false;
+        }
+        int cjk = 0;
+        int latin = 0;
+        for (int i = 0; i < s.length(); i++) {
+            char c = s.charAt(i);
+            if (Character.UnicodeScript.of(c) == Character.UnicodeScript.HAN) {
+                cjk++;
+            } else if ((c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z')) {
+                latin++;
+            }
+        }
+        // 有明显汉字则视为中文用户语境
+        if (cjk >= 2) {
+            return false;
+        }
+        return latin >= 8 && latin > cjk * 3;
     }
 
     /**

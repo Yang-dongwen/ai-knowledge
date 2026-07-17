@@ -34,6 +34,9 @@ public class SysUserEntity {
      */
     private String role;
 
+    /** 会员到期时间；过期后可保留用于展示 */
+    private LocalDateTime memberExpireAt;
+
     /** 1 正常 0 禁用 */
     private Integer status;
 

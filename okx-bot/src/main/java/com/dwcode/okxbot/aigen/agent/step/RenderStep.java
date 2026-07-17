@@ -114,12 +114,20 @@ public class RenderStep implements PipelineStep {
         if (!result.isSuccess()) {
             throw new BusinessException(result.getError() != null ? result.getError() : "渲染失败");
         }
+        Path out = null;
         if (result.getOutputAbsolutePath() != null) {
-            Path out = Path.of(result.getOutputAbsolutePath());
-            if (Files.isRegularFile(out)) {
-                ctx.getTask().setOutputPath(out.toAbsolutePath().toString());
-                ctx.getTask().setOutputSizeBytes(Files.size(out));
+            out = Path.of(result.getOutputAbsolutePath());
+        }
+        if (out == null || !Files.isRegularFile(out)) {
+            Path fallback = ctx.getWorkDir() != null ? ctx.getWorkDir().resolve("output.mp4") : null;
+            if (fallback != null && Files.isRegularFile(fallback)) {
+                out = fallback;
             }
         }
+        if (out == null || !Files.isRegularFile(out) || Files.size(out) < 1024L) {
+            throw new BusinessException("渲染服务返回成功但未生成有效 MP4（文件缺失或过小）");
+        }
+        ctx.getTask().setOutputPath(out.toAbsolutePath().toString());
+        ctx.getTask().setOutputSizeBytes(Files.size(out));
     }
 }

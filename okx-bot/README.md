@@ -14,6 +14,7 @@
 |------|------|--------|
 | **OKX 交易助手** | 模拟盘/实盘配置、均线策略、持仓/订单、回测、系统启停 | `okx` / `strategy` / `trading` / `backtest` |
 | **认证与权限** | 邮箱注册登录、JWT、角色（USER / MEMBER / SUPER_ADMIN） | `auth` |
+| **会员支付** | 套餐、Mock 支付开通 MEMBER、有效期叠加（支付宝/微信待进件） | `member` / `pay` |
 | **AI 聊天** | 多供应商 OpenAI 兼容对话（流式） | `chat` |
 | **视频核心提取** | 链接 → 下载 → 音频 → Whisper 转录 → LLM 总结（可选画面理解） | `video` |
 | **AI 视频生成** | 提示词 → 分镜/镜头 → TTS 或配图 → Remotion 成片 | `aigen` |
@@ -397,8 +398,8 @@ Authorization: Bearer <token>
 
 | 角色 | 能力 |
 |------|------|
-| `USER` / `MEMBER` | 登录后：AI 聊天、视频提取、视频生成、文生图等用户任务 |
-| `SUPER_ADMIN` | 上述 + 交易后台 + 用户管理 + `ai_model_config` CRUD |
+| `USER` / `MEMBER` | 登录后：AI 聊天、视频提取、视频生成、文生图等用户任务；`MEMBER` 经支付开通，见 `member_expire_at` |
+| `SUPER_ADMIN` | 上述 + 交易后台 + 用户管理 + `ai_model_config` CRUD；**禁止购买会员** |
 
 交易与管理路径（需 `SUPER_ADMIN`）：
 
@@ -430,6 +431,21 @@ Authorization: Bearer <token>
 
 Base URL：`http://127.0.0.1:8080`  
 以下均需 JWT（公开认证接口除外）。
+
+### 9.0 会员支付（Mock）
+
+设计文档：`doc/会员充值与支付宝微信支付对接架构设计方案.md`  
+升级 SQL：`doc/sql/member_pay.sql`（需先执行再建表/加列）
+
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| GET | `/api/member/plans` | 上架套餐 |
+| GET | `/api/member/status` | 当前会员状态（含惰性降级） |
+| POST | `/api/pay/orders` | 创建订单 body:`planId,channel,clientType`；channel=`mock` |
+| GET | `/api/pay/orders/{orderNo}` | 查询本人订单 |
+| POST | `/api/pay/mock/confirm` | Mock 确认支付 body:`{orderNo}`（需 `pay.mock-enabled=true`） |
+
+`GET /api/auth/me` 扩展字段：`memberExpireAt`、`memberActive`。
 
 ### 9.1 认证 ` /api/auth`
 
@@ -614,6 +630,7 @@ Invoke-RestMethod -Uri "http://127.0.0.1:8080/api/v1/video/tasks?page=0&size=1" 
 | `AI视频生成_语音接入方案.md` | TTS |
 | `AI文生图_后端实现与开发手册.md` | 文生图开发与排障 |
 | `Auth_登录架构与安全设计.md` | 认证安全 |
+| `会员充值与支付宝微信支付对接架构设计方案.md` | 会员支付架构 |
 | `LangChain4j_三工具切换架构设计.md` | Chat 出站引擎切换 |
 | `sql/*.sql` | 增量 / 种子 SQL |
 

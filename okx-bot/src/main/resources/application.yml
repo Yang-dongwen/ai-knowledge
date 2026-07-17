@@ -45,6 +45,24 @@ auth:
     password: Admin@123456
     nickname: 超级管理员
 
+# 会员支付（Phase 0：Mock；真通道待商户资质）
+pay:
+  enabled: true
+  public-base-url: http://127.0.0.1:8080
+  order-expire-minutes: 30
+  max-open-orders-per-user: 3
+  reconcile-cron: "0 */1 * * * ?"
+  close-cron: "0 */1 * * * ?"
+  fulfill-pending-cron: "0 */1 * * * ?"
+  fulfill-pending-grace-seconds: 30
+  member-expire-cron: "0 5 * * * ?"
+  mock-enabled: true
+  trust-x-forwarded-for: false
+  alipay:
+    enabled: false
+  wechat:
+    enabled: false
+
 mybatis-plus:
   configuration:
     map-underscore-to-camel-case: true
@@ -198,7 +216,12 @@ aigen:
     min-shots: 4
     max-shots: 12
     image-concurrency: 2
-    fail-on-shot-error: false
+    # true=单镜出图失败即整单失败，避免「成功但假图」
+    fail-on-shot-error: true
+    # fail-on-shot-error=false 时：占位镜占比达到该阈值仍失败
+    max-placeholder-ratio: 0.5
+    # bgm_only / tts_bgm 找不到 BGM 文件时失败
+    require-bgm-when-requested: true
     default-audio-mode: bgm_only
     default-style-preset: cinematic-dark
     # auto=按镜序自动挑选富有变化的运镜（非固定 ken_burns 模板感）
@@ -212,7 +235,7 @@ aigen:
     default-image-model: black-forest-labs/flux.1-dev
     # 默认润色出图 prompt，提升电影感
     default-enhance-image-prompt: true
-    # auto=优先英文 promptEn 出图（FLUX 跟实体更稳）| en | zh
+    # 出图语言：auto=跟随用户提示词语言（推荐）| zh | en（仅用户明确要求英文出图时用）
     image-prompt-language: auto
     # 规划后校验镜头是否扣题；失败会 repair
     enforce-topic-keywords: true

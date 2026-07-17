@@ -12,7 +12,15 @@ export const useAuthStore = defineStore('auth', () => {
   const isLoggedIn = computed(() => !!token.value)
   const role = computed(() => (user.value?.role || 'USER').toUpperCase())
   const isSuperAdmin = computed(() => role.value === 'SUPER_ADMIN')
-  const isMember = computed(() => role.value === 'MEMBER' || role.value === 'SUPER_ADMIN')
+  /** 与后端 MemberStatusService.isActive 对齐，勿仅看 role===MEMBER */
+  const isMemberActive = computed(() => {
+    if (role.value === 'SUPER_ADMIN') return true
+    if (user.value?.memberActive != null) return !!user.value.memberActive
+    if (role.value !== 'MEMBER') return false
+    const exp = user.value?.memberExpireAt
+    return !!exp && new Date(exp).getTime() > Date.now()
+  })
+  const isMember = isMemberActive
 
   function loadUser(): AuthUser | null {
     try {
@@ -83,6 +91,7 @@ export const useAuthStore = defineStore('auth', () => {
     role,
     isSuperAdmin,
     isMember,
+    isMemberActive,
     login,
     register,
     fetchMe,

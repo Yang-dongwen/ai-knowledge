@@ -7,6 +7,7 @@ CREATE TABLE IF NOT EXISTS sys_user (
     password_hash VARCHAR(100) NOT NULL COMMENT 'BCrypt密码哈希',
     nickname VARCHAR(64) COMMENT '昵称',
     role VARCHAR(32) NOT NULL DEFAULT 'USER' COMMENT 'USER普通/MEMBER会员/SUPER_ADMIN超管',
+    member_expire_at DATETIME(3) NULL COMMENT '会员到期时间，过期后仍保留展示',
     status TINYINT NOT NULL DEFAULT 1 COMMENT '1正常 0禁用',
     email_verified TINYINT NOT NULL DEFAULT 0 COMMENT '1已验证',
     last_login_at DATETIME(3) COMMENT '最后登录时间',

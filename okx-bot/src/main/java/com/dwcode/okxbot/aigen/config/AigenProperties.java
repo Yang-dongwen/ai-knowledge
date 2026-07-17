@@ -44,8 +44,18 @@ public class AigenProperties {
         private int maxShots = 12;
         private int minShots = 4;
         private int imageConcurrency = 2;
-        /** false=单镜出图失败用占位图继续 */
-        private boolean failOnShotError = false;
+        /**
+         * true=单镜出图失败整任务失败（推荐，避免假成功）。
+         * false=用占位图继续，但若失败镜过多仍会整任务失败（见 maxPlaceholderRatio）。
+         */
+        private boolean failOnShotError = true;
+        /**
+         * failOnShotError=false 时：占位/失败镜占比 ≥ 该阈值则任务失败。
+         * 1.0=仅「全部失败」才失败；0.5=过半失败即失败。
+         */
+        private double maxPlaceholderRatio = 0.5;
+        /** bgm_only / tts_bgm 时找不到 BGM 是否失败（true=诚实失败） */
+        private boolean requireBgmWhenRequested = true;
         private String defaultAudioMode = "bgm_only";
         private String defaultStylePreset = "cinematic-dark";
         /** 默认运镜：auto=按镜序自动挑选富有变化的运镜 */
@@ -67,13 +77,13 @@ public class AigenProperties {
         /** 默认是否润色出图 prompt（建议 true，提升电影感） */
         private boolean defaultEnhanceImagePrompt = true;
         /**
-         * 出图语言策略：
+         * 出图语言策略（默认跟随用户，不强推英文）：
          * <ul>
-         *   <li>{@code auto} — 优先 visual.promptEn（英文），无则中文 prompt + 主题锚点</li>
-         *   <li>{@code en} — 强制走英文路径（缺 promptEn 时用 LLM 临时英化或锚点英文）</li>
-         *   <li>{@code zh} — 仅用中文 prompt</li>
+         *   <li>{@code auto} — 与用户提示词/任务 language 一致：中文用 visual.prompt，英文用 prompt 或 promptEn</li>
+         *   <li>{@code follow_user} — 同 auto</li>
+         *   <li>{@code en} — 仅当用户/运营明确要求时：优先 promptEn</li>
+         *   <li>{@code zh} — 强制中文 prompt</li>
          * </ul>
-         * FLUX 等对英文实体名（Ethereum、blockchain）通常更稳。
          */
         private String imagePromptLanguage = "auto";
         /** 规划后校验镜头是否命中用户主题关键词；失败则触发 repair */

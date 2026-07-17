@@ -112,6 +112,16 @@ public class AigenTaskService {
         if (!Set.of("none", "bgm_only", "tts", "tts_bgm").contains(audioMode)) {
             throw new BusinessException(400, "audioMode 仅支持 none / bgm_only / tts / tts_bgm");
         }
+        // 诚实失败：需要 BGM 却没有文件时，创建即拒绝（避免渲完才失败）
+        if (("bgm_only".equals(audioMode) || "tts_bgm".equals(audioMode))
+                && aigenProperties.getVisual().isRequireBgmWhenRequested()
+                && !aigenProperties.isMockPipeline()
+                && !"mock".equalsIgnoreCase(aigenProperties.getSteps().getAsset())
+                && !hasConfiguredBgmFile()) {
+            throw new BusinessException(400,
+                    "当前 audioMode=" + audioMode + " 需要 BGM，但 aigen.visual.bgm-dir 下无 mp3/wav。"
+                            + "请放入背景音乐，或改 audioMode=none/tts，或关闭 require-bgm-when-requested");
+        }
 
         String stylePreset = blankToNull(options.getStylePreset());
         if (stylePreset == null) {
@@ -710,6 +720,17 @@ public class AigenTaskService {
         Path workDir = resolveWorkDir(entity);
         try {
             visualShotAssetService.saveUserImage(workDir, shot, file.getBytes(), file.getOriginalFilename());
+            // 与 AI 出图一致：上传静图后也走动效片段，避免仅 CSS 运镜
+            try {
+                AspectRatioMapper.Size size = visualShotAssetService.resolveFluxSize(entity, list);
+                Path still = workDir.resolve(shot.getVisual().getAssetPath()).normalize();
+                if (Files.isRegularFile(still)) {
+                    visualShotAssetService.upgradeStillToMotion(
+                            entity, workDir, shot, still, size.width(), size.height(), 1);
+                }
+            } catch (Exception i2vEx) {
+                log.warn("上传图动效升级跳过: {}", i2vEx.getMessage());
+            }
             persistShotlistEntity(entity, list, workDir);
             boolean doRender = reRender == null || reRender;
             if (doRender && !aigenProperties.isMockPipeline()
@@ -818,13 +839,25 @@ public class AigenTaskService {
             aigenTaskMapper.updateById(entity);
             throw new BusinessException(entity.getErrorMessage());
         }
+        Path out = null;
         if (result.getOutputAbsolutePath() != null) {
-            Path out = Path.of(result.getOutputAbsolutePath());
-            if (Files.isRegularFile(out)) {
-                entity.setOutputPath(out.toAbsolutePath().toString());
-                entity.setOutputSizeBytes(Files.size(out));
+            out = Path.of(result.getOutputAbsolutePath());
+        }
+        if (out == null || !Files.isRegularFile(out) || Files.size(out) < 1024L) {
+            Path fallback = workDir.resolve("output.mp4");
+            if (Files.isRegularFile(fallback) && Files.size(fallback) >= 1024L) {
+                out = fallback;
             }
         }
+        if (out == null || !Files.isRegularFile(out) || Files.size(out) < 1024L) {
+            entity.setStatus(AigenTaskStatus.FAILED.name());
+            entity.setCurrentStep("重渲失败");
+            entity.setErrorMessage("重渲未产出有效 MP4");
+            aigenTaskMapper.updateById(entity);
+            throw new BusinessException(entity.getErrorMessage());
+        }
+        entity.setOutputPath(out.toAbsolutePath().toString());
+        entity.setOutputSizeBytes(Files.size(out));
         entity.setRenderDurationMs(System.currentTimeMillis() - t0);
         entity.setStatus(AigenTaskStatus.SUCCESS.name());
         entity.setCurrentStep("生成完成");
@@ -961,6 +994,28 @@ public class AigenTaskService {
 
     private static String blankToNull(String s) {
         return s == null || s.isBlank() ? null : s.trim();
+    }
+
+    private boolean hasConfiguredBgmFile() {
+        try {
+            String dir = aigenProperties.getVisual().getBgmDir();
+            if (dir == null || dir.isBlank()) {
+                return false;
+            }
+            Path bgmDir = Path.of(dir).toAbsolutePath().normalize();
+            if (!Files.isDirectory(bgmDir)) {
+                return false;
+            }
+            try (var stream = Files.list(bgmDir)) {
+                return stream.anyMatch(p -> {
+                    String n = p.getFileName().toString().toLowerCase(Locale.ROOT);
+                    return Files.isRegularFile(p)
+                            && (n.endsWith(".mp3") || n.endsWith(".wav") || n.endsWith(".m4a"));
+                });
+            }
+        } catch (Exception e) {
+            return false;
+        }
     }
 
     private static String formatTime(LocalDateTime t) {

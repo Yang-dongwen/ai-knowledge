@@ -14,6 +14,10 @@ export interface AuthUser {
   status?: number
   lastLoginAt?: string | null
   createdAt?: string | null
+  /** 会员到期时间 */
+  memberExpireAt?: string | null
+  /** 服务端 isActive：超管恒 true；MEMBER 需未过期 */
+  memberActive?: boolean | null
 }
 
 export interface LoginResult {

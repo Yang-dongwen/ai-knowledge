@@ -77,12 +77,12 @@ public class LangChain4jDirectorAdapter implements DirectorPort {
                     String repairUser = "以下 JSON 不合法，错误: " + errors
                             + "\n用户原主题: " + command.getPrompt()
                             + (anchors.isBlank() ? "" : "\n必须写入各镜的主题关键词: " + anchors)
-                            + "\n请输出修复后的完整镜头表 JSON（每镜 prompt + promptEn 都必须扣题）：\n"
+                            + "\n请输出修复后的完整镜头表 JSON（每镜 visual.prompt 必须与用户同语言且扣题；promptEn 可选）：\n"
                             + objectMapper.writeValueAsString(dto);
                     String repaired = invoke(
                             "你是镜头表修复器，只输出合法 vt-1.0 JSON，不要 markdown。"
-                                    + "修复时确保每镜 visual.prompt 与 visual.promptEn 都包含用户主题主体，"
-                                    + "禁止空镜赛博都市代替主题。",
+                                    + "修复时确保每镜 visual.prompt 使用用户语言并包含主题主体，"
+                                    + "禁止空镜赛博都市代替主题；不要强行改成英文主描述。",
                             repairUser, command.getLlmProvider(), command.getLlmModel(), options);
                     dto = parse(repaired);
                     dto = normalizeService.normalize(
@@ -213,8 +213,8 @@ public class LangChain4jDirectorAdapter implements DirectorPort {
                     "narration":"可选口播",
                     "visual":{
                       "type":"ai_image",
-                      "prompt":"具体画面描述（与用户同语言，必须含主题主体）",
-                      "promptEn":"English image prompt with the same subject entities (Ethereum, blockchain, etc.), cinematic, no long readable text",
+                      "prompt":"具体画面描述（与用户同语言，必须含主题主体；用户中文则中文）",
+                      "promptEn":"optional English backup with same subjects (not required for Chinese users)",
                       "negativePrompt":"unrelated cityscape, random people, watermark, blurry, low quality, deformed, wrong subject"
                     },
                     "motion":{
@@ -250,8 +250,8 @@ public class LangChain4jDirectorAdapter implements DirectorPort {
                 硬性规则：
                 1. shots 数量 %d～%d，总时长约 %d 秒
                 2. visual.type 默认 ai_image；prompt 与用户同语言，禁止 http URL，长度尽量 40～220 字
-                3. 每一镜必须同时写 visual.prompt（用户语言）与 visual.promptEn（英文出图用，25～90 词）
-                4. prompt 与 promptEn 前部都必须出现主题实体（专有名词可中英对应，如 以太坊/Ethereum、ETH）
+                3. 每一镜 visual.prompt 必须与用户提示词同语言，且前部出现主题实体名词
+                4. visual.promptEn 可选：仅作双语备份（用户写中文时主出图仍用中文 prompt；用户写英文或明确要求英文出图时才主用）
                 5. 至少一半镜头 overlay.layout=none（纯画面动效）
                 6. 不要输出 audio 文件路径；audio.mode 保持为 %s
                 7. %s

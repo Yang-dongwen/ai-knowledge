@@ -26,4 +26,9 @@ public class AuthUserResponse {
     private LocalDateTime lastLoginAt;
     @JsonFormat(pattern = "yyyy-MM-dd HH:mm:ss")
     private LocalDateTime createdAt;
+    /** 会员到期时间（过期后仍可保留展示） */
+    @JsonFormat(pattern = "yyyy-MM-dd HH:mm:ss")
+    private LocalDateTime memberExpireAt;
+    /** 是否有效会员（SUPER_ADMIN 恒 true；MEMBER 需未过期） */
+    private Boolean memberActive;
 }

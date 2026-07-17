@@ -9,8 +9,8 @@ public class ShotVisual {
     /** 画面描述（与用户同语言，用于展示/口播对齐） */
     private String prompt;
     /**
-     * 英文出图提示（给 FLUX 等模型，跟词通常更稳）。
-     * 可空；空则回退 prompt + 主题锚点。
+     * 英文画面描述（可选备份）。
+     * 默认出图跟随用户语言用 {@link #prompt}；仅当用户/配置明确要求英文出图时才优先用本字段。
      */
     private String promptEn;
     private String negativePrompt;
