@@ -28,6 +28,12 @@ public class ChatRequest {
     private Integer maxTokens;
 
     /**
+     * 新会话时可选写入 system prompt（已有会话不因 null 清空）。
+     * 传空串表示显式使用默认提示。
+     */
+    private String systemPrompt;
+
+    /**
      * 是否启用 Agent 模式（PR-1：可调用只读工具查询任务/模型）。
      * false/null 时行为与纯聊天一致。
      */

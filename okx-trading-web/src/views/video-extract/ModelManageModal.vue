@@ -536,13 +536,13 @@ function onDelete(record: AiModelConfig) {
   font-size: 12px;
   font-weight: 650;
   letter-spacing: 0.02em;
-  border: 1px solid #e5e7eb;
-  background: #f3f4f6;
-  color: #111827;
+  border: 1px solid var(--border-color);
+  background: var(--surface-3);
+  color: var(--primary-strong);
 
   &.cap-chat {
     background: #111827;
-    border-color: #111827;
+    border-color: var(--primary-strong);
     color: #fff;
   }
   &.cap-image {
@@ -559,7 +559,7 @@ function onDelete(record: AiModelConfig) {
 
 .hint {
   font-size: 12px;
-  color: #64748b;
+  color: var(--text-secondary);
   line-height: 1.4;
 }
 .mono {
@@ -567,7 +567,7 @@ function onDelete(record: AiModelConfig) {
   font-size: 12px;
 }
 .muted {
-  color: #94a3b8;
+  color: var(--text-muted);
   margin-left: 6px;
 }
 .cfg-form {
@@ -596,33 +596,33 @@ function onDelete(record: AiModelConfig) {
   padding: 12px 12px 12px 10px;
   border-radius: 12px;
   border: 1.5px solid #e5e7eb;
-  background: #fff;
+  background: var(--surface-1);
   cursor: pointer;
   transition:
     border-color 0.15s ease,
     background 0.15s ease,
     box-shadow 0.15s ease,
     opacity 0.15s ease;
-  color: #374151;
+  color: var(--text-primary);
 
   &:hover:not(:disabled):not(.active) {
-    border-color: #d1d5db;
-    background: #fafafa;
+    border-color: var(--border-strong);
+    background: var(--surface-2);
   }
 
   &.active {
-    border-color: #111827;
-    background: #f9fafb;
+    border-color: var(--primary-strong);
+    background: var(--surface-hover);
     box-shadow: 0 0 0 3px rgba(17, 24, 39, 0.08);
 
     .cap-option-title {
-      color: #111827;
+      color: var(--primary-strong);
       font-weight: 700;
     }
 
     .cap-option-check {
       background: #111827;
-      border-color: #111827;
+      border-color: var(--primary-strong);
       color: #fff;
     }
   }
@@ -674,7 +674,7 @@ function onDelete(record: AiModelConfig) {
   flex-shrink: 0;
   margin-top: 1px;
   font-size: 11px;
-  background: #fff;
+  background: var(--surface-1);
   color: transparent;
 }
 
@@ -690,12 +690,12 @@ function onDelete(record: AiModelConfig) {
   font-size: 13px;
   font-weight: 600;
   line-height: 1.3;
-  color: #374151;
+  color: var(--text-primary);
 }
 
 .cap-option-desc {
   font-size: 11.5px;
-  color: #9ca3af;
+  color: var(--text-muted);
   line-height: 1.35;
 }
 
@@ -715,7 +715,8 @@ function onDelete(record: AiModelConfig) {
 .cap-lock-hint {
   margin: 8px 0 0;
   font-size: 12px;
-  color: #6b7280;
+  color: var(--text-secondary);
   line-height: 1.4;
 }
+
 </style>

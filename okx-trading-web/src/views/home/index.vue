@@ -59,9 +59,9 @@
         <div class="tip-kicker">体验</div>
         <div class="tip-text">从工作台一键进入各 AI 工具，创作流程更顺手。</div>
       </div>
-      <div class="tip-card">
-        <div class="tip-kicker">创作</div>
-        <div class="tip-text">文生图支持输入框一键润色，确认后再下发生成任务。</div>
+      <div class="tip-card tip-card-click" role="button" tabindex="0" @click="go('member')" @keydown.enter="go('member')">
+        <div class="tip-kicker">会员</div>
+        <div class="tip-text">开通会员解锁后续权益；点击进入会员中心完成 Mock 充值联调。</div>
       </div>
     </section>
   </div>
@@ -74,7 +74,8 @@ import {
   RobotOutlined,
   VideoCameraOutlined,
   PictureOutlined,
-  ThunderboltOutlined
+  ThunderboltOutlined,
+  CrownOutlined
 } from '@ant-design/icons-vue'
 
 const router = useRouter()
@@ -125,6 +126,15 @@ const toolCards: ToolCard[] = [
     accent: '#1f2937',
     accentSoft: '#f3f4f6',
     icon: markRaw(PictureOutlined)
+  },
+  {
+    key: 'member',
+    title: '会员中心',
+    desc: '查看会员状态，Mock 支付开通 / 续费会员。',
+    tags: ['充值', 'MEMBER'],
+    accent: '#b45309',
+    accentSoft: '#fffbeb',
+    icon: markRaw(CrownOutlined)
   }
 ]
 
@@ -144,8 +154,8 @@ function go(key: string) {
   position: relative;
   padding: 32px 28px 28px;
   border-radius: 16px;
-  border: 1px solid #e5e7eb;
-  background: #fff;
+  border: 1px solid var(--border-color);
+  background: var(--surface-1);
   box-shadow:
     0 1px 2px rgba(15, 23, 42, 0.03),
     0 8px 24px rgba(15, 23, 42, 0.04);
@@ -167,11 +177,11 @@ function go(key: string) {
   gap: 8px;
   padding: 5px 11px;
   border-radius: 999px;
-  background: #f3f4f6;
-  border: 1px solid #e5e7eb;
+  background: var(--surface-3);
+  border: 1px solid var(--border-color);
   font-size: 12px;
   font-weight: 600;
-  color: #374151;
+  color: var(--text-primary);
   margin-bottom: 14px;
 }
 
@@ -192,11 +202,11 @@ function go(key: string) {
   font-weight: 750;
   letter-spacing: -0.03em;
   line-height: 1.25;
-  color: #0f172a;
+  color: var(--text-primary);
 
   em {
     font-style: normal;
-    color: #1f2937;
+    color: var(--primary-color);
     border-bottom: 2px solid #e5e7eb;
     padding-bottom: 1px;
   }
@@ -209,7 +219,7 @@ function go(key: string) {
   max-width: 560px;
   font-size: 14.5px;
   line-height: 1.65;
-  color: #64748b;
+  color: var(--text-secondary);
 }
 
 .hero-actions {
@@ -226,14 +236,14 @@ function go(key: string) {
   border-radius: 12px !important;
   padding-inline: 18px !important;
   font-weight: 560 !important;
-  background: #1f2937 !important;
+  background: var(--btn-primary-bg) !important;
   border: none !important;
   box-shadow: none !important;
-  color: #fff !important;
+  color: var(--btn-primary-text) !important;
 
   &:hover {
-    background: #111827 !important;
-    color: #fff !important;
+    background: var(--btn-primary-hover) !important;
+    color: var(--btn-primary-text) !important;
   }
 }
 
@@ -241,16 +251,16 @@ function go(key: string) {
   height: 42px !important;
   border-radius: 12px !important;
   padding-inline: 16px !important;
-  border-color: #e2e8f0 !important;
-  background: #fff !important;
-  color: #475569 !important;
+  border-color: var(--border-color) !important;
+  background: var(--surface-1) !important;
+  color: var(--text-secondary) !important;
   font-weight: 500 !important;
   box-shadow: none !important;
 
   &:hover {
-    border-color: #cbd5e1 !important;
-    color: #1e293b !important;
-    background: #f8fafc !important;
+    border-color: var(--border-strong) !important;
+    color: var(--text-primary) !important;
+    background: var(--surface-hover) !important;
   }
 }
 
@@ -272,8 +282,8 @@ function go(key: string) {
   text-align: left;
   padding: 18px 18px 16px;
   border-radius: 14px;
-  border: 1px solid #e5e7eb;
-  background: #fff;
+  border: 1px solid var(--border-color);
+  background: var(--surface-1);
   box-shadow:
     0 1px 2px rgba(15, 23, 42, 0.03),
     0 6px 18px rgba(15, 23, 42, 0.03);
@@ -284,20 +294,20 @@ function go(key: string) {
   animation-delay: var(--delay);
 
   &:hover {
-    border-color: #d1d5db;
-    background: #fafafa;
+    border-color: var(--border-strong);
+    background: var(--surface-2);
     box-shadow:
       0 1px 2px rgba(15, 23, 42, 0.04),
       0 10px 24px rgba(15, 23, 42, 0.06);
 
     .card-arrow {
       transform: translateX(3px);
-      color: #111827;
+      color: var(--primary-strong);
     }
   }
 
   &:active {
-    background: #f3f4f6;
+    background: var(--surface-3);
   }
 }
 
@@ -314,9 +324,9 @@ function go(key: string) {
   display: grid;
   place-items: center;
   font-size: 20px;
-  color: #374151;
-  background: #f3f4f6;
-  border: 1px solid #e5e7eb;
+  color: var(--text-primary);
+  background: var(--surface-3);
+  border: 1px solid var(--border-color);
   flex-shrink: 0;
 }
 
@@ -337,12 +347,12 @@ function go(key: string) {
 .card-title {
   font-size: 16px;
   font-weight: 750;
-  color: #0f172a;
+  color: var(--text-primary);
   letter-spacing: -0.02em;
 }
 
 .card-arrow {
-  color: #94a3b8;
+  color: var(--text-muted);
   font-size: 16px;
   transition: transform 0.2s ease, color 0.2s ease;
 }
@@ -351,7 +361,7 @@ function go(key: string) {
   margin: 8px 0 0;
   font-size: 13px;
   line-height: 1.55;
-  color: #64748b;
+  color: var(--text-secondary);
 }
 
 .card-tags {
@@ -367,8 +377,8 @@ function go(key: string) {
   padding: 2px 8px;
   border-radius: 6px;
   color: #4b5563;
-  background: #f3f4f6;
-  border: 1px solid #e5e7eb;
+  background: var(--surface-3);
+  border: 1px solid var(--border-color);
 }
 
 .tips-row {
@@ -384,10 +394,20 @@ function go(key: string) {
 .tip-card {
   padding: 14px 16px;
   border-radius: 12px;
-  background: #fff;
-  border: 1px solid #e5e7eb;
+  background: var(--surface-1);
+  border: 1px solid var(--border-color);
   animation: card-in 0.45s ease both;
   animation-delay: 0.2s;
+}
+
+.tip-card-click {
+  cursor: pointer;
+  transition: border-color 0.15s, box-shadow 0.15s;
+
+  &:hover {
+    border-color: var(--border-strong);
+    box-shadow: 0 4px 12px rgba(15, 23, 42, 0.06);
+  }
 }
 
 .tip-kicker {
@@ -395,14 +415,14 @@ function go(key: string) {
   font-weight: 700;
   letter-spacing: 0.04em;
   text-transform: uppercase;
-  color: #6b7280;
+  color: var(--text-secondary);
   margin-bottom: 6px;
 }
 
 .tip-text {
   font-size: 12.5px;
   line-height: 1.55;
-  color: #64748b;
+  color: var(--text-secondary);
 }
 
 @keyframes hero-in {
@@ -438,4 +458,5 @@ function go(key: string) {
     box-shadow: 0 0 0 0 rgba(34, 197, 94, 0);
   }
 }
+
 </style>

@@ -62,6 +62,18 @@ const routes: RouteRecordRaw[] = [
         name: 'AiChat',
         component: () => import('@/views/ai-chat/index.vue'),
         meta: { title: 'AI 对话', group: 'tools', immersive: true }
+      },
+      {
+        path: 'member',
+        name: 'Member',
+        component: () => import('@/views/member/index.vue'),
+        meta: { title: '会员中心', group: 'account' }
+      },
+      {
+        path: 'member/recharge',
+        name: 'MemberRecharge',
+        component: () => import('@/views/member/recharge.vue'),
+        meta: { title: '开通会员', group: 'account' }
       }
     ]
   }

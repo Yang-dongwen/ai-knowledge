@@ -58,8 +58,24 @@ pay:
   member-expire-cron: "0 5 * * * ?"
   mock-enabled: true
   trust-x-forwarded-for: false
+  # ---------- 支付宝直连（默认关闭；无资质/无密钥时请保持 enabled=false）----------
+  # 进件完成后：enabled=true，并用环境变量注入密钥，public-base-url 改为公网 HTTPS
   alipay:
     enabled: false
+    app-id: ${ALIPAY_APP_ID:}
+    # PKCS8 应用私钥（一行或去头尾 PEM）；勿提交真实密钥到仓库
+    private-key: ${ALIPAY_PRIVATE_KEY:}
+    # 支付宝公钥（开放平台「支付宝公钥」，非应用公钥）
+    alipay-public-key: ${ALIPAY_PUBLIC_KEY:}
+    sign-type: RSA2
+    charset: UTF-8
+    format: json
+    # 正式：https://openapi.alipay.com/gateway.do
+    # 沙箱：https://openapi-sandbox.dl.alipaydev.com/gateway.do
+    server-url: ${ALIPAY_SERVER_URL:https://openapi.alipay.com/gateway.do}
+    notify-path: /api/pay/notify/alipay
+    return-path: /api/pay/return/alipay
+    subject-prefix: 会员充值-
   wechat:
     enabled: false
 

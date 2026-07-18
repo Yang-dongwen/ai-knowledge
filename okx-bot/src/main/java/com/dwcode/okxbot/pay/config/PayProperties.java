@@ -34,14 +34,35 @@ public class PayProperties {
 
     @Data
     public static class Alipay {
+        /**
+         * 是否启用支付宝通道。无资质/无密钥时请保持 false（默认）。
+         * 为 true 时仍须配置 app-id、private-key、alipay-public-key，否则下单失败。
+         */
         private boolean enabled = false;
-        private String appId;
-        private String privateKey;
-        private String alipayPublicKey;
+        /** 开放平台应用 APPID */
+        private String appId = "";
+        /**
+         * 应用私钥（PKCS8，可多行；yml 可用 | 块或一行去头尾）。
+         * 建议用环境变量 ALIPAY_PRIVATE_KEY，勿提交仓库。
+         */
+        private String privateKey = "";
+        /**
+         * 支付宝公钥（不是应用公钥）。
+         * 建议环境变量 ALIPAY_PUBLIC_KEY。
+         */
+        private String alipayPublicKey = "";
         private String signType = "RSA2";
+        private String charset = "UTF-8";
+        private String format = "json";
+        /**
+         * 网关：正式 https://openapi.alipay.com/gateway.do
+         * 沙箱 https://openapi-sandbox.dl.alipaydev.com/gateway.do
+         */
         private String serverUrl = "https://openapi.alipay.com/gateway.do";
         private String notifyPath = "/api/pay/notify/alipay";
         private String returnPath = "/api/pay/return/alipay";
+        /** 订单标题前缀 */
+        private String subjectPrefix = "会员充值-";
     }
 
     @Data

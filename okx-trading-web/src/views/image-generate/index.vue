@@ -97,7 +97,7 @@
         <div class="model-status" v-if="selectedImageModel">
           <a-tag color="blue">{{ selectedImageModel.name }}</a-tag>
           <a-tag v-if="selectedImageModel.protocol" color="purple">{{ selectedImageModel.protocol }}</a-tag>
-          <span class="hint" style="font-size: 12px; color: #94a3b8">
+          <span class="hint" style="font-size: 12px; color: var(--text-muted)">
             {{ selectedImageModel.provider }} · 默认 {{ selectedImageModel.defaultSteps ?? 4 }} 步
             <template v-if="selectedImageModel.description"> · {{ selectedImageModel.description }}</template>
           </span>
@@ -1125,10 +1125,10 @@ onUnmounted(() => {
 }
 
 .img-card {
-  border: 1px solid #e2e8f0;
+  border: 1px solid var(--border-color);
   border-radius: 12px;
   overflow: hidden;
-  background: #f8fafc;
+  background: var(--surface-hover);
 }
 
 .img-frame {
@@ -1149,7 +1149,7 @@ onUnmounted(() => {
 
 .img-fallback {
   font-size: 12px;
-  color: #94a3b8;
+  color: var(--text-muted);
 }
 
 .img-actions {
@@ -1157,25 +1157,25 @@ onUnmounted(() => {
   align-items: center;
   justify-content: space-between;
   padding: 6px 10px;
-  background: #fff;
+  background: var(--surface-1);
 }
 
 .img-meta {
   font-size: 11px;
-  color: #64748b;
+  color: var(--text-secondary);
 }
 
 /* 输入框 + 右下角一键润色（覆盖 aigen-ui 表单默认边框） */
 .prompt-box {
   position: relative;
-  border: 1px solid #e2e8f0;
+  border: 1px solid var(--border-color);
   border-radius: 12px;
-  background: #f8fafc;
+  background: var(--surface-hover);
   transition: border-color 0.15s ease, box-shadow 0.15s ease, background 0.15s ease;
 
   &:focus-within {
-    background: #fff;
-    border-color: #9ca3af;
+    background: var(--surface-1);
+    border-color: var(--text-muted);
     box-shadow: 0 0 0 3px rgba(15, 23, 42, 0.06);
   }
 
@@ -1229,9 +1229,9 @@ onUnmounted(() => {
   font-size: 12px;
   font-weight: 500;
   line-height: 1;
-  border: 1px solid #e2e8f0;
-  background: #fff;
-  color: #475569;
+  border: 1px solid var(--border-color);
+  background: var(--surface-1);
+  color: var(--text-secondary);
   cursor: pointer;
   transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease, opacity 0.15s ease;
   user-select: none;
@@ -1242,27 +1242,27 @@ onUnmounted(() => {
   }
 
   &.enhance {
-    color: #374151;
-    border-color: #e5e7eb;
-    background: #fff;
+    color: var(--text-primary);
+    border-color: var(--border-color);
+    background: var(--surface-1);
 
     &:hover:not(:disabled) {
-      background: #f9fafb;
-      border-color: #d1d5db;
-      color: #111827;
+      background: var(--surface-hover);
+      border-color: var(--border-strong);
+      color: var(--primary-strong);
     }
 
     &.busy {
-      color: #6b7280;
+      color: var(--text-secondary);
     }
   }
 
   &.undo {
-    color: #64748b;
+    color: var(--text-secondary);
 
     &:hover:not(:disabled) {
       color: #334155;
-      background: #f8fafc;
+      background: var(--surface-hover);
       border-color: #cbd5e1;
     }
   }
@@ -1278,7 +1278,7 @@ onUnmounted(() => {
 .enhance-modal-desc {
   margin: 0 0 14px;
   font-size: 13px;
-  color: #64748b;
+  color: var(--text-secondary);
   line-height: 1.5;
 }
 

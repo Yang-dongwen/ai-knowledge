@@ -2043,8 +2043,8 @@ onUnmounted(() => {
   margin-bottom: 18px;
   padding: 24px 26px 20px;
   border-radius: 16px;
-  background: #fff;
-  border: 1px solid #e5e7eb;
+  background: var(--surface-1);
+  border: 1px solid var(--border-color);
   box-shadow:
     0 1px 2px rgba(15, 23, 42, 0.03),
     0 8px 24px rgba(15, 23, 42, 0.04);
@@ -2096,11 +2096,11 @@ onUnmounted(() => {
 
     .live-label {
       font-weight: 600;
-      color: #374151;
+      color: var(--text-primary);
     }
 
     .live-hint {
-      color: #9ca3af;
+      color: var(--text-muted);
       font-weight: 400;
       max-width: 160px;
       overflow: hidden;
@@ -2145,13 +2145,13 @@ onUnmounted(() => {
     }
 
     &.idle {
-      background: #f9fafb;
-      border-color: #e5e7eb;
+      background: var(--surface-hover);
+      border-color: var(--border-color);
       .live-dot {
         background: #9ca3af;
       }
       .live-label {
-        color: #6b7280;
+        color: var(--text-secondary);
       }
     }
   }
@@ -2210,8 +2210,8 @@ onUnmounted(() => {
     z-index: 1;
     margin-top: 14px;
     padding: 14px 16px;
-    background: #fafafa;
-    border: 1px solid #e5e7eb;
+    background: var(--surface-2);
+    border: 1px solid var(--border-color);
     border-radius: 12px;
     box-shadow: none;
 
@@ -2346,13 +2346,13 @@ onUnmounted(() => {
   background: rgba(248, 250, 252, 0.65);
 
   &:hover {
-    background: #f3f4f6;
-    border-color: #e5e7eb;
+    background: var(--surface-3);
+    border-color: var(--border-color);
   }
 
   &.active {
-    background: #f3f4f6;
-    border-color: #d1d5db;
+    background: var(--surface-3);
+    border-color: var(--border-strong);
     box-shadow: none;
   }
 
@@ -2443,7 +2443,7 @@ onUnmounted(() => {
   font-size: 11px;
   padding: 0 6px;
   border-radius: 4px;
-  background: #f3f4f6;
+  background: var(--surface-3);
   color: var(--text-secondary);
   max-width: 120px;
   overflow: hidden;
@@ -2452,7 +2452,7 @@ onUnmounted(() => {
 
   &.llm-badge {
     background: #eef2ff;
-    color: #1f2937;
+    color: var(--primary-color);
   }
 }
 
@@ -2511,7 +2511,7 @@ onUnmounted(() => {
     .pipe-step {
       width: 72px;
       padding: 12px 8px;
-      background: #f9fafb;
+      background: var(--surface-hover);
       border: 1px solid var(--border-color);
       border-radius: 12px;
 
@@ -2577,7 +2577,7 @@ onUnmounted(() => {
 }
 
 .progress-block {
-  background: #f8fafc;
+  background: var(--surface-hover);
   border: 1px solid var(--border-color);
   border-radius: 12px;
   padding: 16px 18px;
@@ -2603,7 +2603,7 @@ onUnmounted(() => {
 .timing-chip {
   font-size: 12px;
   color: var(--text-secondary);
-  background: #fff;
+  background: var(--surface-1);
   border: 1px solid var(--border-color);
   border-radius: 999px;
   padding: 2px 10px;
@@ -2831,7 +2831,7 @@ onUnmounted(() => {
   &.video-placeholder {
     flex-direction: column;
     gap: 8px;
-    color: #94a3b8;
+    color: var(--text-muted);
     font-size: 13px;
 
     .anticon {
@@ -2846,7 +2846,7 @@ onUnmounted(() => {
   gap: 10px;
 
   .mini-card {
-    background: #f8fafc;
+    background: var(--surface-hover);
     border: 1px solid var(--border-color);
     border-radius: 10px;
     padding: 12px 14px;
@@ -2923,7 +2923,7 @@ onUnmounted(() => {
   border-radius: 12px;
   cursor: pointer;
   transition: all 0.15s;
-  background: #fff;
+  background: var(--surface-1);
 
   &:hover {
     border-color: rgba(22, 119, 255, 0.35);
@@ -2997,7 +2997,7 @@ onUnmounted(() => {
 }
 
 .md-body {
-  background: #fafbfc;
+  background: var(--surface-2);
   border: 1px solid var(--border-color);
   border-radius: 12px;
   padding: 16px 20px;
@@ -3016,7 +3016,7 @@ onUnmounted(() => {
   }
 
   :deep(code) {
-    background: #f1f5f9;
+    background: var(--surface-muted);
     padding: 1px 6px;
     border-radius: 4px;
     font-size: 12px;
@@ -3103,4 +3103,5 @@ onUnmounted(() => {
     max-height: none;
   }
 }
+
 </style>

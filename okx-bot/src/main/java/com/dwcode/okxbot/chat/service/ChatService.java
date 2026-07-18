@@ -850,7 +850,9 @@ public class ChatService {
         if (request == null || conversationId == null) {
             return;
         }
-        boolean need = request.getTemperature() != null || request.getMaxTokens() != null;
+        boolean need = request.getTemperature() != null
+                || request.getMaxTokens() != null
+                || request.getSystemPrompt() != null;
         if (!need) {
             return;
         }
@@ -867,6 +869,11 @@ public class ChatService {
         }
         if (request.getMaxTokens() != null) {
             conv.setMaxTokens(clampMaxTokens(request.getMaxTokens()));
+        }
+        // null = 不改；空串 = 清空回默认；非空 = 写入自定义
+        if (request.getSystemPrompt() != null) {
+            String sp = request.getSystemPrompt().trim();
+            conv.setSystemPrompt(sp.isEmpty() ? null : sp);
         }
         conv.setUpdatedAt(LocalDateTime.now());
         conversationMapper.updateById(conv);

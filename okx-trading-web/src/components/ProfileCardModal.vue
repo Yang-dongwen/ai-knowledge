@@ -49,6 +49,14 @@
             <span class="value">{{ displayRole }}</span>
           </div>
           <div class="profile-row">
+            <span class="label">会员状态</span>
+            <span class="value">{{ memberStatusText }}</span>
+          </div>
+          <div class="profile-row">
+            <span class="label">会员到期</span>
+            <span class="value">{{ profile.memberExpireAt || '—' }}</span>
+          </div>
+          <div class="profile-row">
             <span class="label">账号状态</span>
             <span class="value">{{ statusOk ? '正常' : '已禁用' }}</span>
           </div>
@@ -61,6 +69,10 @@
             <span class="value">{{ profile.createdAt || '—' }}</span>
           </div>
         </div>
+
+        <div class="profile-footer">
+          <a-button type="primary" block @click="goMember">会员中心 / 开通续费</a-button>
+        </div>
       </div>
 
       <a-empty v-else-if="!loading" description="暂无用户信息" />
@@ -70,6 +82,7 @@
 
 <script setup lang="ts">
 import { ref, computed, watch } from 'vue'
+import { useRouter } from 'vue-router'
 import { message } from 'ant-design-vue'
 import { authApi, roleLabel, type AuthUser } from '@/api/auth.api'
 import { useAuthStore } from '@/stores/auth.store'
@@ -77,6 +90,7 @@ import { useAuthStore } from '@/stores/auth.store'
 const props = defineProps<{ open: boolean }>()
 const emit = defineEmits<{ (e: 'update:open', v: boolean): void }>()
 
+const router = useRouter()
 const auth = useAuthStore()
 const loading = ref(false)
 const profile = ref<AuthUser | null>(null)
@@ -100,6 +114,18 @@ const roleTagColor = computed(() => {
   if (r === 'MEMBER') return 'gold'
   return 'blue'
 })
+const memberStatusText = computed(() => {
+  const r = (profile.value?.role || 'USER').toUpperCase()
+  if (r === 'SUPER_ADMIN') return '超级管理员（无需购买）'
+  if (profile.value?.memberActive) return '有效会员'
+  if (profile.value?.memberExpireAt) return '已过期'
+  return '未开通'
+})
+
+function goMember() {
+  emit('update:open', false)
+  router.push('/member')
+}
 
 watch(
   () => props.open,
@@ -135,11 +161,15 @@ async function loadProfile() {
 .modal-title {
   font-weight: 600;
   font-size: 16px;
-  color: #111827;
+  color: var(--primary-strong);
 }
 
 .profile-card {
   padding: 4px 0 8px;
+}
+
+.profile-footer {
+  margin-top: 16px;
 }
 
 .profile-hero {
@@ -148,13 +178,13 @@ async function loadProfile() {
   gap: 16px;
   padding: 16px;
   border-radius: 12px;
-  background: #f9fafb;
-  border: 1px solid #e5e7eb;
+  background: var(--surface-hover);
+  border: 1px solid var(--border-color);
   margin-bottom: 16px;
 }
 
 .profile-avatar {
-  background: #1f2937 !important;
+  background: var(--btn-primary-bg) !important;
   font-size: 28px;
   font-weight: 700;
   flex-shrink: 0;
@@ -169,7 +199,7 @@ async function loadProfile() {
 .profile-name {
   font-size: 18px;
   font-weight: 700;
-  color: #111827;
+  color: var(--primary-strong);
   line-height: 1.3;
   word-break: break-all;
 }
@@ -177,7 +207,7 @@ async function loadProfile() {
 .profile-email {
   margin-top: 2px;
   font-size: 13px;
-  color: #6b7280;
+  color: var(--text-secondary);
   word-break: break-all;
 }
 
@@ -189,7 +219,7 @@ async function loadProfile() {
 }
 
 .profile-rows {
-  border: 1px solid #f3f4f6;
+  border: 1px solid var(--border-subtle);
   border-radius: 12px;
   overflow: hidden;
 }
@@ -203,7 +233,7 @@ async function loadProfile() {
   font-size: 13px;
 
   &:nth-child(odd) {
-    background: #fafafa;
+    background: var(--surface-2);
   }
 
   & + & {
@@ -211,13 +241,13 @@ async function loadProfile() {
   }
 
   .label {
-    color: #9ca3af;
+    color: var(--text-muted);
     flex-shrink: 0;
     min-width: 72px;
   }
 
   .value {
-    color: #111827;
+    color: var(--primary-strong);
     text-align: right;
     word-break: break-all;
   }
@@ -228,4 +258,5 @@ async function loadProfile() {
     color: #4b5563;
   }
 }
+
 </style>

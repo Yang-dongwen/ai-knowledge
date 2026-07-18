@@ -274,18 +274,18 @@ onMounted(load)
   margin: 0;
   font-size: 20px;
   font-weight: 700;
-  color: #111827;
+  color: var(--primary-strong);
 }
 
 .page-subtitle {
   margin: 4px 0 0;
   font-size: 13px;
-  color: #9ca3af;
+  color: var(--text-muted);
 }
 
 .page-card {
-  background: #fff;
-  border: 1px solid #f0f0f0;
+  background: var(--surface-1);
+  border: 1px solid var(--border-color);
   border-radius: 12px;
   padding: 16px;
   margin-bottom: 12px;
@@ -304,7 +304,7 @@ onMounted(load)
 }
 
 .avatar {
-  background: #1f2937 !important;
+  background: var(--btn-primary-bg) !important;
   font-size: 13px;
   font-weight: 600;
   flex-shrink: 0;
@@ -316,18 +316,19 @@ onMounted(load)
 
 .nick {
   font-weight: 600;
-  color: #111827;
+  color: var(--primary-strong);
   line-height: 1.3;
 }
 
 .email {
   font-size: 12px;
-  color: #9ca3af;
+  color: var(--text-muted);
   word-break: break-all;
 }
 
 .self-tip {
   font-size: 12px;
-  color: #9ca3af;
+  color: var(--text-muted);
 }
+
 </style>

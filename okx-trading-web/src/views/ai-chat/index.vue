@@ -120,7 +120,7 @@
             <a-button
               size="small"
               class="header-action-btn"
-              :disabled="!activeConversationId || String(activeConversationId).startsWith('local_')"
+              :disabled="!activeConversationId || isLoading"
               @click="settingsOpen = true"
             >
               <template #icon><SlidersOutlined /></template>
@@ -182,8 +182,13 @@
                 show-count
               />
             </div>
+            <p v-if="isLocalConversationId(activeConversationId)" class="settings-local-hint">
+              当前为新对话草稿，参数会先保存在本地，发送首条消息后自动写入会话。
+            </p>
             <a-space>
-              <a-button type="primary" :loading="settingsSaving" @click="saveSessionSettings">保存到会话</a-button>
+              <a-button type="primary" :loading="settingsSaving" @click="saveSessionSettings">
+                {{ isLocalConversationId(activeConversationId) ? '应用参数' : '保存到会话' }}
+              </a-button>
               <a-button @click="resetSessionSettingsDraft">重置草稿</a-button>
             </a-space>
           </div>
@@ -774,8 +779,20 @@ function resetSessionSettingsDraft() {
 }
 
 async function saveSessionSettings() {
-  if (!activeConversationId.value || String(activeConversationId.value).startsWith('local_')) {
-    message.warning('请先发送一条消息创建会话后再保存参数')
+  if (!activeConversationId.value) {
+    message.warning('请先新建或选择会话')
+    return
+  }
+  // 新对话草稿：先落到本地会话对象，发送时会带上并在建会话后落库
+  if (isLocalConversationId(activeConversationId.value)) {
+    const conv = conversations.value.find(c => c.id === activeConversationId.value)
+    if (conv) {
+      conv.temperature = sessionTemperature.value
+      conv.maxTokens = sessionMaxTokens.value
+      conv.systemPrompt = sessionSystemPrompt.value.trim() || null
+    }
+    message.success('参数已应用，发送消息后生效')
+    settingsOpen.value = false
     return
   }
   settingsSaving.value = true
@@ -1539,6 +1556,10 @@ async function loadMessages(conversationId: string) {
   }
 }
 
+function isLocalConversationId(id: string | undefined | null) {
+  return !!id && String(id).startsWith('local_')
+}
+
 async function switchConversation(id: string) {
   if (isLoading.value) {
     message.warning('请先停止当前生成')
@@ -1551,10 +1572,26 @@ async function switchConversation(id: string) {
     selectedModelKey.value = `${conv.provider}::${conv.model}`
   }
   loadSettingsFromConversation(conv)
+  // 本地草稿尚未在服务端建会话，不能请求消息列表
+  if (isLocalConversationId(id)) {
+    messages.value = []
+    return
+  }
   await loadMessages(id)
 }
 
 function createConversation() {
+  // 已有空草稿时复用，避免堆多个未落库会话
+  const existingLocal = conversations.value.find(c => isLocalConversationId(c.id))
+  if (existingLocal) {
+    const { provider, model } = parseModelKey(selectedModelKey.value)
+    if (provider) existingLocal.provider = provider
+    if (model) existingLocal.model = model
+    activeConversationId.value = existingLocal.id
+    messages.value = []
+    loadSettingsFromConversation(existingLocal)
+    return
+  }
   const id = 'local_' + Date.now()
   const { provider, model } = parseModelKey(selectedModelKey.value)
   const conv: ChatConversation = {
@@ -1562,12 +1599,16 @@ function createConversation() {
     title: '新对话',
     provider,
     model,
+    temperature: 0.7,
+    maxTokens: 2000,
+    systemPrompt: null,
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString()
   }
   conversations.value.unshift(conv)
   activeConversationId.value = id
   messages.value = []
+  loadSettingsFromConversation(conv)
 }
 
 function handleModelChange() {
@@ -1672,9 +1713,9 @@ function bindStreamHandlers(assistantMsgIndex: number, opts?: { userText?: strin
       if (data.streamId) {
         currentStreamId.value = data.streamId
       }
-      if (data.conversationId && activeConversationId.value.startsWith('local_')) {
+      if (data.conversationId && isLocalConversationId(activeConversationId.value)) {
         activeConversationId.value = data.conversationId
-        const conv = conversations.value.find(c => String(c.id).startsWith('local_'))
+        const conv = conversations.value.find(c => isLocalConversationId(c.id))
         if (conv) {
           conv.id = data.conversationId
           if (opts?.userText) conv.title = opts.userText.slice(0, 20) || '新对话'
@@ -1682,12 +1723,7 @@ function bindStreamHandlers(assistantMsgIndex: number, opts?: { userText?: strin
           if (data.model) conv.model = data.model
           conv.temperature = sessionTemperature.value
           conv.maxTokens = sessionMaxTokens.value
-          conv.systemPrompt = sessionSystemPrompt.value || null
-        }
-        if (sessionSystemPrompt.value.trim()) {
-          void chatApi.updateConversation(data.conversationId, {
-            systemPrompt: sessionSystemPrompt.value.trim()
-          }).catch(() => { /* ignore */ })
+          conv.systemPrompt = sessionSystemPrompt.value.trim() || null
         }
       }
       const { provider, model } = parseModelKey(selectedModelKey.value)
@@ -1864,16 +1900,17 @@ async function handleSend() {
   const assistantMsgIndex = messages.value.length - 1
   scrollToBottom()
 
+  const isLocalDraft = isLocalConversationId(activeConversationId.value)
   currentAbortController = chatApi.sendMessageStream(
     {
       message: text,
-      conversationId: activeConversationId.value.startsWith('local_')
-        ? undefined
-        : activeConversationId.value,
+      conversationId: isLocalDraft ? undefined : activeConversationId.value,
       provider: provider || undefined,
       model: model || undefined,
       temperature: sessionTemperature.value,
       maxTokens: sessionMaxTokens.value,
+      // 仅新对话草稿随首条消息写入 system prompt，避免覆盖已有会话
+      systemPrompt: isLocalDraft ? sessionSystemPrompt.value.trim() : undefined,
       agentMode: agentMode.value
     },
     bindStreamHandlers(assistantMsgIndex, { userText: text })
@@ -1979,7 +2016,7 @@ async function handleDeleteConversation(id: string) {
     activeConversationId.value = ''
     messages.value = []
   }
-  if (!id.startsWith('local_')) {
+  if (!isLocalConversationId(id)) {
     try {
       await chatApi.deleteConversation(id)
     } catch { /* ignore */ }
@@ -2023,8 +2060,8 @@ onMounted(() => {
   flex: 1 1 auto;
   min-height: 0;
   height: 100%;
-  background: #fff;
-  border: 1px solid #e5e7eb;
+  background: var(--surface-1);
+  border: 1px solid var(--border-color);
   border-radius: 16px;
   overflow: hidden;
   box-shadow:
@@ -2035,11 +2072,11 @@ onMounted(() => {
 .chat-sidebar {
   width: 248px;
   flex-shrink: 0;
-  border-right: 1px solid #e5e7eb;
+  border-right: 1px solid var(--border-color);
   display: flex;
   flex-direction: column;
   min-height: 0;
-  background: #fafafa;
+  background: var(--surface-2);
 
   .sidebar-header {
     padding: 16px;
@@ -2081,15 +2118,15 @@ onMounted(() => {
     transition: background 0.15s ease, border-color 0.15s ease;
 
     &:hover {
-      background: #f3f4f6;
-      border-color: #e5e7eb;
+      background: var(--surface-3);
+      border-color: var(--border-color);
     }
 
     &.active {
-      background: #f3f4f6;
-      border-color: #d1d5db;
+      background: var(--surface-3);
+      border-color: var(--border-strong);
       box-shadow: none;
-      .conv-title { color: #111827; font-weight: 600; }
+      .conv-title { color: var(--primary-strong); font-weight: 600; }
     }
 
     .conv-info {
@@ -2236,7 +2273,7 @@ onMounted(() => {
     height: 28px;
     border: 1px solid var(--border-color);
     border-radius: 6px;
-    background: #fff;
+    background: var(--surface-1);
     flex-shrink: 0;
   }
 
@@ -2260,8 +2297,8 @@ onMounted(() => {
   margin-bottom: 10px;
   max-width: min(460px, 100%);
   border-radius: 12px;
-  border: 1px solid #e5e7eb;
-  background: #fff;
+  border: 1px solid var(--border-color);
+  background: var(--surface-1);
   box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
   overflow: hidden;
 }
@@ -2312,8 +2349,8 @@ onMounted(() => {
 }
 
 .agent-card.is-rejected {
-  border-color: #e5e7eb;
-  background: #f9fafb;
+  border-color: var(--border-color);
+  background: var(--surface-hover);
 
   .agent-card-accent {
     background: #9ca3af;
@@ -2322,7 +2359,7 @@ onMounted(() => {
 
 .agent-card.is-info {
   border-color: #bfdbfe;
-  background: #f8fafc;
+  background: var(--surface-hover);
 
   .agent-card-accent {
     background: linear-gradient(180deg, #3b82f6 0%, #2563eb 100%);
@@ -2345,8 +2382,8 @@ onMounted(() => {
   font-size: 15px;
   font-weight: 700;
   flex-shrink: 0;
-  background: #f1f5f9;
-  color: #475569;
+  background: var(--surface-muted);
+  color: var(--text-secondary);
   line-height: 1;
 }
 
@@ -2366,8 +2403,8 @@ onMounted(() => {
 }
 
 .is-rejected .agent-card-icon {
-  background: #f3f4f6;
-  color: #6b7280;
+  background: var(--surface-3);
+  color: var(--text-secondary);
 }
 
 .agent-card-titles {
@@ -2409,14 +2446,14 @@ onMounted(() => {
 }
 
 .is-rejected .agent-card-badge {
-  background: #f3f4f6;
-  color: #6b7280;
+  background: var(--surface-3);
+  color: var(--text-secondary);
 }
 
 .agent-card-tool {
   font-size: 14px;
   font-weight: 600;
-  color: #111827;
+  color: var(--primary-strong);
   letter-spacing: -0.01em;
 }
 
@@ -2481,7 +2518,7 @@ onMounted(() => {
 }
 
 .agent-param-v {
-  color: #1f2937;
+  color: var(--primary-color);
   word-break: break-word;
   white-space: pre-wrap;
   font-size: 12.5px;
@@ -2494,7 +2531,7 @@ onMounted(() => {
   :deep(.ant-input) {
     border-radius: 8px;
     font-size: 13px;
-    background: #fff;
+    background: var(--surface-1);
   }
 }
 
@@ -2602,7 +2639,7 @@ onMounted(() => {
   gap: 8px;
   font-size: 13px;
   font-weight: 600;
-  color: #6b7280;
+  color: var(--text-secondary);
   padding: 2px 0;
 }
 
@@ -2623,7 +2660,7 @@ onMounted(() => {
 }
 
 .agent-card-done.done-rejected {
-  color: #6b7280;
+  color: var(--text-secondary);
 
   .agent-card-done-dot {
     background: #9ca3af;
@@ -2644,20 +2681,20 @@ onMounted(() => {
 
 .agent-created-id {
   font-size: 12px;
-  color: #6b7280;
+  color: var(--text-secondary);
   font-family: ui-monospace, Menlo, Consolas, monospace;
 }
 
 .agent-created-model {
   font-size: 12px;
-  color: #6b7280;
+  color: var(--text-secondary);
   margin-bottom: 4px;
   word-break: break-all;
 }
 
 .agent-created-title {
   font-size: 13px;
-  color: #111827;
+  color: var(--primary-strong);
   line-height: 1.5;
   word-break: break-word;
 }
@@ -2682,7 +2719,7 @@ onMounted(() => {
   gap: 10px;
   padding: 10px 12px;
   border-radius: 10px;
-  background: #fafbfc;
+  background: var(--surface-2);
   border: 1px solid #eef0f3;
 }
 
@@ -2696,7 +2733,7 @@ onMounted(() => {
 
 .agent-task-name {
   font-size: 13px;
-  color: #111827;
+  color: var(--primary-strong);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -2795,7 +2832,7 @@ onMounted(() => {
 
     &:hover {
       border-color: var(--primary-color);
-      background: #f3f4f6;
+      background: var(--surface-3);
     }
 
     .prompt-icon {
@@ -2818,7 +2855,7 @@ onMounted(() => {
   &.assistant {
     .message-body {
       .message-content {
-        background: #F5F7FA;
+        background: var(--surface-muted);
         border-radius: 2px 12px 12px 12px;
       }
     }
@@ -2839,13 +2876,13 @@ onMounted(() => {
       }
 
       .message-content {
-        background: var(--primary-color);
-        color: #fff;
+        background: var(--btn-primary-bg);
+        color: var(--btn-primary-text);
         border-radius: 12px 2px 12px 12px;
 
         :deep(code) {
-          background: rgba(255, 255, 255, 0.15);
-          color: #fff;
+          background: color-mix(in srgb, var(--btn-primary-text) 12%, transparent);
+          color: var(--btn-primary-text);
         }
       }
     }
@@ -2870,13 +2907,13 @@ onMounted(() => {
     }
 
     .avatar-ai {
-      background: #f3f4f6;
+      background: var(--surface-3);
       color: var(--primary-color);
     }
 
     .avatar-user {
-      background: var(--primary-color);
-      color: #fff;
+      background: var(--btn-primary-bg);
+      color: var(--btn-primary-text);
     }
   }
 
@@ -3113,7 +3150,7 @@ onMounted(() => {
   }
 
   .stop-btn {
-    background: #fff;
+    background: var(--surface-1);
   }
 }
 
@@ -3138,6 +3175,17 @@ onMounted(() => {
     font-size: 12px;
     color: var(--text-muted);
   }
+
+  .settings-local-hint {
+    margin: 0;
+    padding: 10px 12px;
+    border-radius: 10px;
+    background: var(--surface-2);
+    border: 1px solid var(--border-color);
+    font-size: 12px;
+    line-height: 1.5;
+    color: var(--text-secondary);
+  }
 }
 
 .msg-edit-box {
@@ -3152,4 +3200,5 @@ onMounted(() => {
     margin-top: 8px;
   }
 }
+
 </style>

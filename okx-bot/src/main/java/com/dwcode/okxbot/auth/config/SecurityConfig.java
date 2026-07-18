@@ -66,6 +66,11 @@ public class SecurityConfig {
                                 "/api/auth/register/**",
                                 "/api/auth/password/**"
                         ).permitAll()
+                        // 支付异步回调 / 同步回跳：渠道无 JWT，须验签（PayNotifyController）
+                        .requestMatchers(
+                                "/api/pay/notify/**",
+                                "/api/pay/return/**"
+                        ).permitAll()
                         .requestMatchers("/error").permitAll()
                         // 用户管理 / 模型配置 CRUD：仅超级管理员
                         .requestMatchers("/api/admin/**").hasRole("SUPER_ADMIN")

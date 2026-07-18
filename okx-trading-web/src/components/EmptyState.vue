@@ -78,7 +78,7 @@ withDefaults(
   text-align: center;
   padding: 32px 20px;
   border-radius: 12px;
-  background: #fafafa;
+  background: var(--surface-2);
   border: 1px dashed #e5e7eb;
 
   &.tone-soft {
@@ -140,4 +140,5 @@ withDefaults(
     transform: translateY(-4px);
   }
 }
+
 </style>

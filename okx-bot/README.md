@@ -444,8 +444,12 @@ Base URL：`http://127.0.0.1:8080`
 | POST | `/api/pay/orders` | 创建订单 body:`planId,channel,clientType`；channel=`mock` |
 | GET | `/api/pay/orders/{orderNo}` | 查询本人订单 |
 | POST | `/api/pay/mock/confirm` | Mock 确认支付 body:`{orderNo}`（需 `pay.mock-enabled=true`） |
+| POST | `/api/pay/notify/alipay` | 支付宝异步通知（匿名，协议 body `success`/`failure`） |
+| GET | `/api/pay/return/alipay` | 支付宝同步回跳（不履约） |
 
 `GET /api/auth/me` 扩展字段：`memberExpireAt`、`memberActive`。
+
+**支付宝直连（默认关闭）**：`pay.alipay.enabled=false`。进件后配置 `ALIPAY_APP_ID` / `ALIPAY_PRIVATE_KEY` / `ALIPAY_PUBLIC_KEY`，设 `enabled=true`，`pay.public-base-url` 为公网 HTTPS。无资质时用 `channel=mock`。
 
 ### 9.1 认证 ` /api/auth`
 

@@ -5,6 +5,7 @@
 }
 
 :root {
+  /* 品牌 / 状态 */
   --primary-color: #{$primary-color};
   --primary-strong: #{$primary-strong};
   --accent-color: #{$accent-color};
@@ -13,18 +14,49 @@
   --warning-color: #{$warning-color};
   --page-bg: #{$page-bg};
   --card-bg: #{$card-bg};
+  --surface-1: #ffffff;
+  --surface-2: #fafafa;
+  --surface-3: #f3f4f6;
+  --surface-hover: #f8fafc;
+  --surface-input: #ffffff;
+  --surface-muted: #f1f5f9;
+  --surface-chip: #f3f4f6;
+
+  /* 文字 */
   --text-primary: #{$text-primary};
   --text-secondary: #{$text-secondary};
   --text-muted: #{$text-muted};
+  --text-inverse: #ffffff;
+
+  /* 边框 / 阴影 / 玻璃 */
   --border-color: #{$border-color};
-  --sidebar-width: #{$sidebar-width};
-  --header-height: #{$header-height};
-  --content-padding: #{$content-padding};
-  --card-radius: #{$card-radius};
+  --border-strong: #d1d5db;
+  --border-subtle: #f3f4f6;
   --card-shadow: #{$card-shadow};
   --glass-bg: rgba(255, 255, 255, 0.78);
   --glass-border: rgba(229, 231, 235, 0.9);
   --focus-ring: rgba(15, 23, 42, 0.08);
+  --btn-primary-bg: #1f2937;
+  --btn-primary-hover: #111827;
+  --btn-primary-active: #030712;
+  --btn-primary-text: #ffffff;
+  --btn-default-bg: #ffffff;
+  --btn-default-hover: #f9fafb;
+
+  /* 轻强调（替代刺眼 indigo 浅底） */
+  --soft-accent-bg: #f3f4f6;
+  --soft-accent-border: #e5e7eb;
+  --soft-accent-text: #374151;
+
+  /* 滚动条 */
+  --scrollbar-thumb: #d1d5db;
+  --scrollbar-thumb-hover: #9ca3af;
+
+  /* 布局 */
+  --sidebar-width: #{$sidebar-width};
+  --header-height: #{$header-height};
+  --content-padding: #{$content-padding};
+  --card-radius: #{$card-radius};
   --control-height: 36px;
   --control-radius: 10px;
 }
@@ -79,10 +111,8 @@ html.immersive-page #app {
   transition: border-color 0.15s ease, box-shadow 0.15s ease;
 
   &:hover {
-    border-color: #d1d5db;
-    box-shadow:
-      0 1px 2px rgba(15, 23, 42, 0.04),
-      0 10px 28px rgba(15, 23, 42, 0.05);
+    border-color: var(--border-strong);
+    box-shadow: var(--card-shadow);
   }
 }
 
@@ -119,11 +149,11 @@ html.immersive-page #app {
 }
 
 ::-webkit-scrollbar-thumb {
-  background: #d1d5db;
+  background: var(--scrollbar-thumb);
   border-radius: 999px;
 
   &:hover {
-    background: #9ca3af;
+    background: var(--scrollbar-thumb-hover);
   }
 }
 
@@ -134,7 +164,7 @@ html.immersive-page #app {
 // ——— Ant Design 全局克制覆盖 ———
 .ant-table {
   .ant-table-thead > tr > th {
-    background: #fafafa !important;
+    background: var(--surface-2) !important;
     font-weight: 600;
     color: var(--text-secondary);
     font-size: 13px;
@@ -142,12 +172,12 @@ html.immersive-page #app {
   }
 
   .ant-table-tbody > tr > td {
-    border-bottom: 1px solid #f3f4f6;
+    border-bottom: 1px solid var(--border-subtle);
     font-size: 13px;
   }
 
   .ant-table-tbody > tr:hover > td {
-    background: #fafafa !important;
+    background: var(--surface-2) !important;
   }
 }
 
@@ -167,20 +197,20 @@ html.immersive-page #app {
   transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease;
 
   &.ant-btn-primary {
-    background: #1f2937;
-    border-color: #1f2937;
-    color: #fff;
+    background: var(--btn-primary-bg);
+    border-color: var(--btn-primary-bg);
+    color: var(--btn-primary-text);
     box-shadow: none;
 
     &:hover {
-      background: #111827 !important;
-      border-color: #111827 !important;
-      color: #fff !important;
+      background: var(--btn-primary-hover) !important;
+      border-color: var(--btn-primary-hover) !important;
+      color: var(--btn-primary-text) !important;
     }
 
     &:active {
-      background: #030712 !important;
-      border-color: #030712 !important;
+      background: var(--btn-primary-active) !important;
+      border-color: var(--btn-primary-active) !important;
     }
   }
 
@@ -198,7 +228,9 @@ html.immersive-page #app {
 .ant-select-selector,
 .ant-picker {
   border-radius: var(--control-radius) !important;
-  border-color: #e5e7eb !important;
+  border-color: var(--border-color) !important;
+  background: var(--surface-input) !important;
+  color: var(--text-primary) !important;
   transition: border-color 0.15s ease, box-shadow 0.15s ease !important;
 }
 
@@ -207,24 +239,24 @@ html.immersive-page #app {
 .ant-input-number,
 .ant-picker {
   &:hover {
-    border-color: #d1d5db !important;
+    border-color: var(--border-strong) !important;
   }
 
   &:focus,
   &.ant-input-affix-wrapper-focused,
   &.ant-input-number-focused,
   &.ant-picker-focused {
-    border-color: #9ca3af !important;
+    border-color: var(--accent-color) !important;
     box-shadow: 0 0 0 3px var(--focus-ring) !important;
   }
 }
 
 .ant-select:not(.ant-select-disabled):hover .ant-select-selector {
-  border-color: #d1d5db !important;
+  border-color: var(--border-strong) !important;
 }
 
 .ant-select-focused:not(.ant-select-disabled) .ant-select-selector {
-  border-color: #9ca3af !important;
+  border-color: var(--accent-color) !important;
   box-shadow: 0 0 0 3px var(--focus-ring) !important;
 }
 
@@ -247,26 +279,26 @@ textarea.ant-input {
 }
 
 .ant-modal-header {
-  border-bottom-color: #f3f4f6 !important;
+  border-bottom-color: var(--border-subtle) !important;
   margin-bottom: 0 !important;
 }
 
 .ant-modal-title {
   font-weight: 650 !important;
-  color: #0f172a !important;
+  color: var(--text-primary) !important;
 }
 
 .ant-modal-footer {
-  border-top-color: #f3f4f6 !important;
+  border-top-color: var(--border-subtle) !important;
 }
 
 // Tabs 更干净
 .ant-tabs-top > .ant-tabs-nav::before {
-  border-bottom-color: #f3f4f6 !important;
+  border-bottom-color: var(--border-subtle) !important;
 }
 
 .ant-tabs .ant-tabs-tab {
-  color: #6b7280;
+  color: var(--text-secondary);
   font-weight: 500;
   padding: 10px 2px !important;
 
@@ -275,29 +307,29 @@ textarea.ant-input {
   }
 
   &:hover {
-    color: #111827;
+    color: var(--text-primary);
   }
 }
 
 .ant-tabs .ant-tabs-tab.ant-tabs-tab-active .ant-tabs-tab-btn {
-  color: #111827 !important;
+  color: var(--text-primary) !important;
   font-weight: 600;
   text-shadow: none !important;
 }
 
 .ant-tabs .ant-tabs-ink-bar {
-  background: #1f2937 !important;
+  background: var(--primary-color) !important;
   height: 2px !important;
   border-radius: 2px;
 }
 
 // Progress 中性
 .ant-progress-bg {
-  background-color: #1f2937 !important;
+  background-color: var(--primary-color) !important;
 }
 
 .ant-progress-inner {
-  background-color: #f3f4f6 !important;
+  background-color: var(--surface-3) !important;
 }
 
 // Alert 圆角统一
@@ -338,12 +370,12 @@ textarea.ant-input {
 
 // 链接
 a {
-  color: #1f2937;
+  color: var(--primary-color);
   text-decoration: none;
   transition: color 0.15s ease;
 
   &:hover {
-    color: #111827;
+    color: var(--primary-strong);
   }
 }
 
@@ -357,7 +389,7 @@ a {
 
 // 分割线
 .ant-divider {
-  border-color: #f3f4f6 !important;
+  border-color: var(--border-subtle) !important;
 }
 
 // Spin 主色

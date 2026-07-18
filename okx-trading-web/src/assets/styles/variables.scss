@@ -1,4 +1,4 @@
-// 主题色 · 舒适中性墨色
+// 主题色 · 舒适中性墨色（亮色基准，运行时用 CSS 变量切换）
 $primary-color: #1f2937;
 $primary-strong: #111827;
 $accent-color: #64748b;
@@ -6,7 +6,7 @@ $success-color: #059669;
 $danger-color: #e11d48;
 $warning-color: #d97706;
 
-// 背景色 · 冷中性灰（弱化紫偏色）
+// 背景色 · 冷中性灰
 $page-bg: #f5f6f8;
 $card-bg: #ffffff;
 

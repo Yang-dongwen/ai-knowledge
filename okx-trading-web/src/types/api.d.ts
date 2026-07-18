@@ -29,6 +29,8 @@ export interface ChatRequest {
   model?: string
   temperature?: number
   maxTokens?: number
+  /** 新会话时写入 system prompt；空串表示用默认 */
+  systemPrompt?: string
   /** Agent 模式：允许只读工具（查任务/模型） */
   agentMode?: boolean
 }
