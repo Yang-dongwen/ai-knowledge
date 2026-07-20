@@ -15,6 +15,7 @@ import com.dwcode.okxbot.video.enums.UnderstandingMode;
 import com.dwcode.okxbot.video.enums.VideoTaskStatus;
 import com.dwcode.okxbot.video.event.VideoTaskEventPublisher;
 import com.dwcode.okxbot.video.mapper.VideoTaskMapper;
+import com.dwcode.okxbot.video.util.VideoUrlNormalizer;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -51,6 +52,7 @@ public class VideoProcessService {
     private final VideoTaskMapper videoTaskMapper;
     private final VideoTaskScheduler taskScheduler;
     private final StorageService storageService;
+    private final VideoDownloadService downloadService;
     private final ObjectMapper objectMapper;
     private final AiProperties aiProperties;
     private final VideoProperties videoProperties;
@@ -66,54 +68,68 @@ public class VideoProcessService {
                 ? request.getOptions()
                 : new VideoProcessOptions();
 
-        String llmProvider = blankToNull(options.getLlmProvider());
-        String llmModel = blankToNull(options.getLlmModel());
-        if (llmProvider == null) {
-            llmProvider = blankToNull(videoProperties.getLlm().getProvider());
-        }
-        if (llmProvider == null) {
-            // defaultProvider 字段为 key；getDefaultProvider() 返回配置对象
-            llmProvider = blankToNull(aiProperties.getDefaultProvider() != null
-                    ? findProviderKey(aiProperties.getDefaultProvider())
-                    : null);
-            if (llmProvider == null) {
-                llmProvider = firstAvailableProviderKey();
-            }
-        }
-        // 校验供应商与模型（模型列表来自数据库）
-        if (llmProvider != null) {
-            ProviderConfig pc = aiProperties.getProvider(llmProvider);
-            if (pc == null || pc.getApiKey() == null || pc.getApiKey().isEmpty()) {
-                throw new BusinessException("LLM 供应商不可用或未配置 api-key: " + llmProvider);
-            }
-            if (llmModel == null) {
-                llmModel = aiModelConfigService.firstEnabledModelId(llmProvider);
-            }
-            if (llmModel == null) {
-                throw new BusinessException("未配置可用 LLM 模型，请在「模型管理」中添加");
-            }
-        }
-
         UnderstandingMode mode = UnderstandingMode.from(
                 options.getUnderstandingMode() != null
                         ? options.getUnderstandingMode()
                         : videoProperties.getUnderstanding().getMode());
-        // 画面理解模型：必须由前端选择（库表 capability=video_omni），禁止 yml 写死模型 ID
-        String omniProvider = blankToNull(options.getOmniProvider());
-        String omniModel = blankToNull(options.getOmniModel());
-        if (mode.needsOmni() && !videoProperties.getUnderstanding().isMock()) {
-            if (omniProvider == null || omniModel == null) {
-                throw new BusinessException(400,
-                        "混合/仅画面模式请选择「视频理解模型」（capability=video_omni，可在模型管理中配置）");
+
+        String llmProvider = null;
+        String llmModel = null;
+        String omniProvider = null;
+        String omniModel = null;
+
+        // 仅下载：不需要 LLM / Omni
+        if (mode.needsLlm()) {
+            llmProvider = blankToNull(options.getLlmProvider());
+            llmModel = blankToNull(options.getLlmModel());
+            if (llmProvider == null) {
+                llmProvider = blankToNull(videoProperties.getLlm().getProvider());
             }
-            var omniCfg = aiModelConfigService.requireEnabledVideoOmniModel(omniProvider, omniModel);
-            omniProvider = omniCfg.getProvider();
-            omniModel = omniCfg.getModelId();
+            if (llmProvider == null) {
+                // defaultProvider 字段为 key；getDefaultProvider() 返回配置对象
+                llmProvider = blankToNull(aiProperties.getDefaultProvider() != null
+                        ? findProviderKey(aiProperties.getDefaultProvider())
+                        : null);
+                if (llmProvider == null) {
+                    llmProvider = firstAvailableProviderKey();
+                }
+            }
+            // 校验供应商与模型（模型列表来自数据库）
+            if (llmProvider != null) {
+                ProviderConfig pc = aiProperties.getProvider(llmProvider);
+                if (pc == null || pc.getApiKey() == null || pc.getApiKey().isEmpty()) {
+                    throw new BusinessException("LLM 供应商不可用或未配置 api-key: " + llmProvider);
+                }
+                if (llmModel == null) {
+                    llmModel = aiModelConfigService.firstEnabledModelId(llmProvider);
+                }
+                if (llmModel == null) {
+                    throw new BusinessException("未配置可用 LLM 模型，请在「模型管理」中添加");
+                }
+            }
+
+            // 画面理解模型：必须由前端选择（库表 capability=video_omni），禁止 yml 写死模型 ID
+            omniProvider = blankToNull(options.getOmniProvider());
+            omniModel = blankToNull(options.getOmniModel());
+            if (mode.needsOmni() && !videoProperties.getUnderstanding().isMock()) {
+                if (omniProvider == null || omniModel == null) {
+                    throw new BusinessException(400,
+                            "混合/仅画面模式请选择「视频理解模型」（capability=video_omni，可在模型管理中配置）");
+                }
+                var omniCfg = aiModelConfigService.requireEnabledVideoOmniModel(omniProvider, omniModel);
+                omniProvider = omniCfg.getProvider();
+                omniModel = omniCfg.getModelId();
+            }
         }
 
         VideoTaskEntity entity = new VideoTaskEntity();
         entity.setUserId(SecurityUtils.requireCurrentUserId());
-        entity.setSourceUrl(request.getUrl().trim());
+        // 规范化：抖音 user/self?modal_id= → /video/{id}，避免 yt-dlp Unsupported URL
+        String sourceUrl = VideoUrlNormalizer.normalize(request.getUrl());
+        if (sourceUrl == null || sourceUrl.isBlank()) {
+            throw new BusinessException(400, "视频链接不能为空");
+        }
+        entity.setSourceUrl(sourceUrl);
         entity.setPlatform(storageService.detectPlatform(entity.getSourceUrl()));
         entity.setStatus(VideoTaskStatus.PENDING.name());
         entity.setCurrentStep("排队中");
@@ -123,8 +139,14 @@ public class VideoProcessService {
         entity.setLlmModel(llmModel);
         entity.setOmniProvider(omniProvider);
         entity.setOmniModel(omniModel);
-        entity.setExtractMindMap(Boolean.FALSE.equals(options.getExtractMindMap()) ? 0 : 1);
-        entity.setGenerateRepurposeScript(Boolean.FALSE.equals(options.getGenerateRepurposeScript()) ? 0 : 1);
+        // 仅下载时关闭导图/二创
+        if (mode.isDownloadOnly()) {
+            entity.setExtractMindMap(0);
+            entity.setGenerateRepurposeScript(0);
+        } else {
+            entity.setExtractMindMap(Boolean.FALSE.equals(options.getExtractMindMap()) ? 0 : 1);
+            entity.setGenerateRepurposeScript(Boolean.FALSE.equals(options.getGenerateRepurposeScript()) ? 0 : 1);
+        }
         entity.setDegraded(0);
         entity.setCreatedAt(LocalDateTime.now());
         entity.setUpdatedAt(LocalDateTime.now());
@@ -208,56 +230,65 @@ public class VideoProcessService {
             throw new BusinessException(400, "任务源链接为空，无法重试");
         }
 
-        // 可选覆盖 LLM
+        // 可选覆盖模式 / LLM
         if (request != null) {
-            String p = blankToNull(request.getLlmProvider());
-            String m = blankToNull(request.getLlmModel());
-            if (p != null) {
-                ProviderConfig pc = aiProperties.getProvider(p);
-                if (pc == null || pc.getApiKey() == null || pc.getApiKey().isEmpty()) {
-                    throw new BusinessException("LLM 供应商不可用或未配置 api-key: " + p);
-                }
-                entity.setLlmProvider(p);
-                if (m == null) {
-                    m = aiModelConfigService.firstEnabledModelId(p);
-                }
-                if (m == null) {
-                    throw new BusinessException("未配置可用 LLM 模型，请在「模型管理」中添加");
-                }
-                entity.setLlmModel(m);
-            } else if (m != null) {
-                entity.setLlmModel(m);
-            }
             if (request.getUnderstandingMode() != null && !request.getUnderstandingMode().isBlank()) {
                 entity.setUnderstandingMode(UnderstandingMode.from(request.getUnderstandingMode()).wireValue());
             }
-            String op = blankToNull(request.getOmniProvider());
-            String om = blankToNull(request.getOmniModel());
             UnderstandingMode retryMode = UnderstandingMode.from(entity.getUnderstandingMode());
-            if (retryMode.needsOmni() && !videoProperties.getUnderstanding().isMock()) {
-                // 重试画面模式：请求显式指定，或沿用任务上已有模型
-                String useOp = op != null ? op : blankToNull(entity.getOmniProvider());
-                String useOm = om != null ? om : blankToNull(entity.getOmniModel());
-                if (useOp == null || useOm == null) {
-                    throw new BusinessException(400,
-                            "画面理解模式请选择视频理解模型（capability=video_omni）");
-                }
-                var omniCfg = aiModelConfigService.requireEnabledVideoOmniModel(useOp, useOm);
-                entity.setOmniProvider(omniCfg.getProvider());
-                entity.setOmniModel(omniCfg.getModelId());
+            if (retryMode.isDownloadOnly()) {
+                entity.setLlmProvider(null);
+                entity.setLlmModel(null);
+                entity.setOmniProvider(null);
+                entity.setOmniModel(null);
+                entity.setExtractMindMap(0);
+                entity.setGenerateRepurposeScript(0);
             } else {
-                if (op != null) {
-                    entity.setOmniProvider(op);
+                String p = blankToNull(request.getLlmProvider());
+                String m = blankToNull(request.getLlmModel());
+                if (p != null) {
+                    ProviderConfig pc = aiProperties.getProvider(p);
+                    if (pc == null || pc.getApiKey() == null || pc.getApiKey().isEmpty()) {
+                        throw new BusinessException("LLM 供应商不可用或未配置 api-key: " + p);
+                    }
+                    entity.setLlmProvider(p);
+                    if (m == null) {
+                        m = aiModelConfigService.firstEnabledModelId(p);
+                    }
+                    if (m == null) {
+                        throw new BusinessException("未配置可用 LLM 模型，请在「模型管理」中添加");
+                    }
+                    entity.setLlmModel(m);
+                } else if (m != null) {
+                    entity.setLlmModel(m);
                 }
-                if (om != null) {
-                    entity.setOmniModel(om);
-                }
-                if (!retryMode.needsOmni()
-                        && request.getUnderstandingMode() != null
-                        && !request.getUnderstandingMode().isBlank()) {
-                    // 切回仅音频时清空 omni
-                    entity.setOmniProvider(null);
-                    entity.setOmniModel(null);
+                String op = blankToNull(request.getOmniProvider());
+                String om = blankToNull(request.getOmniModel());
+                if (retryMode.needsOmni() && !videoProperties.getUnderstanding().isMock()) {
+                    // 重试画面模式：请求显式指定，或沿用任务上已有模型
+                    String useOp = op != null ? op : blankToNull(entity.getOmniProvider());
+                    String useOm = om != null ? om : blankToNull(entity.getOmniModel());
+                    if (useOp == null || useOm == null) {
+                        throw new BusinessException(400,
+                                "画面理解模式请选择视频理解模型（capability=video_omni）");
+                    }
+                    var omniCfg = aiModelConfigService.requireEnabledVideoOmniModel(useOp, useOm);
+                    entity.setOmniProvider(omniCfg.getProvider());
+                    entity.setOmniModel(omniCfg.getModelId());
+                } else {
+                    if (op != null) {
+                        entity.setOmniProvider(op);
+                    }
+                    if (om != null) {
+                        entity.setOmniModel(om);
+                    }
+                    if (!retryMode.needsOmni()
+                            && request.getUnderstandingMode() != null
+                            && !request.getUnderstandingMode().isBlank()) {
+                        // 切回仅音频/仅下载时清空 omni
+                        entity.setOmniProvider(null);
+                        entity.setOmniModel(null);
+                    }
                 }
             }
         }
@@ -421,18 +452,42 @@ public class VideoProcessService {
 
     /**
      * 下载原始视频文件流。
+     * <p>若源文件为 HEVC 等浏览器不友好编码，会按需转成同目录 {@code video.browser.mp4} 再返回。
      */
     public ResponseEntity<Resource> downloadVideo(Long taskId) {
         VideoTaskEntity entity = requireOwnedTask(taskId);
         Path path = storageService.requireExistingFile(entity.getVideoPath(), "视频文件");
+        // 已有任务可能是抖音 HEVC：首次播放时懒转 H.264，避免前端黑屏/无法点播放
+        try {
+            path = downloadService.ensureBrowserPlayable(path);
+        } catch (Exception e) {
+            log.warn("浏览器可播转码跳过: taskId={}, err={}", taskId, e.getMessage());
+        }
         Resource resource = new FileSystemResource(path);
-        String contentType = storageService.guessMediaType(path);
-        String filename = path.getFileName().toString();
+        // 前端 <video> 对 video/mp4 最稳；browser 转码产物也是 mp4
+        String contentType = "video/mp4";
+        String name = path.getFileName() != null ? path.getFileName().toString().toLowerCase() : "";
+        if (name.endsWith(".webm")) {
+            contentType = "video/webm";
+        }
+        String filename = path.getFileName() != null ? path.getFileName().toString() : "video.mp4";
 
-        return ResponseEntity.ok()
+        long len = 0L;
+        try {
+            len = Files.size(path);
+        } catch (Exception ignored) {
+            // ignore
+        }
+
+        ResponseEntity.BodyBuilder bb = ResponseEntity.ok()
                 .contentType(MediaType.parseMediaType(contentType))
                 .header(HttpHeaders.CONTENT_DISPOSITION, "inline; filename=\"" + filename + "\"")
-                .body(resource);
+                .header(HttpHeaders.CACHE_CONTROL, "private, max-age=60")
+                .header("Accept-Ranges", "bytes");
+        if (len > 0) {
+            bb = bb.header(HttpHeaders.CONTENT_LENGTH, String.valueOf(len));
+        }
+        return bb.body(resource);
     }
 
     /**
@@ -495,6 +550,15 @@ public class VideoProcessService {
         boolean videoAvailable = entity.getVideoPath() != null
                 && !entity.getVideoPath().isBlank()
                 && Files.isRegularFile(Path.of(entity.getVideoPath()));
+        // 懒转码产出 video.browser.mp4 时也算可播放
+        if (!videoAvailable && entity.getVideoPath() != null && !entity.getVideoPath().isBlank()) {
+            try {
+                Path browser = Path.of(entity.getVideoPath()).resolveSibling("video.browser.mp4");
+                videoAvailable = Files.isRegularFile(browser) && Files.size(browser) > 0;
+            } catch (Exception ignored) {
+                // ignore
+            }
+        }
 
         VideoTaskResponse.VideoTaskResponseBuilder builder = VideoTaskResponse.builder()
                 .taskId(String.valueOf(entity.getId()))

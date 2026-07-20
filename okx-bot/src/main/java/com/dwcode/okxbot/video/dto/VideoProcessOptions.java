@@ -25,7 +25,8 @@ public class VideoProcessOptions {
     private String llmModel;
 
     /**
-     * 理解模式：audio_only | hybrid | omni_only。
+     * 理解模式：download_only | audio_only | hybrid | omni_only。
+     * download_only = 只下载视频，不转录/不总结/不画面理解。
      * 为空则使用 video.understanding.mode。
      */
     private String understandingMode;

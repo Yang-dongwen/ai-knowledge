@@ -44,8 +44,61 @@
         </a-button>
       </div>
 
-      <!-- 总结用 Chat 模型（可选配置库） -->
-      <div class="model-row">
+      <!-- 理解模式：独立一行，驱动下方 LLM / 画面模型 / 输出选项联动 -->
+      <div class="mode-section">
+        <div class="mode-section-head">
+          <div class="mode-section-title">
+            <span class="mode-section-kicker">理解模式</span>
+            <span class="mode-section-sub">选择流水线深度，会联动下方模型与输出选项</span>
+          </div>
+          <div class="mode-section-meta">
+            <a-tag class="mode-active-tag" color="processing">
+              当前 · {{ modeCardLabel(options.understandingMode) }}
+            </a-tag>
+            <a-button size="small" class="cookie-btn" @click="openCookieModal">
+              <template #icon><KeyOutlined /></template>
+              抖音 Cookie
+              <a-badge
+                v-if="cookieStatus?.configured"
+                status="success"
+                :offset="[4, -2]"
+                style="margin-left: 4px"
+              />
+            </a-button>
+          </div>
+        </div>
+        <div class="mode-card-grid" role="radiogroup" aria-label="理解模式">
+          <button
+            v-for="m in modeCards"
+            :key="m.value"
+            type="button"
+            class="mode-card"
+            :class="{ active: options.understandingMode === m.value, [m.tone]: true }"
+            role="radio"
+            :aria-checked="options.understandingMode === m.value"
+            @click="options.understandingMode = m.value"
+          >
+            <div class="mode-card-top">
+              <span class="mode-card-icon">{{ m.icon }}</span>
+              <span class="mode-card-check" v-if="options.understandingMode === m.value">✓</span>
+            </div>
+            <div class="mode-card-name">{{ m.label }}</div>
+            <div class="mode-card-desc">{{ m.desc }}</div>
+            <div class="mode-card-flow">
+              <span v-for="(step, i) in m.flow" :key="step" class="flow-chip">
+                <template v-if="i > 0"><span class="flow-arrow">→</span></template>{{ step }}
+              </span>
+            </div>
+            <div class="mode-card-need">
+              <span v-for="tag in m.needs" :key="tag" class="need-chip">{{ tag }}</span>
+            </div>
+          </button>
+        </div>
+        <p class="mode-section-hint">{{ modeHintText }}</p>
+      </div>
+
+      <!-- 总结用 Chat 模型（仅下载模式不需要） -->
+      <div class="model-row" v-if="!isDownloadOnly">
         <div class="model-pick">
           <span class="opt-label">总结 LLM</span>
           <a-select
@@ -99,34 +152,8 @@
         </div>
       </div>
 
-      <div class="options-row">
-        <a-space wrap :size="16">
-          <span class="opt-label">语言</span>
-          <a-radio-group v-model:value="options.language" size="small" button-style="solid">
-            <a-radio-button value="zh">中文</a-radio-button>
-            <a-radio-button value="en">English</a-radio-button>
-          </a-radio-group>
-          <a-divider type="vertical" />
-          <span class="opt-label">理解模式</span>
-          <a-radio-group v-model:value="options.understandingMode" size="small" button-style="solid">
-            <a-radio-button value="audio_only">仅音频</a-radio-button>
-            <a-radio-button value="hybrid">混合(画面+语音)</a-radio-button>
-            <a-radio-button value="omni_only">仅画面</a-radio-button>
-          </a-radio-group>
-          <a-divider type="vertical" />
-          <a-checkbox v-model:checked="options.extractMindMap">思维导图</a-checkbox>
-          <a-checkbox v-model:checked="options.generateRepurposeScript">二创脚本</a-checkbox>
-        </a-space>
-        <div class="platform-hints">
-          <span class="hint-chip">抖音</span>
-          <span class="hint-chip">B站</span>
-          <span class="hint-chip">YouTube</span>
-          <span class="hint-chip">小红书</span>
-        </div>
-      </div>
-
       <!-- 带画面理解时：必须选择视频理解模型（库表 video_omni，不写死后端） -->
-      <div v-if="needsOmniModel" class="model-row" style="margin-top: 10px">
+      <div v-if="needsOmniModel" class="model-row model-row-omni">
         <div class="model-pick">
           <span class="opt-label">视频理解模型</span>
           <a-select
@@ -175,6 +202,84 @@
           </a-tag>
         </div>
       </div>
+
+      <!-- 次要选项：语言 / 产物 / 平台（与模式解耦，仅下载时部分禁用） -->
+      <div class="options-row options-row-secondary">
+        <a-space wrap :size="16">
+          <span class="opt-label">语言</span>
+          <a-radio-group
+            v-model:value="options.language"
+            size="small"
+            button-style="solid"
+            :disabled="isDownloadOnly"
+          >
+            <a-radio-button value="zh">中文</a-radio-button>
+            <a-radio-button value="en">English</a-radio-button>
+          </a-radio-group>
+          <a-divider type="vertical" />
+          <a-checkbox v-model:checked="options.extractMindMap" :disabled="isDownloadOnly">思维导图</a-checkbox>
+          <a-checkbox v-model:checked="options.generateRepurposeScript" :disabled="isDownloadOnly">二创脚本</a-checkbox>
+        </a-space>
+        <div class="platform-hints">
+          <span class="hint-chip">抖音</span>
+          <span class="hint-chip">B站</span>
+          <span class="hint-chip">YouTube</span>
+          <span class="hint-chip">小红书</span>
+        </div>
+      </div>
+
+      <!-- 抖音 Cookie 上传弹窗 -->
+      <a-modal
+        v-model:open="cookieModalOpen"
+        title="抖音 Cookie"
+        :ok-text="'保存 Cookie'"
+        cancel-text="关闭"
+        :confirm-loading="cookieSaving"
+        :ok-button-props="{ disabled: !cookieHeaderInput.trim() }"
+        @ok="saveCookie"
+      >
+        <p class="cookie-hint">
+          从浏览器开发者工具复制 Cookie 请求头字符串（整段即可），用于 yt-dlp 下载抖音等受限内容。不会在状态接口回显明文。
+        </p>
+        <div class="cookie-status-box" v-if="cookieStatus">
+          <a-tag :color="cookieStatus.configured ? 'success' : 'default'">
+            {{ cookieStatus.configured ? '已配置' : '未配置' }}
+          </a-tag>
+          <span class="muted" v-if="cookieStatus.cookieCount != null">
+            {{ cookieStatus.cookieCount }} 条
+          </span>
+          <span class="muted" v-if="cookieStatus.lastModifiedAt">
+            更新于 {{ cookieStatus.lastModifiedAt }}
+          </span>
+          <span class="muted" v-if="cookieStatus.hint">{{ cookieStatus.hint }}</span>
+        </div>
+        <a-textarea
+          v-model:value="cookieHeaderInput"
+          :rows="6"
+          placeholder="粘贴 Cookie: xxx=yyy; ... 或纯 name=value; 列表"
+          allow-clear
+          style="margin-top: 10px"
+        />
+        <template #footer>
+          <a-button
+            danger
+            :disabled="!cookieStatus?.configured"
+            :loading="cookieClearing"
+            @click="handleClearCookie"
+          >
+            清除 Cookie
+          </a-button>
+          <a-button @click="cookieModalOpen = false">关闭</a-button>
+          <a-button
+            type="primary"
+            :loading="cookieSaving"
+            :disabled="!cookieHeaderInput.trim()"
+            @click="saveCookie"
+          >
+            保存 Cookie
+          </a-button>
+        </template>
+      </a-modal>
 
       <ModelManageModal
         v-if="auth.isSuperAdmin"
@@ -336,6 +441,15 @@
             <a-space>
               <a-button type="text" :loading="detailLoading" @click="refreshDetail">
                 <template #icon><ReloadOutlined /></template>
+              </a-button>
+              <a-button
+                v-if="detail.videoAvailable"
+                type="primary"
+                :loading="videoDownloading"
+                @click="downloadTaskVideo(detail)"
+              >
+                <template #icon><DownloadOutlined /></template>
+                下载视频
               </a-button>
               <a-tooltip v-if="canPause(detail)" :title="pauseButtonTip(detail)">
                 <a-button :loading="pausingId === detail.taskId" @click="handlePause(detail)">
@@ -507,7 +621,7 @@
             </template>
           </a-alert>
 
-          <!-- 重试弹窗：可重新配置 LLM -->
+          <!-- 重试弹窗：可重新配置 LLM（仅下载无需 LLM） -->
           <a-modal
             v-model:open="retryModalOpen"
             :title="retryTarget?.status === 'SUCCESS' ? '重新提取' : '重试任务'"
@@ -517,7 +631,7 @@
             @ok="submitRetry"
           >
             <p class="retry-hint">
-              将重新执行流水线。可更换总结 LLM；若使用画面理解，请选择视频理解模型。
+              将重新执行流水线。仅下载模式无需 LLM；其它模式可更换总结 LLM；若使用画面理解，请选择视频理解模型。
             </p>
             <div class="retry-url" v-if="retryTarget">
               <span class="muted">链接</span>
@@ -531,12 +645,13 @@
                 button-style="solid"
                 style="margin-top: 6px; display: block"
               >
+                <a-radio-button value="download_only">仅下载</a-radio-button>
                 <a-radio-button value="audio_only">仅音频</a-radio-button>
                 <a-radio-button value="hybrid">混合</a-radio-button>
                 <a-radio-button value="omni_only">仅画面</a-radio-button>
               </a-radio-group>
             </div>
-            <div class="retry-model-row">
+            <div class="retry-model-row" v-if="!isRetryDownloadOnly">
               <span class="opt-label">总结 LLM</span>
               <a-select
                 v-model:value="retryModelKey"
@@ -560,7 +675,7 @@
                 style="width: 100%; margin-top: 6px"
               />
             </div>
-            <div class="retry-actions">
+            <div class="retry-actions" v-if="!isRetryDownloadOnly">
               <a-button
                 size="small"
                 :loading="retryTesting"
@@ -574,28 +689,78 @@
             </div>
           </a-modal>
 
-          <!-- 成功结果 -->
-          <template v-if="detail.status === 'SUCCESS' && detail.result">
+          <!-- 成功结果：有 result，或仅下载模式下 videoAvailable -->
+          <template v-if="detail.status === 'SUCCESS' && (detail.result || detail.videoAvailable)">
             <a-alert
-              v-if="detail.degraded || detail.result.degraded || detail.result.summary?.degraded"
+              v-if="detail.degraded || detail.result?.degraded || detail.result?.summary?.degraded"
               type="warning"
               show-icon
               class="fail-alert"
               message="已降级为纯音频总结"
-              :description="detail.degradeReason || detail.result.degradeReason || detail.result.summary?.degradeReason || '画面理解失败，已使用字幕总结'"
+              :description="detail.degradeReason || detail.result?.degradeReason || detail.result?.summary?.degradeReason || '画面理解失败，已使用字幕总结'"
             />
             <a-tabs v-model:activeKey="activeTab" class="result-tabs">
               <!-- 概览 -->
               <a-tab-pane key="overview" tab="概览">
                 <div class="overview-grid">
-                  <div class="video-box" v-if="detail.videoAvailable">
-                    <video
-                      ref="videoRef"
-                      class="video-player"
-                      controls
-                      preload="metadata"
-                      :src="videoApi.videoStreamUrl(detail.taskId)"
-                    />
+                  <div class="video-panel" v-if="detail.videoAvailable">
+                    <div class="video-box">
+                      <!-- 不用 a-spin 包 video：嵌套高度算不准时竖屏会把控件裁出可视区，表现为「有画面点不了播放」 -->
+                      <div v-if="videoBlobLoading" class="video-loading-mask">
+                        <a-spin tip="加载视频…" />
+                      </div>
+                      <template v-else-if="videoObjectUrl">
+                        <video
+                          ref="videoRef"
+                          class="video-player"
+                          controls
+                          playsinline
+                          webkit-playsinline
+                          preload="auto"
+                          :src="videoObjectUrl"
+                          @loadeddata="onVideoLoaded"
+                          @play="videoPlaying = true"
+                          @pause="videoPlaying = false"
+                          @ended="videoPlaying = false"
+                          @error="onVideoElementError"
+                        />
+                        <!-- 自定义播放层：竖屏时原生控件易被裁切，保留可点按钮 -->
+                        <button
+                          v-show="!videoPlaying"
+                          type="button"
+                          class="video-play-btn"
+                          aria-label="播放"
+                          @click.stop.prevent="playVideo"
+                        >
+                          ▶ 播放
+                        </button>
+                      </template>
+                      <div v-else class="video-placeholder-inner">
+                        <VideoCameraOutlined />
+                        <span>{{ videoBlobError || '正在准备播放…' }}</span>
+                        <a-button
+                          v-if="videoBlobError && detail.taskId"
+                          size="small"
+                          type="link"
+                          @click="loadVideoBlob(detail.taskId, true)"
+                        >
+                          重试
+                        </a-button>
+                      </div>
+                    </div>
+                    <div class="video-toolbar">
+                      <a-button
+                        type="primary"
+                        size="small"
+                        :loading="videoDownloading"
+                        :disabled="!detail.videoAvailable"
+                        @click="downloadTaskVideo(detail)"
+                      >
+                        <template #icon><DownloadOutlined /></template>
+                        下载视频
+                      </a-button>
+                      <span class="muted video-toolbar-hint">保存为本地 MP4（浏览器可播编码）</span>
+                    </div>
                   </div>
                   <div class="video-box video-placeholder" v-else>
                     <VideoCameraOutlined />
@@ -605,17 +770,17 @@
                   <div class="overview-side">
                     <div class="mini-card">
                       <div class="mini-label">核心要点</div>
-                      <div class="mini-value">{{ detail.result.summary?.keyPoints?.length || 0 }}</div>
+                      <div class="mini-value">{{ detail.result?.summary?.keyPoints?.length || 0 }}</div>
                     </div>
                     <div class="mini-card">
                       <div class="mini-label">章节</div>
-                      <div class="mini-value">{{ detail.result.summary?.chapters?.length || 0 }}</div>
+                      <div class="mini-value">{{ detail.result?.summary?.chapters?.length || 0 }}</div>
                     </div>
                     <div class="mini-card">
                       <div class="mini-label">字幕段</div>
-                      <div class="mini-value">{{ detail.result.transcription?.segments?.length || 0 }}</div>
+                      <div class="mini-value">{{ detail.result?.transcription?.segments?.length || 0 }}</div>
                     </div>
-                    <div class="quick-keypoints" v-if="detail.result.summary?.keyPoints?.length">
+                    <div class="quick-keypoints" v-if="detail.result?.summary?.keyPoints?.length">
                       <div class="qk-title">速览要点</div>
                       <div
                         v-for="(kp, i) in detail.result.summary.keyPoints.slice(0, 5)"
@@ -633,12 +798,12 @@
 
               <!-- 画面理解 -->
               <a-tab-pane key="visual" tab="画面">
-                <div v-if="detail.result.summary?.visualSummary || detail.result.summary?.visualKeyPoints?.length">
-                  <div class="ch-summary" v-if="detail.result.summary?.visualSummary" style="margin-bottom: 12px">
+                <div v-if="detail.result?.summary?.visualSummary || detail.result?.summary?.visualKeyPoints?.length">
+                  <div class="ch-summary" v-if="detail.result?.summary?.visualSummary" style="margin-bottom: 12px">
                     {{ detail.result.summary.visualSummary }}
                   </div>
-                  <a-tag v-if="detail.result.summary?.partialVisual" color="orange">画面为稀疏采样（partial）</a-tag>
-                  <div class="kp-list" v-if="detail.result.summary?.visualKeyPoints?.length" style="margin-top: 12px">
+                  <a-tag v-if="detail.result?.summary?.partialVisual" color="orange">画面为稀疏采样（partial）</a-tag>
+                  <div class="kp-list" v-if="detail.result?.summary?.visualKeyPoints?.length" style="margin-top: 12px">
                     <div
                       v-for="(kp, i) in detail.result.summary.visualKeyPoints"
                       :key="'vk' + i"
@@ -652,25 +817,25 @@
                       </div>
                     </div>
                   </div>
-                  <div v-if="detail.result.summary?.onScreenTexts?.length" style="margin-top: 16px">
+                  <div v-if="detail.result?.summary?.onScreenTexts?.length" style="margin-top: 16px">
                     <div class="qk-title">屏幕文字 OCR</div>
                     <div v-for="(t, i) in detail.result.summary.onScreenTexts" :key="'ocr' + i" class="qk-item">
                       {{ t }}
                     </div>
                   </div>
-                  <div v-if="detail.result.summary?.scenes?.length" style="margin-top: 16px">
+                  <div v-if="detail.result?.summary?.scenes?.length" style="margin-top: 16px">
                     <div class="qk-title">场景</div>
                     <div v-for="(s, i) in detail.result.summary.scenes" :key="'sc' + i" class="qk-item">
                       {{ s }}
                     </div>
                   </div>
                 </div>
-                <a-empty v-else description="本次任务无画面理解结果（可能为「仅音频」模式）" />
+                <a-empty v-else description="本次任务无画面理解结果（可能为「仅音频」或「仅下载」模式）" />
               </a-tab-pane>
 
               <!-- 核心要点 -->
               <a-tab-pane key="keypoints" tab="核心要点">
-                <div class="kp-list" v-if="detail.result.summary?.keyPoints?.length">
+                <div class="kp-list" v-if="detail.result?.summary?.keyPoints?.length">
                   <div
                     v-for="(kp, i) in detail.result.summary.keyPoints"
                     :key="i"
@@ -689,7 +854,7 @@
 
               <!-- 章节 -->
               <a-tab-pane key="chapters" tab="章节大纲">
-                <a-timeline v-if="detail.result.summary?.chapters?.length">
+                <a-timeline v-if="detail.result?.summary?.chapters?.length">
                   <a-timeline-item v-for="(ch, i) in detail.result.summary.chapters" :key="i" color="blue">
                     <div class="chapter-item" @click="seekToTimestamp(ch.timestamp)">
                       <div class="ch-head">
@@ -705,14 +870,14 @@
 
               <!-- 思维导图 -->
               <a-tab-pane key="mindmap" tab="思维导图">
-                <div class="md-toolbar" v-if="detail.result.summary?.mindMapMarkdown">
+                <div class="md-toolbar" v-if="detail.result?.summary?.mindMapMarkdown">
                   <a-button size="small" @click="copyText(detail.result.summary.mindMapMarkdown!)">
                     <template #icon><CopyOutlined /></template>
                     复制 Markdown
                   </a-button>
                 </div>
                 <div
-                  v-if="detail.result.summary?.mindMapMarkdown"
+                  v-if="detail.result?.summary?.mindMapMarkdown"
                   class="md-body"
                   v-html="renderMarkdown(detail.result.summary.mindMapMarkdown)"
                 />
@@ -721,14 +886,14 @@
 
               <!-- 二创脚本 -->
               <a-tab-pane key="repurpose" tab="二创脚本">
-                <div class="md-toolbar" v-if="detail.result.summary?.repurposeScript">
+                <div class="md-toolbar" v-if="detail.result?.summary?.repurposeScript">
                   <a-button type="primary" size="small" @click="copyText(detail.result.summary.repurposeScript!)">
                     <template #icon><CopyOutlined /></template>
                     复制文案
                   </a-button>
                 </div>
                 <div
-                  v-if="detail.result.summary?.repurposeScript"
+                  v-if="detail.result?.summary?.repurposeScript"
                   class="script-box"
                 >{{ detail.result.summary.repurposeScript }}</div>
                 <a-empty v-else description="未生成二创脚本" />
@@ -745,8 +910,8 @@
                   />
                   <a-button
                     size="small"
-                    :disabled="!detail.result.transcription?.text"
-                    @click="copyText(detail.result.transcription?.text || '')"
+                    :disabled="!detail.result?.transcription?.text"
+                    @click="copyText(detail.result?.transcription?.text || '')"
                   >
                     <template #icon><CopyOutlined /></template>
                     复制全文
@@ -796,11 +961,13 @@ import {
   ExperimentOutlined,
   SettingOutlined,
   RedoOutlined,
-  PauseCircleOutlined
+  PauseCircleOutlined,
+  KeyOutlined,
+  DownloadOutlined
 } from '@ant-design/icons-vue'
 import { createVNode } from 'vue'
 import MarkdownIt from 'markdown-it'
-import { videoApi } from '@/api/video.api'
+import { videoApi, type VideoCookieStatus } from '@/api/video.api'
 import { connectVideoTaskEvents, type VideoTaskSseEvent } from '@/api/video.events'
 import type { VideoTaskItem, TranscriptionSegment, AiProvider } from '@/types/api'
 import ModelManageModal from './ModelManageModal.vue'
@@ -817,9 +984,26 @@ const options = reactive({
   language: 'zh',
   extractMindMap: true,
   generateRepurposeScript: true,
-  /** audio_only | hybrid | omni_only */
+  /** download_only | audio_only | hybrid | omni_only */
   understandingMode: 'audio_only'
 })
+
+/** 抖音 Cookie 弹窗 */
+const cookieModalOpen = ref(false)
+const cookieHeaderInput = ref('')
+const cookieStatus = ref<VideoCookieStatus | null>(null)
+const cookieSaving = ref(false)
+const cookieClearing = ref(false)
+
+/** JWT 拉取视频后的本地 object URL（勿直接用 videoStreamUrl 作 src） */
+const videoObjectUrl = ref('')
+const videoBlobLoading = ref(false)
+const videoBlobError = ref('')
+const videoBlobTaskId = ref('')
+/** 是否已在播放（用于隐藏中央「播放」按钮） */
+const videoPlaying = ref(false)
+/** 正在触发浏览器下载本地文件 */
+const videoDownloading = ref(false)
 
 /** provider::modelId — 总结 Chat */
 const selectedModelKey = ref('')
@@ -868,9 +1052,72 @@ const retryTestFail = ref(false)
 
 let pollTimer: ReturnType<typeof setTimeout> | null = null
 
+const isDownloadOnly = computed(() => options.understandingMode === 'download_only')
+
+const isRetryDownloadOnly = computed(() => retryUnderstandingMode.value === 'download_only')
+
 const needsOmniModel = computed(
   () => options.understandingMode === 'hybrid' || options.understandingMode === 'omni_only'
 )
+
+/** 理解模式卡片：独立一行展示，文案说明与下方控件联动 */
+const modeCards = [
+  {
+    value: 'download_only',
+    label: '仅下载',
+    icon: '⬇️',
+    tone: 'tone-download',
+    desc: '只拉视频到本地，不转录、不总结',
+    flow: ['下载', '完成'],
+    needs: ['无需 LLM']
+  },
+  {
+    value: 'audio_only',
+    label: '仅音频',
+    icon: '🎙️',
+    tone: 'tone-audio',
+    desc: '口播/讲解类：字幕 + 要点 + 二创',
+    flow: ['下载', '转录', '总结'],
+    needs: ['总结 LLM']
+  },
+  {
+    value: 'hybrid',
+    label: '混合理解',
+    icon: '🎬',
+    tone: 'tone-hybrid',
+    desc: '语音与画面一起看，信息更完整',
+    flow: ['下载', '转录', '画面', '总结'],
+    needs: ['总结 LLM', '视频理解模型']
+  },
+  {
+    value: 'omni_only',
+    label: '仅画面',
+    icon: '👁️',
+    tone: 'tone-omni',
+    desc: '演示/PPT/无口播：主看画面与字幕',
+    flow: ['下载', '画面', '总结'],
+    needs: ['总结 LLM', '视频理解模型']
+  }
+] as const
+
+function modeCardLabel(mode?: string) {
+  return modeCards.find((m) => m.value === mode)?.label || mode || '—'
+}
+
+const modeHintText = computed(() => {
+  switch (options.understandingMode) {
+    case 'download_only':
+      return '仅下载：下方无需选择模型；可配置抖音 Cookie 后提交链接。'
+    case 'audio_only':
+      return '仅音频：请选择总结 LLM；思维导图 / 二创脚本可选。'
+    case 'hybrid':
+      return '混合模式：请同时选择总结 LLM 与视频理解模型。'
+    case 'omni_only':
+      return '仅画面：请选择总结 LLM 与视频理解模型；不跑 Whisper 转录。'
+    default:
+      return ''
+  }
+})
 
 const retryNeedsOmni = computed(
   () =>
@@ -914,7 +1161,9 @@ const omniTestStatus = computed<'ok' | 'fail' | 'none'>(() => {
 })
 
 const canSubmit = computed(() => {
-  if (!urlInput.value.trim() || !selectedModelKey.value || submitting.value) return false
+  if (!urlInput.value.trim() || submitting.value) return false
+  if (isDownloadOnly.value) return true
+  if (!selectedModelKey.value) return false
   if (needsOmniModel.value && !selectedOmniKey.value) return false
   return true
 })
@@ -1171,9 +1420,14 @@ function needsPoll(task?: VideoTaskItem | null) {
   return isRunning(task.status) || isPauseDraining(task)
 }
 
-/** 按任务理解模式裁剪步骤：仅音频不展示「画面」；仅画面不展示「转录」 */
+/** 按任务理解模式裁剪步骤：仅下载仅 PENDING/DOWNLOADING/SUCCESS；仅音频不展示「画面」；仅画面不展示「转录」 */
 function pipelineStepsFor(task?: VideoTaskItem | null) {
   const mode = (task?.understandingMode || task?.result?.understandingMode || '').toLowerCase()
+  if (mode === 'download_only' || mode === 'download' || mode === 'video_only') {
+    return pipelineSteps.filter((s) =>
+      ['PENDING', 'DOWNLOADING', 'SUCCESS'].includes(s.key)
+    )
+  }
   return pipelineSteps.filter((s) => {
     if (s.key === 'UNDERSTANDING') {
       // 未知模式时，有画面耗时或正处于 UNDERSTANDING 则展示
@@ -1187,6 +1441,10 @@ function pipelineStepsFor(task?: VideoTaskItem | null) {
     }
     if (s.key === 'TRANSCRIBING') {
       if (mode === 'omni_only') return false
+      return true
+    }
+    if (s.key === 'SUMMARIZING') {
+      if (mode === 'download_only') return false
       return true
     }
     return true
@@ -1409,35 +1667,45 @@ async function handleSubmit() {
     message.warning('请粘贴视频链接')
     return
   }
-  const parsed = parseModelKey(selectedModelKey.value)
-  if (!parsed) {
-    message.warning('请选择总结用 Chat 模型')
-    return
-  }
+  const downloadOnly = isDownloadOnly.value
+  let parsed: { provider: string; model: string } | null = null
   let omniParsed: { provider: string; model: string } | null = null
-  if (needsOmniModel.value) {
-    omniParsed = parseModelKey(selectedOmniKey.value)
-    if (!omniParsed) {
-      message.warning('混合/仅画面模式请选择视频理解模型')
+  if (!downloadOnly) {
+    parsed = parseModelKey(selectedModelKey.value)
+    if (!parsed) {
+      message.warning('请选择总结用 Chat 模型')
       return
+    }
+    if (needsOmniModel.value) {
+      omniParsed = parseModelKey(selectedOmniKey.value)
+      if (!omniParsed) {
+        message.warning('混合/仅画面模式请选择视频理解模型')
+        return
+      }
     }
   }
   submitting.value = true
   try {
     const res = await videoApi.process({
       url,
-      options: {
-        language: options.language,
-        extractMindMap: options.extractMindMap,
-        generateRepurposeScript: options.generateRepurposeScript,
-        llmProvider: parsed.provider,
-        llmModel: parsed.model,
-        understandingMode: options.understandingMode,
-        omniProvider: omniParsed?.provider,
-        omniModel: omniParsed?.model
-      }
+      options: downloadOnly
+        ? {
+            understandingMode: 'download_only',
+            extractMindMap: false,
+            generateRepurposeScript: false
+          }
+        : {
+            language: options.language,
+            extractMindMap: options.extractMindMap,
+            generateRepurposeScript: options.generateRepurposeScript,
+            llmProvider: parsed!.provider,
+            llmModel: parsed!.model,
+            understandingMode: options.understandingMode,
+            omniProvider: omniParsed?.provider,
+            omniModel: omniParsed?.model
+          }
     })
-    message.success('任务已提交，后台处理中')
+    message.success(downloadOnly ? '下载任务已提交' : '任务已提交，后台处理中')
     urlInput.value = ''
     await loadTasks(true)
     if (res.data?.taskId) {
@@ -1478,10 +1746,208 @@ async function loadMore() {
 }
 
 async function selectTask(taskId: string) {
+  if (selectedId.value !== taskId) {
+    revokeVideoObjectUrl()
+  }
   selectedId.value = taskId
   activeTab.value = 'overview'
   transcriptQuery.value = ''
   await refreshDetail()
+  await maybeLoadVideoBlob()
+}
+
+function revokeVideoObjectUrl() {
+  if (videoObjectUrl.value) {
+    URL.revokeObjectURL(videoObjectUrl.value)
+    videoObjectUrl.value = ''
+  }
+  videoBlobTaskId.value = ''
+  videoBlobError.value = ''
+  videoPlaying.value = false
+}
+
+/**
+ * 带 JWT 拉取视频 Blob，用 object URL 给 <video src>（浏览器不会给 video 标签带 Authorization）。
+ */
+async function loadVideoBlob(taskId: string, force = false) {
+  if (!taskId) return
+  if (!force && videoBlobTaskId.value === taskId && videoObjectUrl.value) return
+  videoBlobLoading.value = true
+  videoBlobError.value = ''
+  videoPlaying.value = false
+  try {
+    if (videoObjectUrl.value) {
+      URL.revokeObjectURL(videoObjectUrl.value)
+      videoObjectUrl.value = ''
+    }
+    videoBlobTaskId.value = ''
+    const blob = await videoApi.fetchVideoBlob(taskId)
+    // 切换任务后丢弃过期结果
+    if (selectedId.value !== taskId) return
+    // 强制 MIME，避免 blob type 为空导致部分浏览器只显示一帧却无法播
+    const typed =
+      blob.type && blob.type.startsWith('video/')
+        ? blob
+        : new Blob([blob], { type: 'video/mp4' })
+    videoObjectUrl.value = URL.createObjectURL(typed)
+    videoBlobTaskId.value = taskId
+    await nextTick()
+    const el = videoRef.value
+    if (el) {
+      el.load()
+    }
+  } catch (e: any) {
+    if (selectedId.value === taskId) {
+      videoBlobError.value = e?.message || '视频加载失败'
+      message.error(videoBlobError.value)
+    }
+  } finally {
+    if (selectedId.value === taskId) {
+      videoBlobLoading.value = false
+    }
+  }
+}
+
+async function maybeLoadVideoBlob() {
+  const d = detail.value
+  if (!d?.taskId || !d.videoAvailable) return
+  await loadVideoBlob(d.taskId, false)
+}
+
+function onVideoLoaded() {
+  // 元数据就绪；竖屏也会完整落在 video-box 内
+  videoPlaying.value = false
+}
+
+async function playVideo() {
+  const el = videoRef.value
+  if (!el) return
+  try {
+    el.muted = false
+    el.volume = 1
+    await el.play()
+    videoPlaying.value = true
+  } catch (e: any) {
+    // 自动播放策略：尝试静音播放
+    try {
+      el.muted = true
+      await el.play()
+      videoPlaying.value = true
+      message.info('已静音播放（浏览器限制自动有声播放）')
+    } catch (e2: any) {
+      message.error(e2?.message || e?.message || '播放失败')
+    }
+  }
+}
+
+/**
+ * 下载任务视频到本地（带 JWT；优先复用已加载的 blob URL）。
+ */
+async function downloadTaskVideo(task?: VideoTaskItem | null) {
+  const t = task || detail.value
+  if (!t?.taskId || !t.videoAvailable) {
+    message.warning('当前任务没有可下载的视频文件')
+    return
+  }
+  if (videoDownloading.value) return
+  videoDownloading.value = true
+  try {
+    let objectUrl = ''
+    let needRevoke = false
+    // 已加载的播放 blob 可直接复用，避免二次请求
+    if (videoObjectUrl.value && videoBlobTaskId.value === t.taskId) {
+      objectUrl = videoObjectUrl.value
+    } else {
+      const blob = await videoApi.fetchVideoBlob(t.taskId)
+      objectUrl = URL.createObjectURL(blob)
+      needRevoke = true
+    }
+    const safeTitle = (t.title || `video-${t.taskId}`)
+      .replace(/[\\/:*?"<>|]+/g, '_')
+      .replace(/\s+/g, ' ')
+      .trim()
+      .slice(0, 80)
+    const a = document.createElement('a')
+    a.href = objectUrl
+    a.download = `${safeTitle || t.taskId}.mp4`
+    a.rel = 'noopener'
+    document.body.appendChild(a)
+    a.click()
+    a.remove()
+    if (needRevoke) {
+      // 稍延后释放，避免部分浏览器下载中断
+      window.setTimeout(() => URL.revokeObjectURL(objectUrl), 60_000)
+    }
+    message.success('已开始下载视频')
+  } catch (e: any) {
+    message.error(e?.message || '下载视频失败')
+  } finally {
+    videoDownloading.value = false
+  }
+}
+
+function onVideoElementError() {
+  videoBlobError.value =
+    '视频解码失败（若为抖音 HEVC，请确认后端已生成 video.browser.mp4）。可点重试。'
+  videoPlaying.value = false
+  if (videoObjectUrl.value) {
+    URL.revokeObjectURL(videoObjectUrl.value)
+    videoObjectUrl.value = ''
+  }
+  videoBlobTaskId.value = ''
+}
+
+async function loadCookieStatus() {
+  try {
+    const res = await videoApi.cookieStatus('douyin')
+    cookieStatus.value = res.data || null
+  } catch {
+    cookieStatus.value = null
+  }
+}
+
+function openCookieModal() {
+  cookieModalOpen.value = true
+  cookieHeaderInput.value = ''
+  void loadCookieStatus()
+}
+
+async function saveCookie() {
+  const header = cookieHeaderInput.value.trim()
+  if (!header) {
+    message.warning('请粘贴 Cookie 请求头')
+    return Promise.reject()
+  }
+  cookieSaving.value = true
+  try {
+    const res = await videoApi.uploadCookie({
+      cookieHeader: header,
+      platform: 'douyin'
+    })
+    cookieStatus.value = res.data || null
+    cookieHeaderInput.value = ''
+    message.success('Cookie 已保存')
+    cookieModalOpen.value = false
+  } catch {
+    return Promise.reject()
+  } finally {
+    cookieSaving.value = false
+  }
+}
+
+async function handleClearCookie() {
+  cookieClearing.value = true
+  try {
+    await videoApi.clearCookie('douyin')
+    cookieStatus.value = null
+    cookieHeaderInput.value = ''
+    message.success('Cookie 已清除')
+    await loadCookieStatus()
+  } catch {
+    // ignore
+  } finally {
+    cookieClearing.value = false
+  }
 }
 
 /** 暂停进行中/排队中任务 */
@@ -1594,33 +2060,40 @@ async function testRetryModel() {
 }
 
 /**
- * 确认重试：可带新总结 LLM / 理解模式 / 视频理解模型。
+ * 确认重试：可带新总结 LLM / 理解模式 / 视频理解模型；download_only 不要求 LLM。
  */
 async function submitRetry() {
   const task = retryTarget.value
   if (!task) return Promise.reject()
-  const parsed = parseModelKey(retryModelKey.value)
-  if (!parsed) {
-    message.warning('请选择总结用 Chat 模型')
-    return Promise.reject()
-  }
+  const downloadOnly = isRetryDownloadOnly.value
+  let parsed: { provider: string; model: string } | null = null
   let omniParsed: { provider: string; model: string } | null = null
-  if (retryNeedsOmni.value) {
-    omniParsed = parseModelKey(retryOmniKey.value)
-    if (!omniParsed) {
-      message.warning('画面理解模式请选择视频理解模型')
+  if (!downloadOnly) {
+    parsed = parseModelKey(retryModelKey.value)
+    if (!parsed) {
+      message.warning('请选择总结用 Chat 模型')
       return Promise.reject()
+    }
+    if (retryNeedsOmni.value) {
+      omniParsed = parseModelKey(retryOmniKey.value)
+      if (!omniParsed) {
+        message.warning('画面理解模式请选择视频理解模型')
+        return Promise.reject()
+      }
     }
   }
   retryingId.value = task.taskId
   try {
-    const res = await videoApi.retryTask(task.taskId, {
-      llmProvider: parsed.provider,
-      llmModel: parsed.model,
-      understandingMode: retryUnderstandingMode.value,
-      omniProvider: omniParsed?.provider,
-      omniModel: omniParsed?.model
-    })
+    const body = downloadOnly
+      ? { understandingMode: 'download_only' }
+      : {
+          llmProvider: parsed!.provider,
+          llmModel: parsed!.model,
+          understandingMode: retryUnderstandingMode.value,
+          omniProvider: omniParsed?.provider,
+          omniModel: omniParsed?.model
+        }
+    const res = await videoApi.retryTask(task.taskId, body)
     message.success(
       task.status === 'SUCCESS' ? '已重新排队，开始重新提取' : '已重新排队，开始重试'
     )
@@ -1630,6 +2103,7 @@ async function submitRetry() {
       tasks.value[idx] = { ...tasks.value[idx], ...res.data, result: undefined }
     }
     if (selectedId.value === task.taskId) {
+      revokeVideoObjectUrl()
       detail.value = {
         ...(res.data || task),
         result: undefined,
@@ -1641,11 +2115,11 @@ async function submitRetry() {
         summarizeDurationMs: null,
         totalDurationMs: null,
         finishedAt: null,
-        llmProvider: parsed.provider,
-        llmModel: parsed.model,
+        llmProvider: downloadOnly ? null : parsed!.provider,
+        llmModel: downloadOnly ? null : parsed!.model,
         understandingMode: retryUnderstandingMode.value,
-        omniProvider: omniParsed?.provider ?? null,
-        omniModel: omniParsed?.model ?? null
+        omniProvider: downloadOnly ? null : omniParsed?.provider ?? null,
+        omniModel: downloadOnly ? null : omniParsed?.model ?? null
       }
       await refreshDetail()
     }
@@ -1695,6 +2169,7 @@ async function doDelete(taskId: string) {
     tasks.value = tasks.value.filter((t) => t.taskId !== taskId)
     taskTotal.value = Math.max(0, taskTotal.value - 1)
     if (selectedId.value === taskId) {
+      revokeVideoObjectUrl()
       selectedId.value = ''
       detail.value = null
     }
@@ -1727,9 +2202,11 @@ async function refreshDetail() {
         downloadDurationMs: res.data.downloadDurationMs,
         transcribeDurationMs: res.data.transcribeDurationMs,
         summarizeDurationMs: res.data.summarizeDurationMs,
-        totalDurationMs: res.data.totalDurationMs
+        totalDurationMs: res.data.totalDurationMs,
+        understandingMode: res.data.understandingMode
       }
     }
+    await maybeLoadVideoBlob()
   } catch {
     // ignore
   } finally {
@@ -1998,9 +2475,20 @@ function stopPolling() {
   pollingActive.value = false
 }
 
-watch(selectedId, () => {
+watch(selectedId, (id, prev) => {
   activeSegId.value = null
+  if (id !== prev) {
+    revokeVideoObjectUrl()
+  }
 })
+
+// 详情 videoAvailable 变化时尝试加载播放 blob
+watch(
+  () => [detail.value?.taskId, detail.value?.videoAvailable, detail.value?.status] as const,
+  () => {
+    void maybeLoadVideoBlob()
+  }
+)
 
 // 任务列表变化时：SSE 断线则维护轮询
 watch(
@@ -2009,7 +2497,7 @@ watch(
 )
 
 onMounted(async () => {
-  await Promise.all([loadModels(), loadOmniModels(), loadTasks(true)])
+  await Promise.all([loadModels(), loadOmniModels(), loadTasks(true), loadCookieStatus()])
   startSse()
   ensurePolling()
   startLiveHintClock()
@@ -2025,6 +2513,7 @@ onUnmounted(() => {
   stopPolling()
   stopSse()
   stopLiveHintClock()
+  revokeVideoObjectUrl()
   if (visibilityHandler) {
     document.removeEventListener('visibilitychange', visibilityHandler)
     visibilityHandler = null
@@ -2215,6 +2704,18 @@ onUnmounted(() => {
     border-radius: 12px;
     box-shadow: none;
 
+    /* 视频理解模型：与上方总结 LLM 拉开间距，避免贴在一起 */
+    &.model-row-omni {
+      margin-top: 22px;
+      padding-top: 18px;
+      border-color: rgba(114, 46, 209, 0.18);
+      background: linear-gradient(
+        180deg,
+        rgba(114, 46, 209, 0.05) 0%,
+        var(--surface-2) 48%
+      );
+    }
+
     .model-pick {
       display: flex;
       align-items: center;
@@ -2261,6 +2762,213 @@ onUnmounted(() => {
     }
   }
 
+  .mode-section {
+    margin-top: 18px;
+    padding: 14px 14px 12px;
+    border-radius: 14px;
+    border: 1px solid var(--border-color);
+    background: linear-gradient(180deg, rgba(22, 119, 255, 0.04) 0%, rgba(255, 255, 255, 0.02) 100%);
+  }
+
+  .mode-section-head {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 12px;
+    flex-wrap: wrap;
+    margin-bottom: 12px;
+  }
+
+  .mode-section-title {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+
+  .mode-section-kicker {
+    font-size: 14px;
+    font-weight: 700;
+    color: var(--text-primary);
+    letter-spacing: 0.02em;
+  }
+
+  .mode-section-sub {
+    font-size: 12px;
+    color: var(--text-muted);
+  }
+
+  .mode-section-meta {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+  }
+
+  .mode-active-tag {
+    border-radius: 999px;
+  }
+
+  .mode-card-grid {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 10px;
+
+    @media (max-width: 1100px) {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    @media (max-width: 560px) {
+      grid-template-columns: 1fr;
+    }
+  }
+
+  .mode-card {
+    appearance: none;
+    -webkit-appearance: none;
+    text-align: left;
+    cursor: pointer;
+    border: 1px solid var(--border-color);
+    border-radius: 12px;
+    background: var(--surface-1, #fff);
+    padding: 12px 12px 10px;
+    transition:
+      border-color 0.15s ease,
+      box-shadow 0.15s ease,
+      transform 0.15s ease,
+      background 0.15s ease;
+    min-height: 148px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    color: inherit;
+    font: inherit;
+
+    &:hover {
+      border-color: rgba(22, 119, 255, 0.45);
+      transform: translateY(-1px);
+      box-shadow: 0 6px 16px rgba(15, 23, 42, 0.06);
+    }
+
+    &.active {
+      border-color: #1677ff;
+      background: linear-gradient(165deg, rgba(22, 119, 255, 0.1) 0%, rgba(22, 119, 255, 0.03) 100%);
+      box-shadow:
+        0 0 0 1px rgba(22, 119, 255, 0.2),
+        0 8px 18px rgba(22, 119, 255, 0.12);
+    }
+
+    &.tone-download.active {
+      border-color: #13c2c2;
+      box-shadow:
+        0 0 0 1px rgba(19, 194, 194, 0.25),
+        0 8px 18px rgba(19, 194, 194, 0.12);
+      background: linear-gradient(165deg, rgba(19, 194, 194, 0.12) 0%, rgba(19, 194, 194, 0.03) 100%);
+    }
+
+    &.tone-hybrid.active,
+    &.tone-omni.active {
+      border-color: #722ed1;
+      box-shadow:
+        0 0 0 1px rgba(114, 46, 209, 0.22),
+        0 8px 18px rgba(114, 46, 209, 0.12);
+      background: linear-gradient(165deg, rgba(114, 46, 209, 0.1) 0%, rgba(114, 46, 209, 0.03) 100%);
+    }
+  }
+
+  .mode-card-top {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+
+  .mode-card-icon {
+    font-size: 18px;
+    line-height: 1;
+  }
+
+  .mode-card-check {
+    width: 20px;
+    height: 20px;
+    border-radius: 50%;
+    background: #1677ff;
+    color: #fff;
+    font-size: 12px;
+    font-weight: 700;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .mode-card.tone-download.active .mode-card-check {
+    background: #13c2c2;
+  }
+
+  .mode-card.tone-hybrid.active .mode-card-check,
+  .mode-card.tone-omni.active .mode-card-check {
+    background: #722ed1;
+  }
+
+  .mode-card-name {
+    font-size: 14px;
+    font-weight: 700;
+    color: var(--text-primary);
+  }
+
+  .mode-card-desc {
+    font-size: 12px;
+    line-height: 1.45;
+    color: var(--text-secondary);
+    flex: 1;
+  }
+
+  .mode-card-flow {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 2px 0;
+    margin-top: 2px;
+  }
+
+  .flow-chip {
+    font-size: 11px;
+    color: var(--text-muted);
+    font-weight: 500;
+  }
+
+  .flow-arrow {
+    margin: 0 3px;
+    color: rgba(0, 0, 0, 0.25);
+  }
+
+  .mode-card-need {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+    margin-top: 2px;
+  }
+
+  .need-chip {
+    font-size: 11px;
+    padding: 1px 7px;
+    border-radius: 999px;
+    background: rgba(0, 0, 0, 0.04);
+    color: var(--text-secondary);
+    border: 1px solid rgba(0, 0, 0, 0.06);
+  }
+
+  .mode-card.active .need-chip {
+    background: rgba(22, 119, 255, 0.08);
+    border-color: rgba(22, 119, 255, 0.18);
+    color: #0958d9;
+  }
+
+  .mode-section-hint {
+    margin: 10px 2px 0;
+    font-size: 12px;
+    color: var(--text-secondary);
+    line-height: 1.5;
+  }
+
   .options-row {
     display: flex;
     justify-content: space-between;
@@ -2273,11 +2981,19 @@ onUnmounted(() => {
       color: var(--text-secondary);
       font-size: 13px;
     }
+
+    &.options-row-secondary {
+      margin-top: 18px;
+      padding-top: 14px;
+      border-top: 1px dashed var(--border-color);
+    }
   }
 
   .platform-hints {
     display: flex;
     gap: 6px;
+    align-items: center;
+    flex-wrap: wrap;
 
     .hint-chip {
       font-size: 12px;
@@ -2475,9 +3191,17 @@ onUnmounted(() => {
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  padding: 48px 24px;
+  padding: 48px 24px 40px;
   text-align: center;
   color: var(--text-secondary);
+  gap: 0;
+
+  /* EmptyState 组件与下方流水线方框拉开距离 */
+  :deep(.empty-state),
+  > .empty-state,
+  > *:first-child {
+    margin-bottom: 0;
+  }
 
   .empty-visual {
     width: 72px;
@@ -2499,7 +3223,7 @@ onUnmounted(() => {
 
   p {
     max-width: 360px;
-    margin-bottom: 28px;
+    margin-bottom: 0;
   }
 
   .pipeline-preview {
@@ -2507,6 +3231,11 @@ onUnmounted(() => {
     gap: 12px;
     flex-wrap: wrap;
     justify-content: center;
+    margin-top: 36px;
+    padding-top: 28px;
+    border-top: 1px dashed var(--border-color);
+    width: 100%;
+    max-width: 520px;
 
     .pipe-step {
       width: 72px;
@@ -2813,19 +3542,95 @@ onUnmounted(() => {
   }
 }
 
+.video-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 0;
+}
+
+.video-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+
+  .video-toolbar-hint {
+    font-size: 12px;
+  }
+}
+
 .video-box {
   border-radius: 12px;
   overflow: hidden;
   background: #0f172a;
   aspect-ratio: 16 / 9;
+  position: relative;
   display: flex;
   align-items: center;
   justify-content: center;
+  min-height: 200px;
 
+  /* 绝对铺满：竖屏视频不会把 controls 撑到 overflow 裁切区外 */
   .video-player {
+    position: absolute;
+    inset: 0;
     width: 100%;
     height: 100%;
     background: #000;
+    object-fit: contain;
+    z-index: 1;
+    pointer-events: auto;
+  }
+
+  .video-loading-mask {
+    position: absolute;
+    inset: 0;
+    z-index: 3;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(15, 23, 42, 0.72);
+    color: #fff;
+  }
+
+  .video-play-btn {
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    transform: translate(-50%, -50%);
+    z-index: 2;
+    border: none;
+    border-radius: 999px;
+    padding: 12px 22px;
+    font-size: 15px;
+    font-weight: 600;
+    cursor: pointer;
+    color: #fff;
+    background: rgba(22, 119, 255, 0.92);
+    box-shadow: 0 6px 20px rgba(0, 0, 0, 0.35);
+    pointer-events: auto;
+
+    &:hover {
+      background: rgba(22, 119, 255, 1);
+    }
+  }
+
+  .video-placeholder-inner {
+    position: relative;
+    z-index: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    color: var(--text-muted);
+    font-size: 13px;
+    padding: 16px;
+
+    .anticon {
+      font-size: 28px;
+    }
   }
 
   &.video-placeholder {
@@ -2838,6 +3643,25 @@ onUnmounted(() => {
       font-size: 28px;
     }
   }
+}
+
+.cookie-btn {
+  border-radius: 999px;
+}
+
+.cookie-hint {
+  margin: 0 0 10px;
+  color: var(--text-secondary);
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.cookie-status-box {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
 }
 
 .overview-side {

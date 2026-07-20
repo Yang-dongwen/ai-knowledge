@@ -183,6 +183,13 @@ video:
     concurrent-fragments: 8      # HLS/DASH 分片并发，可试 4~16
     prefer-merged: true          # 优先单文件流，减少双轨下载+合并
     # format: "best[height<=480]"  # 可选：完全自定义 yt-dlp -f，非空则覆盖上面规则
+    # --- 抖音 Cookie（强烈推荐 cookies-file，不要用 from-browser）---
+    # Windows Edge/Chrome 新版 Cookie 有 App-Bound 加密，--cookies-from-browser 常报：
+    #   Could not copy Chrome cookie database / Failed to decrypt with DPAPI
+    # 正确做法：浏览器开着 → DevTools 复制 Cookie 头 → 跑 scripts/import-cookie-header.ps1
+    cookies-file: D:/gitprojects/auto-exchange/okx-bot/data/douyin-cookies.txt
+    # cookies-from-browser: edge   # 本机基本不可用，请保持注释
+    # extra-args: ["--proxy", "http://127.0.0.1:7890"]
   # 多模态画面理解（默认 audio_only 兼容现网；go-live 可改 hybrid）
   understanding:
     mode: audio_only

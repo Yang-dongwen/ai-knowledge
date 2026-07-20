@@ -108,8 +108,68 @@ export const videoApi = {
     return request.post(`/v1/video/tasks/${taskId}/retry`, body || {})
   },
 
-  /** 视频流 URL（给 <video> 使用，走 Vite 代理） */
+  /**
+   * 视频资源路径（仅作调试/下载链接参考）。
+   * 注意：不能直接给 &lt;video src&gt; —— 浏览器不会带 Authorization，会 401。
+   * 播放请用 {@link fetchVideoBlob} + URL.createObjectURL。
+   */
   videoStreamUrl(taskId: string): string {
     return `/api/v1/video/tasks/${taskId}/video`
+  },
+
+  /**
+   * 拉取视频 Blob（带 JWT）。用于 &lt;video&gt; 本地 object URL 播放。
+   */
+  async fetchVideoBlob(taskId: string): Promise<Blob> {
+    const token = localStorage.getItem('okx_auth_token') || ''
+    const res = await fetch(`/api/v1/video/tasks/${taskId}/video`, {
+      headers: {
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        Accept: 'video/mp4,video/*,*/*'
+      }
+    })
+    if (!res.ok) {
+      const text = await res.text().catch(() => '')
+      let msg = `视频加载失败 HTTP ${res.status}`
+      try {
+        const j = JSON.parse(text)
+        if (j?.message) msg = j.message
+      } catch {
+        if (text) msg = text.slice(0, 200)
+      }
+      throw new Error(msg)
+    }
+    const buf = await res.arrayBuffer()
+    // 始终用 video/mp4，避免 application/octet-stream 导致只出一帧、无法播
+    return new Blob([buf], { type: 'video/mp4' })
+  },
+
+  /** Cookie 文件状态（不含明文） */
+  cookieStatus(platform = 'douyin'): Promise<{ data: VideoCookieStatus }> {
+    return request.get('/v1/video/cookies', { params: { platform } })
+  },
+
+  /** 上传浏览器 Cookie 请求头字符串 */
+  uploadCookie(body: {
+    cookieHeader: string
+    platform?: string
+  }): Promise<{ data: VideoCookieStatus }> {
+    return request.post('/v1/video/cookies', body)
+  },
+
+  /** 清除 Cookie 文件 */
+  clearCookie(platform = 'douyin'): Promise<{ data: null }> {
+    return request.delete('/v1/video/cookies', { params: { platform } })
   }
+}
+
+export interface VideoCookieStatus {
+  platform: string
+  configured: boolean
+  fileExists: boolean
+  filePath?: string | null
+  cookieCount?: number | null
+  fileSizeBytes?: number | null
+  lastModifiedAt?: string | null
+  hint?: string | null
 }

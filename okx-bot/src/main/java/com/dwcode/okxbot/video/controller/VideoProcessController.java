@@ -5,6 +5,7 @@ import com.dwcode.okxbot.common.response.ApiResult;
 import com.dwcode.okxbot.video.dto.*;
 import com.dwcode.okxbot.video.event.VideoTaskEventPublisher;
 import com.dwcode.okxbot.video.service.AiModelConfigService;
+import com.dwcode.okxbot.video.service.VideoCookieService;
 import com.dwcode.okxbot.video.service.VideoProcessService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -30,6 +31,7 @@ public class VideoProcessController {
     private final VideoProcessService videoProcessService;
     private final AiModelConfigService aiModelConfigService;
     private final VideoTaskEventPublisher videoTaskEventPublisher;
+    private final VideoCookieService videoCookieService;
 
     /**
      * 提交视频链接，异步处理，返回任务 ID。
@@ -119,6 +121,39 @@ public class VideoProcessController {
     public ApiResult<Void> deleteModelConfig(@PathVariable Long id) {
         log.info("删除模型配置: id={}", id);
         aiModelConfigService.delete(id);
+        return ApiResult.ok();
+    }
+
+    // ---------- Cookie（抖音等，服务端全局 cookies.txt） ----------
+
+    /**
+     * Cookie 文件状态（不返回明文）。
+     */
+    @GetMapping("/cookies")
+    public ApiResult<VideoCookieStatusResponse> cookieStatus(
+            @RequestParam(defaultValue = "douyin") String platform) {
+        return ApiResult.ok(videoCookieService.status(platform));
+    }
+
+    /**
+     * 上传浏览器 Cookie 请求头字符串，写入 Netscape cookies.txt 供 yt-dlp 使用。
+     */
+    @PostMapping("/cookies")
+    public ApiResult<VideoCookieStatusResponse> uploadCookies(
+            @Valid @RequestBody VideoCookieUploadRequest request) {
+        log.info("上传视频 Cookie: platform={}, len={}",
+                request.getPlatform(),
+                request.getCookieHeader() != null ? request.getCookieHeader().length() : 0);
+        return ApiResult.ok(videoCookieService.upload(request));
+    }
+
+    /**
+     * 清除已上传的 Cookie 文件。
+     */
+    @DeleteMapping("/cookies")
+    public ApiResult<Void> clearCookies(@RequestParam(defaultValue = "douyin") String platform) {
+        log.info("清除视频 Cookie: platform={}", platform);
+        videoCookieService.clear(platform);
         return ApiResult.ok();
     }
 

@@ -36,9 +36,10 @@ import java.util.stream.Stream;
 
 /**
  * 视频处理流水线：
- * audio_only: Download → Transcribe → Summarize
- * hybrid:     Download → Transcribe → Understanding → Fuse
- * omni_only:  Download → Understanding → Structure Summarize
+ * download_only: Download → SUCCESS
+ * audio_only:    Download → Transcribe → Summarize
+ * hybrid:        Download → Transcribe → Understanding → Fuse
+ * omni_only:     Download → Understanding → Structure Summarize
  */
 @Slf4j
 @Component
@@ -92,9 +93,11 @@ public class VideoProcessingPipeline {
             if (shouldPause(taskId, task, pipelineStart)) {
                 return;
             }
-            updateStatus(task, VideoTaskStatus.DOWNLOADING, "正在下载视频并提取音频");
+            updateStatus(task, VideoTaskStatus.DOWNLOADING,
+                    mode.isDownloadOnly() ? "正在下载视频" : "正在下载视频并提取音频");
             long t0 = System.currentTimeMillis();
-            DownloadResult download = downloadService.download(task.getSourceUrl(), taskIdStr);
+            DownloadResult download = downloadService.download(
+                    task.getSourceUrl(), taskIdStr, !mode.isDownloadOnly());
             long downloadMs = System.currentTimeMillis() - t0;
             task.setDownloadDurationMs(downloadMs);
             task.setTitle(download.getTitle());
@@ -105,6 +108,15 @@ public class VideoProcessingPipeline {
             videoTaskMapper.updateById(task);
             eventPublisher.publishEntity(task, VideoTaskEventPublisher.TYPE_STATUS);
             log.info("步骤耗时: taskId={}, download={}ms", taskId, downloadMs);
+
+            // 仅下载：到此结束
+            if (mode.isDownloadOnly()) {
+                if (shouldPause(taskId, task, pipelineStart)) {
+                    return;
+                }
+                finishDownloadOnly(task, taskIdStr, pipelineStart);
+                return;
+            }
 
             mode = enforceOmniDurationLimit(task, mode, download.getDurationSeconds());
 
@@ -285,8 +297,8 @@ public class VideoProcessingPipeline {
             videoTaskMapper.updateById(task);
             eventPublisher.publishEntity(task, VideoTaskEventPublisher.TYPE_STATUS);
 
-            if (videoProperties.isCleanupMedia()) {
-                // 仅清理媒体，保留 json
+            // 仅下载模式绝不清理视频；总结模式才按配置清理中间媒体
+            if (videoProperties.isCleanupMedia() && !mode.isDownloadOnly()) {
                 cleanupMediaOnly(taskIdStr);
                 task.setVideoPath(null);
                 task.setAudioPath(null);
@@ -314,6 +326,33 @@ public class VideoProcessingPipeline {
         } finally {
             taskScheduler.markFinished(taskId);
         }
+    }
+
+    /**
+     * 仅下载模式收尾：写最小 resultJson，状态 SUCCESS，保留视频文件。
+     */
+    private void finishDownloadOnly(VideoTaskEntity task, String taskIdStr, long pipelineStart) throws Exception {
+        VideoSummaryResponse response = new VideoSummaryResponse();
+        response.setVideoId(taskIdStr);
+        response.setTitle(task.getTitle() != null ? task.getTitle() : "未知标题");
+        response.setDuration(task.getDurationSeconds());
+        response.setSourceUrl(task.getSourceUrl());
+        response.setUnderstandingMode(UnderstandingMode.DOWNLOAD_ONLY.wireValue());
+        response.setDegraded(false);
+        // 无 summary / transcription，前端按 videoAvailable 展示播放器
+
+        task.setResultJson(objectMapper.writeValueAsString(response));
+        task.setStatus(VideoTaskStatus.SUCCESS.name());
+        task.setCurrentStep("下载完成");
+        task.setFinishedAt(LocalDateTime.now());
+        task.setTotalDurationMs(System.currentTimeMillis() - pipelineStart);
+        task.setUpdatedAt(LocalDateTime.now());
+        task.setErrorMessage(null);
+        task.setDegraded(0);
+        videoTaskMapper.updateById(task);
+        eventPublisher.publishEntity(task, VideoTaskEventPublisher.TYPE_STATUS);
+        log.info("仅下载任务完成: taskId={}, title={}, total={}ms, video={}",
+                task.getId(), task.getTitle(), task.getTotalDurationMs(), task.getVideoPath());
     }
 
     private UnderstandingMode enforceOmniDurationLimit(VideoTaskEntity task, UnderstandingMode mode, Double durationSec) {

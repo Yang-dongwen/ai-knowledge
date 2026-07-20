@@ -502,8 +502,13 @@ Base URL：`http://127.0.0.1:8080`
 | GET/POST | `/models`、`/models/test` | 模型列表与连通性测试 |
 | * | `/model-configs/**` | 模型配置 CRUD（超管） |
 
-验收自检顺序建议：yt-dlp/ffmpeg → Whisper `/health` → 登录后列表接口 → 短视频全链路。  
-详细 curl 与分层验收：`doc/VideoCoreExtractor_后端使用与验证手册.md`。
+验收自检顺序建议：yt-dlp/ffmpeg → Whisper `/health` → 登录后列表接口 → 短视频全链路。
+
+| 想读什么 | 文档 |
+|----------|------|
+| **运行流程 / 工具串联 / Mermaid 一页纸** | [`doc/VideoCoreExtractor_视频提取运行流程教程.md`](./doc/VideoCoreExtractor_视频提取运行流程教程.md) |
+| 分层验收与 curl | [`doc/VideoCoreExtractor_后端使用与验证手册.md`](./doc/VideoCoreExtractor_后端使用与验证手册.md) |
+| 实现细节与表结构 | [`doc/VideoCoreExtractor_核心逻辑与后端实现文档.md`](./doc/VideoCoreExtractor_核心逻辑与后端实现文档.md) |
 
 ### 9.5 AI 视频生成 `/api/v1/aigen`
 
@@ -625,8 +630,10 @@ Invoke-RestMethod -Uri "http://127.0.0.1:8080/api/v1/video/tasks?page=0&size=1" 
 
 | 文档 | 内容 |
 |------|------|
+| **`VideoCoreExtractor_视频提取运行流程教程.md`** | **流程教程：工具职责、串联、Mermaid 一页纸** |
 | `VideoCoreExtractor_后端使用与验证手册.md` | 视频提取安装、分层验收、API |
 | `VideoCoreExtractor_核心逻辑与后端实现文档.md` | 实现细节 |
+| `VideoCoreExtractor_核心接口调用路径.md` | 按接口串调用链 |
 | `VideoCoreExtractor_多模态视频理解_架构设计方案.md` | hybrid/omni 画面理解 |
 | `AI视频生成_极简说明.md` | 生成链路心智模型 |
 | `AI视频生成_Phase1_使用说明.md` | 生成实操与托管 Remotion |

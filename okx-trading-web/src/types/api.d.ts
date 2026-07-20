@@ -107,7 +107,7 @@ export interface VideoProcessOptions {
   llmProvider?: string
   /** LLM 模型 ID */
   llmModel?: string
-  /** audio_only | hybrid | omni_only */
+  /** download_only | audio_only | hybrid | omni_only */
   understandingMode?: string
   omniProvider?: string
   omniModel?: string

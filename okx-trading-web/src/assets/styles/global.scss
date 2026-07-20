@@ -379,12 +379,104 @@ a {
   }
 }
 
-// Message 轻量圆角
+/* —— 全局浮层：保证 message / notification / modal / tooltip 始终可见 —— */
+.ant-message {
+  position: fixed !important;
+  top: 16px !important;
+  left: 50% !important;
+  transform: translateX(-50%) !important;
+  width: auto !important;
+  max-width: min(92vw, 480px) !important;
+  z-index: 5000 !important;
+  pointer-events: none !important;
+}
+
+.ant-message-notice {
+  padding: 8px !important;
+  text-align: center !important;
+  /* 避免入场动画未触发时一直停在 opacity:0 */
+  opacity: 1 !important;
+  animation: none !important;
+  transform: none !important;
+}
+
 .ant-message-notice-content {
+  display: inline-flex !important;
+  align-items: center !important;
+  gap: 8px !important;
+  padding: 10px 16px !important;
   border-radius: 10px !important;
+  background: #ffffff !important;
+  color: #0f172a !important;
+  font-size: 14px !important;
+  line-height: 1.5 !important;
+  pointer-events: all !important;
+  opacity: 1 !important;
   box-shadow:
-    0 4px 16px rgba(15, 23, 42, 0.08),
-    0 0 0 1px rgba(15, 23, 42, 0.04) !important;
+    0 4px 16px rgba(15, 23, 42, 0.12),
+    0 0 0 1px rgba(15, 23, 42, 0.06) !important;
+}
+
+.ant-message .anticon {
+  font-size: 16px !important;
+}
+
+.ant-notification {
+  z-index: 5000 !important;
+}
+
+.ant-notification-notice {
+  background: #ffffff !important;
+  color: #0f172a !important;
+  border-radius: 12px !important;
+  box-shadow:
+    0 8px 24px rgba(15, 23, 42, 0.12),
+    0 0 0 1px rgba(15, 23, 42, 0.06) !important;
+}
+
+.ant-notification-notice-message {
+  color: #0f172a !important;
+}
+
+.ant-notification-notice-description {
+  color: #64748b !important;
+}
+
+.ant-modal-wrap,
+.ant-modal-root,
+.ant-image-preview-wrap {
+  z-index: 4000 !important;
+}
+
+.ant-modal-mask,
+.ant-image-preview-mask {
+  z-index: 3999 !important;
+}
+
+.ant-tooltip {
+  z-index: 5100 !important;
+}
+
+.ant-tooltip-inner {
+  background: #1f2937 !important;
+  color: #ffffff !important;
+  border-radius: 8px !important;
+  font-size: 12px !important;
+}
+
+.ant-tooltip-arrow::before {
+  background: #1f2937 !important;
+}
+
+.ant-popover {
+  z-index: 5100 !important;
+}
+
+.ant-select-dropdown,
+.ant-dropdown,
+.ant-picker-dropdown,
+.ant-cascader-dropdown {
+  z-index: 4200 !important;
 }
 
 // 分割线

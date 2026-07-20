@@ -160,6 +160,25 @@ public class VideoProperties {
          * true 时在分辨率限制内尽量选 progressive / 已合并流。
          */
         private boolean preferMerged = true;
+
+        /**
+         * 从浏览器导入 Cookie（yt-dlp --cookies-from-browser）。
+         * 抖音等平台常需要：chrome / edge / firefox / brave。
+         * 浏览器正在运行时 Windows 可能锁库失败，可先关浏览器或改用 cookiesFile。
+         */
+        private String cookiesFromBrowser;
+
+        /**
+         * Netscape 格式 cookies.txt 路径（yt-dlp --cookies）。
+         * 与 cookiesFromBrowser 同时配置时优先本文件。
+         */
+        private String cookiesFile;
+
+        /**
+         * 额外透传给 yt-dlp 的参数（空格分隔的 token 列表不拆分；每项一个参数）。
+         * 例：["--proxy", "http://127.0.0.1:7890"]
+         */
+        private java.util.List<String> extraArgs = new java.util.ArrayList<>();
     }
 
     /**

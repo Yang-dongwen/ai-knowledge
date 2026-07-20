@@ -52,7 +52,7 @@ onUnmounted(() => {
   position: relative;
   min-height: 100vh;
   background: transparent;
-  isolation: isolate;
+  /* 不用 isolation:isolate，避免与 body 级浮层（message 等）叠层异常 */
 
   &.is-immersive {
     height: 100vh;

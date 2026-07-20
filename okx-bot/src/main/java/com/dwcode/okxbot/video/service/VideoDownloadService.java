@@ -3,6 +3,7 @@ package com.dwcode.okxbot.video.service;
 import com.dwcode.okxbot.common.exception.BusinessException;
 import com.dwcode.okxbot.video.config.VideoProperties;
 import com.dwcode.okxbot.video.util.ProcessExecutor;
+import com.dwcode.okxbot.video.util.VideoUrlNormalizer;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.Data;
@@ -44,10 +45,24 @@ public class VideoDownloadService {
      * @param taskId 任务 ID（用于隔离工作目录）
      */
     public DownloadResult download(String url, String taskId) {
+        return download(url, taskId, true);
+    }
+
+    /**
+     * @param extractAudio false 时跳过抽音频（仅下载视频场景）
+     */
+    public DownloadResult download(String url, String taskId, boolean extractAudio) {
         Path taskDir = storageService.ensureTaskDir(taskId);
+        String resolvedUrl = VideoUrlNormalizer.normalize(url);
+        if (resolvedUrl == null || resolvedUrl.isBlank()) {
+            throw new BusinessException("视频链接不能为空");
+        }
+        if (!resolvedUrl.equals(url)) {
+            log.info("已规范化视频链接: {} → {}", url, resolvedUrl);
+        }
 
         // 1. 拉取元数据（标题、时长）
-        VideoMeta meta = fetchMeta(url);
+        VideoMeta meta = fetchMeta(resolvedUrl);
 
         int maxDuration = videoProperties.getDownload().getMaxDurationSeconds();
         if (maxDuration > 0 && meta.getDurationSeconds() != null && meta.getDurationSeconds() > maxDuration) {
@@ -78,12 +93,18 @@ public class VideoDownloadService {
         downloadCmd.add("3");
         downloadCmd.add("--fragment-retries");
         downloadCmd.add("5");
+        appendCookieArgs(downloadCmd, resolvedUrl);
+        appendExtraArgs(downloadCmd);
         downloadCmd.add("-o");
         downloadCmd.add(videoTemplate.toAbsolutePath().toString());
-        downloadCmd.add(url);
+        downloadCmd.add(resolvedUrl);
 
-        log.info("yt-dlp 下载: format={}, concurrentFragments={}, url={}", format, concurrent, url);
-        processExecutor.execute(downloadCmd, videoProperties.getDownload().getTimeoutSeconds());
+        log.info("yt-dlp 下载: format={}, concurrentFragments={}, url={}", format, concurrent, resolvedUrl);
+        try {
+            processExecutor.execute(downloadCmd, videoProperties.getDownload().getTimeoutSeconds());
+        } catch (BusinessException e) {
+            throw enrichDownloadError(resolvedUrl, e);
+        }
 
         // 3. 解析下载产物：可能是已合并 video.mp4，也可能是 video.fXXX.mp4 + video.fYYY.m4a
         MediaBundle bundle = resolveDownloadedMedia(taskDir);
@@ -105,22 +126,34 @@ public class VideoDownloadService {
         if (videoFile == null) {
             // 仅音频场景：仍可转录，视频路径为空
             log.warn("仅下载到音频，无视频轨: taskId={}", taskId);
+        } else {
+            // 抖音等常下到 HEVC，Chrome/Edge 无法 <video> 播放 → 转成 H.264
+            videoFile = ensureBrowserPlayable(videoFile);
         }
 
-        // 4. 提取/转换音频为配置格式（供 Whisper）
-        String audioFormat = videoProperties.getDownload().getAudioFormat();
-        Path audioFile = taskDir.resolve("audio." + audioFormat);
-        extractAudio(audioSource != null ? audioSource : videoFile, audioFile, audioFormat);
+        String audioPath = null;
+        if (extractAudio) {
+            // 4. 提取/转换音频为配置格式（供 Whisper）
+            String audioFormat = videoProperties.getDownload().getAudioFormat();
+            Path audioFile = taskDir.resolve("audio." + audioFormat);
+            extractAudio(audioSource != null ? audioSource : videoFile, audioFile, audioFormat);
 
-        if (!Files.exists(audioFile) || fileSize(audioFile) == 0) {
-            throw new BusinessException("音频提取失败，文件不存在或为空: " + audioFile);
+            if (!Files.exists(audioFile) || fileSize(audioFile) == 0) {
+                throw new BusinessException("音频提取失败，文件不存在或为空: " + audioFile);
+            }
+            audioPath = audioFile.toAbsolutePath().toString();
+        } else {
+            log.info("跳过音频提取（仅下载视频）: taskId={}", taskId);
+            if (videoFile == null) {
+                throw new BusinessException("仅下载模式未得到视频文件");
+            }
         }
 
         DownloadResult result = new DownloadResult();
         result.setTitle(meta.getTitle());
         result.setDurationSeconds(meta.getDurationSeconds());
         result.setVideoPath(videoFile != null ? videoFile.toAbsolutePath().toString() : null);
-        result.setAudioPath(audioFile.toAbsolutePath().toString());
+        result.setAudioPath(audioPath);
         result.setTaskDir(taskDir.toAbsolutePath().toString());
         log.info("下载完成: title={}, duration={}s, video={}, audio={}",
                 result.getTitle(), result.getDurationSeconds(), result.getVideoPath(), result.getAudioPath());
@@ -131,14 +164,22 @@ public class VideoDownloadService {
      * 仅用 yt-dlp 获取元数据，不下载完整媒体。
      */
     public VideoMeta fetchMeta(String url) {
+        String resolvedUrl = VideoUrlNormalizer.normalize(url);
         List<String> cmd = new ArrayList<>();
         cmd.add(videoProperties.getYtDlpPath());
         cmd.add("--dump-json");
         cmd.add("--no-playlist");
         cmd.add("--skip-download");
-        cmd.add(url);
+        appendCookieArgs(cmd, resolvedUrl);
+        appendExtraArgs(cmd);
+        cmd.add(resolvedUrl);
 
-        String output = processExecutor.execute(cmd, 60);
+        String output;
+        try {
+            output = processExecutor.execute(cmd, 60);
+        } catch (BusinessException e) {
+            throw enrichDownloadError(resolvedUrl, e);
+        }
         try {
             String jsonLine = output.lines()
                     .map(String::trim)
@@ -153,12 +194,114 @@ public class VideoDownloadService {
             }
             meta.setId(node.path("id").asText(null));
             return meta;
+        } catch (BusinessException e) {
+            throw e;
         } catch (Exception e) {
             log.warn("解析 yt-dlp 元数据失败，使用默认标题: {}", e.getMessage());
             VideoMeta meta = new VideoMeta();
             meta.setTitle("未知标题");
             return meta;
         }
+    }
+
+    /**
+     * 追加 Cookie 相关参数。cookiesFile 优先于 cookiesFromBrowser。
+     * 仅对抖音 / TikTok / 小红书附加，避免浏览器 Cookie 库被锁时拖垮 B 站等。
+     */
+    void appendCookieArgs(List<String> cmd, String url) {
+        if (!platformLikelyNeedsCookies(url)) {
+            return;
+        }
+        VideoProperties.Download cfg = videoProperties.getDownload();
+        if (cfg.getCookiesFile() != null && !cfg.getCookiesFile().isBlank()) {
+            Path p = Path.of(cfg.getCookiesFile().trim());
+            if (!Files.isRegularFile(p)) {
+                log.warn("video.download.cookies-file 不存在，已忽略: {}", p.toAbsolutePath());
+            } else {
+                cmd.add("--cookies");
+                cmd.add(p.toAbsolutePath().toString());
+            }
+            return;
+        }
+        if (cfg.getCookiesFromBrowser() != null && !cfg.getCookiesFromBrowser().isBlank()) {
+            cmd.add("--cookies-from-browser");
+            cmd.add(cfg.getCookiesFromBrowser().trim());
+        }
+    }
+
+    static boolean platformLikelyNeedsCookies(String url) {
+        if (url == null || url.isBlank()) {
+            return false;
+        }
+        String lower = url.toLowerCase(Locale.ROOT);
+        return lower.contains("douyin.com")
+                || lower.contains("iesdouyin.com")
+                || lower.contains("tiktok.com")
+                || lower.contains("xiaohongshu.com")
+                || lower.contains("xhslink.com");
+    }
+
+    void appendExtraArgs(List<String> cmd) {
+        List<String> extra = videoProperties.getDownload().getExtraArgs();
+        if (extra == null || extra.isEmpty()) {
+            return;
+        }
+        for (String arg : extra) {
+            if (arg != null && !arg.isBlank()) {
+                cmd.add(arg.trim());
+            }
+        }
+    }
+
+    /**
+     * 将 yt-dlp 原始错误转成可操作的中文提示（尤其是抖音 Cookie / 链接形态）。
+     */
+    BusinessException enrichDownloadError(String url, BusinessException e) {
+        String msg = e.getMessage() != null ? e.getMessage() : "";
+        String lower = msg.toLowerCase(Locale.ROOT);
+        boolean douyin = url != null && (url.toLowerCase(Locale.ROOT).contains("douyin.com")
+                || url.toLowerCase(Locale.ROOT).contains("iesdouyin.com"));
+
+        if (lower.contains("unsupported url")) {
+            return new BusinessException(
+                    "不支持的视频链接。抖音请使用「分享 → 复制链接」，或标准地址 https://www.douyin.com/video/{id}；"
+                            + "个人页/喜欢页带 modal_id 的地址会自动转换。原始错误: " + truncateMsg(msg, 280));
+        }
+        if (lower.contains("dpapi") || lower.contains("decrypt with dpapi")
+                || lower.contains("appbound") || lower.contains("app-bound")) {
+            return new BusinessException(
+                    "Windows 无法解密 Edge/Chrome Cookie（DPAPI/App-Bound 加密）。"
+                            + "请不要用 cookies-from-browser，改用 cookies-file：\n"
+                            + "1) Edge 打开 https://www.douyin.com 并刷新\n"
+                            + "2) F12 → 网络 → 任意请求 → 请求标头 → 复制 Cookie 整行\n"
+                            + "3) 运行 okx-bot/scripts/import-cookie-header.ps1 生成 data/douyin-cookies.txt\n"
+                            + "4) application.yml 设置 video.download.cookies-file 指向该文件并重启后端。"
+                            + " 原始错误: " + truncateMsg(msg, 180));
+        }
+        if (lower.contains("fresh cookies") || lower.contains("cookies are needed")
+                || (douyin && lower.contains("cookie") && !lower.contains("could not copy"))) {
+            return new BusinessException(
+                    "抖音需要有效 Cookie。Windows 上请用 cookies-file（不要用 cookies-from-browser）：\n"
+                            + "  Edge 打开 douyin.com → F12 复制 Cookie → 运行 scripts/import-cookie-header.ps1\n"
+                            + "  video.download.cookies-file: D:/gitprojects/auto-exchange/okx-bot/data/douyin-cookies.txt\n"
+                            + " 原始错误: " + truncateMsg(msg, 200));
+        }
+        if (lower.contains("could not copy") && lower.contains("cookie")) {
+            return new BusinessException(
+                    "无法复制浏览器 Cookie 库（进程占用或加密限制）。请改用 cookies-file：\n"
+                            + "  运行 okx-bot/scripts/import-cookie-header.ps1 从 DevTools 导入，"
+                            + "并注释掉 cookies-from-browser。原始错误: "
+                            + truncateMsg(msg, 180));
+        }
+        return e;
+    }
+
+    private static String truncateMsg(String s, int max) {
+        if (s == null) {
+            return "";
+        }
+        String t = s.replace('\n', ' ').trim();
+        return t.length() <= max ? t : t.substring(0, max) + "…";
     }
 
     /**
@@ -311,11 +454,12 @@ public class VideoDownloadService {
 
     /**
      * 拼装 yt-dlp -f 格式选择器。
-     * <p>默认策略（加速转录场景）：
+     * <p>默认策略（加速转录 + 浏览器可播）：
      * <ul>
-     *   <li>限制高度 ≤ maxHeight（默认 720p，体积远小于 1080p/4K）</li>
-     *   <li>preferMerged 时优先单文件/已封装流，少一次双轨下载+合并</li>
-     *   <li>回退到分轨再合并，最后不限清晰度保证能下到</li>
+     *   <li>优先 H.264/AVC（Chrome/Edge 原生支持；抖音默认常给 HEVC 导致前端黑屏）</li>
+     *   <li>限制高度 ≤ maxHeight（默认 720p）</li>
+     *   <li>preferMerged 时优先单文件流</li>
+     *   <li>最后回退任意编码，由 {@link #ensureBrowserPlayable} 再转 H.264</li>
      * </ul>
      */
     String buildFormatSelector() {
@@ -325,25 +469,169 @@ public class VideoDownloadService {
         }
 
         int h = cfg.getMaxHeight();
+        // 浏览器友好：优先 avc1/h264（抖音默认 HEVC 时前端无法播）
         if (h <= 0) {
-            // 不限分辨率：原逻辑
-            return "bv*+ba/b";
+            return "bv*[vcodec^=avc]+ba/bv*[vcodec^=h264]+ba"
+                    + "/b[vcodec^=avc]/b[vcodec^=h264]"
+                    + "/bv*+ba/b";
         }
 
-        // height 过滤：bv / ba / progressive best
         String hFilter = "[height<=?" + h + "]";
         if (cfg.isPreferMerged()) {
-            // 1) 单文件且 ≤maxHeight（最快）
-            // 2) 分轨视频≤maxHeight + 最佳音轨
-            // 3) 任意 ≤maxHeight
-            // 4) 再放宽到不限高度，避免平台无 720 档失败
-            return "b" + hFilter + "[ext=mp4]"
+            return "b" + hFilter + "[vcodec^=avc][ext=mp4]"
+                    + "/b" + hFilter + "[vcodec^=h264][ext=mp4]"
+                    + "/b" + hFilter + "[vcodec^=avc]"
+                    + "/b" + hFilter + "[vcodec^=h264]"
+                    + "/bv*" + hFilter + "[vcodec^=avc]+ba"
+                    + "/bv*" + hFilter + "[vcodec^=h264]+ba"
+                    + "/b" + hFilter + "[ext=mp4]"
                     + "/b" + hFilter
                     + "/bv*" + hFilter + "+ba/b"
                     + "/bv*+ba/b";
         }
-        return "bv*" + hFilter + "+ba/b"
+        return "bv*" + hFilter + "[vcodec^=avc]+ba"
+                + "/bv*" + hFilter + "[vcodec^=h264]+ba"
+                + "/bv*" + hFilter + "+ba/b"
                 + "/bv*+ba/b";
+    }
+
+    /**
+     * 确保浏览器可播放：HEVC/H.265、AV1 等转码为 H.264 + AAC mp4。
+     * <p>已存在且较新的 {@code video.browser.mp4} 会直接复用（服务已有任务时按需转码）。
+     *
+     * @return 可给前端 &lt;video&gt; 的路径（可能仍是原文件，或同目录 video.browser.mp4）
+     */
+    public Path ensureBrowserPlayable(Path videoFile) {
+        if (videoFile == null || !Files.isRegularFile(videoFile) || fileSize(videoFile) == 0) {
+            return videoFile;
+        }
+
+        Path browserCopy = videoFile.resolveSibling("video.browser.mp4");
+        if (Files.isRegularFile(browserCopy) && fileSize(browserCopy) > 0) {
+            String browserCodec = probeVideoCodec(browserCopy);
+            if (browserCodec != null
+                    && !browserCodec.equalsIgnoreCase("null")
+                    && isBrowserFriendlyVideoCodec(browserCodec)) {
+                // 已有 H.264 副本则优先返回（避免继续下发 HEVC/AV1 源文件）
+                return browserCopy;
+            }
+        }
+
+        String codec = probeVideoCodec(videoFile);
+        if (isBrowserFriendlyVideoCodec(codec)) {
+            log.debug("视频编码已可播: file={}, codec={}", videoFile.getFileName(), codec);
+            return videoFile;
+        }
+
+        log.info("视频编码浏览器不友好(codec={})，转码 H.264: {}", codec, videoFile.getFileName());
+        Path tmp = videoFile.resolveSibling("video.browser.tmp.mp4");
+        try {
+            List<String> cmd = new ArrayList<>();
+            cmd.add(videoProperties.getFfmpegPath());
+            cmd.add("-y");
+            cmd.add("-i");
+            cmd.add(videoFile.toAbsolutePath().toString());
+            cmd.add("-map");
+            cmd.add("0:v:0");
+            cmd.add("-map");
+            cmd.add("0:a:0?");
+            cmd.add("-c:v");
+            cmd.add("libx264");
+            cmd.add("-preset");
+            cmd.add("veryfast");
+            cmd.add("-crf");
+            cmd.add("23");
+            cmd.add("-pix_fmt");
+            cmd.add("yuv420p");
+            cmd.add("-c:a");
+            cmd.add("aac");
+            cmd.add("-b:a");
+            cmd.add("128k");
+            cmd.add("-movflags");
+            cmd.add("+faststart");
+            cmd.add(tmp.toAbsolutePath().toString());
+
+            processExecutor.execute(cmd, Math.max(videoProperties.getDownload().getTimeoutSeconds(), 600));
+
+            if (!Files.exists(tmp) || fileSize(tmp) == 0) {
+                log.warn("H.264 转码产出为空，仍返回原文件: {}", videoFile);
+                return videoFile;
+            }
+            Files.move(tmp, browserCopy, java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+            log.info("已生成浏览器可播文件: {} (codec {} → h264)", browserCopy.getFileName(), codec);
+            return browserCopy;
+        } catch (Exception e) {
+            log.warn("H.264 转码失败，仍返回原文件: {} — {}", videoFile, e.getMessage());
+            try {
+                Files.deleteIfExists(tmp);
+            } catch (IOException ignored) {
+                // ignore
+            }
+            return videoFile;
+        }
+    }
+
+    /**
+     * ffprobe 探测首个视频流 codec_name；失败返回 null。
+     */
+    String probeVideoCodec(Path videoFile) {
+        if (videoFile == null || !Files.isRegularFile(videoFile)) {
+            return null;
+        }
+        try {
+            Path ffprobe = resolveFfprobePath();
+            List<String> cmd = new ArrayList<>();
+            cmd.add(ffprobe.toString());
+            cmd.add("-v");
+            cmd.add("error");
+            cmd.add("-select_streams");
+            cmd.add("v:0");
+            cmd.add("-show_entries");
+            cmd.add("stream=codec_name");
+            cmd.add("-of");
+            cmd.add("default=nw=1:nk=1");
+            cmd.add(videoFile.toAbsolutePath().toString());
+            String out = processExecutor.execute(cmd, 30);
+            if (out == null || out.isBlank()) {
+                return null;
+            }
+            return out.lines()
+                    .map(String::trim)
+                    .filter(s -> !s.isEmpty())
+                    .findFirst()
+                    .orElse(null);
+        } catch (Exception e) {
+            log.warn("ffprobe 探测编码失败: {} — {}", videoFile.getFileName(), e.getMessage());
+            return null;
+        }
+    }
+
+    static boolean isBrowserFriendlyVideoCodec(String codec) {
+        if (codec == null || codec.isBlank()) {
+            // 探测失败时保守：不强制转码（避免误伤）
+            return true;
+        }
+        String c = codec.toLowerCase(Locale.ROOT);
+        // Chrome/Edge 普遍可播
+        if (c.contains("h264") || c.contains("avc") || c.equals("vp8") || c.equals("vp9")) {
+            return true;
+        }
+        // 常见浏览器不支持或支持差：hevc/h265/av1/mpeg4 等
+        return false;
+    }
+
+    private Path resolveFfprobePath() {
+        Path ffmpeg = Path.of(videoProperties.getFfmpegPath()).toAbsolutePath().normalize();
+        Path parent = ffmpeg.getParent();
+        boolean win = System.getProperty("os.name", "").toLowerCase(Locale.ROOT).contains("win");
+        String probeName = win ? "ffprobe.exe" : "ffprobe";
+        if (parent != null) {
+            Path candidate = parent.resolve(probeName);
+            if (Files.isRegularFile(candidate)) {
+                return candidate;
+            }
+        }
+        return parent != null ? parent.resolve(probeName) : Path.of(probeName);
     }
 
     /**
