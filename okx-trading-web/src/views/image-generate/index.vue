@@ -1001,7 +1001,7 @@ function confirmDelete(task: ImgGenTaskItem) {
 
 function revokeAllImageUrls() {
   for (const url of Object.values(imageUrls.value)) {
-    if (url) URL.revokeObjectURL(url)
+    if (url && String(url).startsWith('blob:')) URL.revokeObjectURL(url)
   }
   imageUrls.value = {}
   imageLoading.value = {}
@@ -1015,8 +1015,14 @@ async function loadImagesForSelected() {
     const name = fileNameFromImage(img)
     imageLoading.value[img.index] = true
     try {
-      const blob = await imggenApi.fetchImageBlob(s.id, name)
-      imageUrls.value[img.index] = URL.createObjectURL(blob)
+      // PR5：优先 R2 预签名直链（img 不经后端）；失败再 blob
+      try {
+        const r = await imggenApi.resolveImageUrl(s.id, name)
+        imageUrls.value[img.index] = r.url
+      } catch {
+        const blob = await imggenApi.fetchImageBlob(s.id, name)
+        imageUrls.value[img.index] = URL.createObjectURL(blob)
+      }
     } catch {
       // leave empty
     } finally {

@@ -34,6 +34,7 @@ public class RemotionHttpRenderAdapter implements VideoRenderPort {
     private final AigenProperties aigenProperties;
     private final ObjectMapper objectMapper;
     private final RemotionProcessManager remotionProcessManager;
+    private final RemotionMediaRoots remotionMediaRoots;
 
     @Override
     public RenderResult render(RenderCommand command) throws Exception {
@@ -124,15 +125,15 @@ public class RemotionHttpRenderAdapter implements VideoRenderPort {
     }
 
     /**
-     * 相对路径 → http://127.0.0.1:3100/media/{taskId}/assets/audio/xx.wav
+     * 相对路径 → http://127.0.0.1:3100/media/{relTask}/assets/audio/xx.wav
+     * <p>relTask 相对 ALLOWED_WORK_ROOT（可能是 {@code _scratch/aigen/{id}} 而非仅 id）。
      */
     private void rewriteAudioTracksToHttp(ObjectNode inputProps, Path workDir, String remotionBaseUrl,
                                           StoryboardDto sb) {
         if (sb == null || sb.getAudio() == null || sb.getAudio().getTracks() == null) {
             return;
         }
-        String taskId = workDir.getFileName() != null ? workDir.getFileName().toString() : "";
-        String base = trimSlash(remotionBaseUrl) + "/media/" + taskId;
+        String base = mediaBase(workDir, remotionBaseUrl);
 
         ObjectNode audioObj;
         if (inputProps.get("audio") instanceof ObjectNode o) {
@@ -189,8 +190,7 @@ public class RemotionHttpRenderAdapter implements VideoRenderPort {
         if (!(shots instanceof ArrayNode arr) || arr.isEmpty()) {
             return;
         }
-        String taskId = workDir.getFileName() != null ? workDir.getFileName().toString() : "";
-        String base = trimSlash(remotionBaseUrl) + "/media/" + taskId;
+        String base = mediaBase(workDir, remotionBaseUrl);
         for (JsonNode shot : arr) {
             if (!(shot instanceof ObjectNode shotObj)) {
                 continue;
@@ -252,8 +252,7 @@ public class RemotionHttpRenderAdapter implements VideoRenderPort {
         if (rel == null || rel.isBlank()) {
             return;
         }
-        String taskId = workDir.getFileName() != null ? workDir.getFileName().toString() : "";
-        String base = trimSlash(remotionBaseUrl) + "/media/" + taskId;
+        String base = mediaBase(workDir, remotionBaseUrl);
         rel = rel.replace('\\', '/');
         if (rel.startsWith("/")) {
             rel = rel.substring(1);
@@ -270,8 +269,7 @@ public class RemotionHttpRenderAdapter implements VideoRenderPort {
         if (!(shots instanceof ArrayNode arr) || arr.isEmpty()) {
             return;
         }
-        String taskId = workDir.getFileName() != null ? workDir.getFileName().toString() : "";
-        String base = trimSlash(remotionBaseUrl) + "/media/" + taskId;
+        String base = mediaBase(workDir, remotionBaseUrl);
         for (JsonNode shot : arr) {
             if (!(shot instanceof ObjectNode shotObj)) {
                 continue;
@@ -291,6 +289,11 @@ public class RemotionHttpRenderAdapter implements VideoRenderPort {
             shotObj.put("audioUrl", base + "/" + rel);
             shotObj.put("audioSrc", rel);
         }
+    }
+
+    private String mediaBase(Path workDir, String remotionBaseUrl) {
+        String relTask = remotionMediaRoots.mediaRelativeTaskPath(workDir);
+        return trimSlash(remotionBaseUrl) + "/media/" + relTask;
     }
 
     private static String trimSlash(String base) {

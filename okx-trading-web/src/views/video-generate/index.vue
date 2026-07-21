@@ -701,7 +701,7 @@
                 :src="videoObjectUrl"
                 controls
                 playsinline
-                preload="auto"
+                preload="metadata"
                 @loadedmetadata="onVideoMeta"
               />
               <div v-else class="player-loading muted">成片加载失败，请点击上方「重新加载」</div>
@@ -950,7 +950,8 @@ async function loadShots(taskId: string) {
     const urls: Record<string, string> = {}
     await Promise.all(
       shotList.value
-        .filter((s) => s.imageAvailable)
+        // imageAvailable 或有 assetPath 都尝试拉图（兼容旧接口只认本地文件）
+        .filter((s) => s.imageAvailable || !!s.assetPath)
         .map(async (s) => {
           try {
             const blob = await aigenApi.fetchShotImageBlob(taskId, s.id)
@@ -1568,10 +1569,10 @@ async function loadTasks() {
 }
 
 function revokeVideoUrl() {
-  if (videoObjectUrl.value) {
+  if (videoObjectUrl.value?.startsWith('blob:')) {
     URL.revokeObjectURL(videoObjectUrl.value)
-    videoObjectUrl.value = ''
   }
+  videoObjectUrl.value = ''
 }
 
 /**
@@ -1633,7 +1634,7 @@ async function toggleStoryboard() {
 }
 
 /**
- * 加载成片。force=true 时强制重新拉取。
+ * 加载成片。PR5 优先 R2 预签名直链；失败回退代理。
  */
 async function loadVideo(force = false) {
   if (!selectedId.value) return
@@ -1643,8 +1644,12 @@ async function loadVideo(force = false) {
   videoLoading.value = true
   try {
     revokeVideoUrl()
-    const blob = await aigenApi.fetchOutputBlob(selectedId.value)
-    videoObjectUrl.value = URL.createObjectURL(blob)
+    try {
+      const r = await aigenApi.resolveOutputPlayUrl(selectedId.value)
+      videoObjectUrl.value = r.url
+    } catch {
+      videoObjectUrl.value = aigenApi.outputStreamUrl(selectedId.value)
+    }
     autoLoadedTaskId.value = selectedId.value
     await nextTick()
     onVideoMeta()
@@ -1670,12 +1675,19 @@ async function maybeAutoLoadVideo() {
   await loadVideo(false)
 }
 
-function downloadVideo() {
-  if (!videoObjectUrl.value || !selected.value) return
-  const a = document.createElement('a')
-  a.href = videoObjectUrl.value
-  a.download = `${selected.value.title || 'aigen'}.mp4`
-  a.click()
+async function downloadVideo() {
+  if (!selected.value) return
+  try {
+    const blob = await aigenApi.fetchOutputBlob(selected.value.id)
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `${selected.value.title || 'aigen'}.mp4`
+    a.click()
+    window.setTimeout(() => URL.revokeObjectURL(url), 60_000)
+  } catch (e: any) {
+    message.error(e?.message || '下载成片失败')
+  }
 }
 
 async function handleSubmit() {
@@ -1935,10 +1947,20 @@ async function loadStoryboard() {
   }
 }
 
-// 选中任务变化 / 成片就绪 → 自动加载成片
+// 选中任务变化 / 成片就绪 → 自动加载成片（唯一入口，避免 media-url 双发）
 watch(
   () => [selectedId.value, selected.value?.outputAvailable, selected.value?.status] as const,
-  async () => {
+  async ([id, available], prev) => {
+    if (!id || !available) return
+    if (
+      prev &&
+      prev[0] === id &&
+      prev[1] === available &&
+      autoLoadedTaskId.value === id &&
+      videoObjectUrl.value
+    ) {
+      return
+    }
     await maybeAutoLoadVideo()
   }
 )

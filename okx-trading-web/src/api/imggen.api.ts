@@ -1,4 +1,5 @@
 import request from './request'
+import { attachAccessTokenIfProxy } from './video.api'
 import type {
   ImgGenCreateRequest,
   ImgGenImageModel,
@@ -79,20 +80,40 @@ export const imggenApi = {
     return request.delete(`/v1/imggen/tasks/${taskId}`)
   },
 
+  /** PR5：图片直链（优先 R2 预签名，可直接给 &lt;img src&gt;）。 */
+  async resolveImageUrl(taskId: string, fileName: string): Promise<{ url: string; mode: string }> {
+    const res = await request.get(`/v1/imggen/tasks/${taskId}/media-url`, {
+      params: { fileName, disposition: 'inline' }
+    })
+    return attachAccessTokenIfProxy(res.data)
+  },
+
   /**
-   * 拉取图片 Blob（带 Authorization）。
+   * 拉取图片 Blob。优先 R2 直链，失败回退代理。
    */
   async fetchImageBlob(taskId: string, fileName: string): Promise<Blob> {
-    const token = localStorage.getItem('okx_auth_token') || ''
-    const res = await fetch(`/api/v1/imggen/tasks/${taskId}/media/${encodeURIComponent(fileName)}`, {
-      headers: {
-        ...(token ? { Authorization: `Bearer ${token}` } : {})
+    try {
+      const { url } = await this.resolveImageUrl(taskId, fileName)
+      const token = localStorage.getItem('okx_auth_token') || ''
+      const headers: Record<string, string> = {}
+      if (!url.startsWith('http') || url.startsWith(window.location.origin)) {
+        if (token) headers.Authorization = `Bearer ${token}`
       }
-    })
-    if (!res.ok) {
-      const text = await res.text()
-      throw new Error(text || `下载失败 HTTP ${res.status}`)
+      const res = await fetch(url, { headers })
+      if (!res.ok) throw new Error(`HTTP ${res.status}`)
+      return await res.blob()
+    } catch {
+      const token = localStorage.getItem('okx_auth_token') || ''
+      const res = await fetch(`/api/v1/imggen/tasks/${taskId}/media/${encodeURIComponent(fileName)}`, {
+        headers: {
+          ...(token ? { Authorization: `Bearer ${token}` } : {})
+        }
+      })
+      if (!res.ok) {
+        const text = await res.text()
+        throw new Error(text || `下载失败 HTTP ${res.status}`)
+      }
+      return await res.blob()
     }
-    return await res.blob()
   }
 }

@@ -116,7 +116,7 @@ public final class LlmContentHelper {
         }
         String cleaned = extractJsonObjectOrRaw(raw);
         Exception last = null;
-        for (String candidate : new String[]{cleaned, salvageJsonByTruncation(cleaned)}) {
+        for (String candidate : candidatesForParse(cleaned)) {
             if (candidate == null || candidate.isBlank()) {
                 continue;
             }
@@ -141,6 +141,68 @@ public final class LlmContentHelper {
                 + " | snippet=" + truncate(cleaned, 200));
     }
 
+    /**
+     * 将 LLM 文本解析为业务 DTO：提取 JSON → 引号修复 → 宽松/严格解析 → tree→bean。
+     * 专治画面 prompt 内嵌未转义双引号（如「显示"AI发展"」）导致的 Jackson 失败。
+     */
+    public static <T> T parseJsonAs(ObjectMapper objectMapper, String raw, Class<T> type) {
+        if (objectMapper == null || type == null) {
+            throw new BusinessException("JSON 解析参数无效");
+        }
+        if (raw == null || raw.isBlank()) {
+            throw new BusinessException("LLM 返回为空");
+        }
+        String cleaned;
+        try {
+            cleaned = extractJsonObject(raw);
+        } catch (BusinessException e) {
+            cleaned = extractJsonObjectOrRaw(raw);
+        }
+        Exception last = null;
+        for (String candidate : candidatesForParse(cleaned)) {
+            if (candidate == null || candidate.isBlank()) {
+                continue;
+            }
+            try {
+                return objectMapper.readValue(candidate, type);
+            } catch (Exception e) {
+                last = e;
+            }
+            try {
+                JsonNode tree = LENIENT_JSON.readTree(candidate);
+                return objectMapper.convertValue(tree, type);
+            } catch (Exception e) {
+                last = e;
+            }
+        }
+        throw new BusinessException("解析 LLM JSON 失败: "
+                + (last != null ? last.getMessage() : "unknown")
+                + " | snippet=" + truncate(cleaned, 240));
+    }
+
+    /** 生成若干可尝试的 JSON 候选（原样清洗 → 转义内嵌引号 → 截断补全）。 */
+    static String[] candidatesForParse(String cleaned) {
+        if (cleaned == null || cleaned.isBlank()) {
+            return new String[0];
+        }
+        String escaped = escapeUnescapedQuotesInStrings(cleaned);
+        String salvaged = salvageJsonByTruncation(cleaned);
+        String salvagedEscaped = salvaged != null ? escapeUnescapedQuotesInStrings(salvaged) : null;
+        // 去重但保持顺序
+        java.util.LinkedHashSet<String> set = new java.util.LinkedHashSet<>();
+        set.add(cleaned);
+        if (escaped != null && !escaped.equals(cleaned)) {
+            set.add(escaped);
+        }
+        if (salvaged != null) {
+            set.add(salvaged);
+        }
+        if (salvagedEscaped != null) {
+            set.add(salvagedEscaped);
+        }
+        return set.toArray(new String[0]);
+    }
+
     /** 去掉 think 标签、BOM、零宽字符等 */
     public static String stripNoise(String raw) {
         if (raw == null) {
@@ -163,12 +225,80 @@ public final class LlmContentHelper {
             return "";
         }
         String t = stripNoise(json);
-        // 中文/弯引号 → 标准双引号（仅替换常见弯引号，避免破坏内容语义过度）
-        t = t.replace('\u201c', '"').replace('\u201d', '"')
-                .replace('\u2018', '\'').replace('\u2019', '\'');
+        // 注意：禁止把弯引号 “” 改成直引号 "。
+        // 模型常在 prompt 里写「显示“AI发展”」；改成直引号会直接把 JSON 字符串打断
+        // （Jackson: Unexpected character 'A' was expecting comma...）。
+        // 弯引号本身是合法 Unicode，可安全留在字符串值内。
         // 尾逗号
         t = TRAILING_COMMA.matcher(t).replaceAll("$1");
         return t.trim();
+    }
+
+    /**
+     * 修复字符串值内未转义的直双引号。
+     * 规则：已进入 JSON 字符串后，若遇到 {@code "}，看后续非空白字符是否为结构符
+     * {@code : , } ] }；不是则视为内容引号，转义为 {@code \"}。
+     * <p>
+     * 例：{@code "prompt":"显示"AI"趋势"} → {@code "prompt":"显示\"AI\"趋势"}
+     */
+    public static String escapeUnescapedQuotesInStrings(String json) {
+        if (json == null || json.isEmpty()) {
+            return json;
+        }
+        StringBuilder out = new StringBuilder(json.length() + 16);
+        boolean inString = false;
+        boolean escape = false;
+        for (int i = 0; i < json.length(); i++) {
+            char c = json.charAt(i);
+            if (!inString) {
+                out.append(c);
+                if (c == '"') {
+                    inString = true;
+                    escape = false;
+                }
+                continue;
+            }
+            // in string
+            if (escape) {
+                out.append(c);
+                escape = false;
+                continue;
+            }
+            if (c == '\\') {
+                out.append(c);
+                escape = true;
+                continue;
+            }
+            if (c == '"') {
+                if (looksLikeStringTerminator(json, i + 1)) {
+                    out.append(c);
+                    inString = false;
+                } else {
+                    out.append('\\').append('"');
+                }
+                continue;
+            }
+            out.append(c);
+        }
+        return out.toString();
+    }
+
+    /**
+     * 判断位置 {@code from} 起的下一个“有意义”字符是否像字符串结束之后的结构符。
+     */
+    static boolean looksLikeStringTerminator(String json, int from) {
+        int i = from;
+        while (i < json.length()) {
+            char c = json.charAt(i);
+            if (c == ' ' || c == '\t' || c == '\n' || c == '\r') {
+                i++;
+                continue;
+            }
+            // key 结束 → : ；value 结束 → , } ]
+            return c == ':' || c == ',' || c == '}' || c == ']';
+        }
+        // 文本已结束：当作闭合引号（残缺 JSON 交给后续 salvage）
+        return true;
     }
 
     /**

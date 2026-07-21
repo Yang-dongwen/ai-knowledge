@@ -52,7 +52,7 @@ public class LangChain4jDirectorAdapter implements DirectorPort {
 
         try {
             String raw = invoke(system, user, command.getLlmProvider(), command.getLlmModel(), options);
-            ShotlistDto dto = parse(raw);
+            ShotlistDto dto = parseWithSyntaxRepair(raw, command, options);
             dto = normalizeService.normalize(
                     dto,
                     command.getAspectRatio(),
@@ -74,17 +74,19 @@ public class LangChain4jDirectorAdapter implements DirectorPort {
                     log.warn("镜头表校验失败，repair: {}", errors);
                     String anchors = String.join(", ",
                             topicRelevanceService.extractAnchors(command.getPrompt()));
-                    String repairUser = "以下 JSON 不合法，错误: " + errors
+                    String repairUser = "以下 JSON 业务校验失败，错误: " + errors
                             + "\n用户原主题: " + command.getPrompt()
                             + (anchors.isBlank() ? "" : "\n必须写入各镜的主题关键词: " + anchors)
-                            + "\n请输出修复后的完整镜头表 JSON（每镜 visual.prompt 必须与用户同语言且扣题；promptEn 可选）：\n"
+                            + "\n请输出修复后的完整镜头表 JSON（每镜 visual.prompt 必须与用户同语言且扣题；promptEn 可选）。"
+                            + "字符串内禁止未转义双引号，引用请用「」或 \\\" ：\n"
                             + objectMapper.writeValueAsString(dto);
                     String repaired = invoke(
                             "你是镜头表修复器，只输出合法 vt-1.0 JSON，不要 markdown。"
                                     + "修复时确保每镜 visual.prompt 使用用户语言并包含主题主体，"
-                                    + "禁止空镜赛博都市代替主题；不要强行改成英文主描述。",
+                                    + "禁止空镜赛博都市代替主题；不要强行改成英文主描述。"
+                                    + "JSON 字符串内禁止裸双引号，可用「」或转义 \\\"。",
                             repairUser, command.getLlmProvider(), command.getLlmModel(), options);
-                    dto = parse(repaired);
+                    dto = parseWithSyntaxRepair(repaired, command, options);
                     dto = normalizeService.normalize(
                             dto,
                             command.getAspectRatio(),
@@ -114,6 +116,39 @@ public class LangChain4jDirectorAdapter implements DirectorPort {
         }
     }
 
+    /**
+     * 解析镜头表；若语法损坏则本地修复失败后再请求 LLM 修 JSON（与业务校验 repair 独立）。
+     */
+    private ShotlistDto parseWithSyntaxRepair(String raw, DirectorCommand command, LlmCallOptions options) {
+        try {
+            return parse(raw);
+        } catch (BusinessException first) {
+            int maxRepair = Math.max(0, aigenProperties.getLlm().getMaxRepairAttempts());
+            if (maxRepair <= 0) {
+                throw first;
+            }
+            log.warn("镜头表 JSON 语法损坏，尝试 LLM 修复: {}", first.getMessage());
+            String snippet = LlmContentHelper.truncate(raw, 6000);
+            String repairUser = "以下文本不是合法 JSON（错误: " + first.getMessage() + "）。\n"
+                    + "请输出完整合法的 vt-1.0 镜头表 JSON。"
+                    + "字符串值内禁止未转义双引号；引用用「」或 \\\"。不要 markdown。\n"
+                    + "用户主题: " + command.getPrompt() + "\n原文:\n" + snippet;
+            try {
+                String repaired = invoke(
+                        "你是 JSON 修复器，只输出合法 vt-1.0 镜头表 JSON 对象，不要解释，不要 markdown。",
+                        repairUser,
+                        command.getLlmProvider(),
+                        command.getLlmModel(),
+                        options);
+                return parse(repaired);
+            } catch (BusinessException e) {
+                throw e;
+            } catch (Exception e) {
+                throw new BusinessException("镜头规划失败: " + e.getMessage());
+            }
+        }
+    }
+
     private String invoke(String system, String user, String provider, String model, LlmCallOptions options) {
         try {
             ChatModel chatModel = chatModelFactory.create(provider, model, options);
@@ -131,9 +166,8 @@ public class LangChain4jDirectorAdapter implements DirectorPort {
         }
     }
 
-    private ShotlistDto parse(String raw) throws Exception {
-        String json = LlmContentHelper.extractJsonObject(raw);
-        return objectMapper.readValue(json, ShotlistDto.class);
+    private ShotlistDto parse(String raw) {
+        return LlmContentHelper.parseJsonAs(objectMapper, raw, ShotlistDto.class);
     }
 
     private LlmCallOptions buildOptions() {
@@ -182,6 +216,10 @@ public class LangChain4jDirectorAdapter implements DirectorPort {
         return """
                 你是顶级短片视觉导演 + 剪辑师。任务：把用户主题变成「可观看且主题高度相关」的电影感镜头表，不是填模板，更不是随便拍空镜。
                 只输出一个 JSON 对象（vt-1.0），不要 markdown，不要解释。
+                JSON 字符串纪律（违反会导致解析失败）：
+                - 字符串值内禁止未转义的英文双引号 "；引用请用「」或 『』，或写成 \\"AI\\"
+                - 禁止把弯引号混用搞乱结构；优先用中文直角引号包专有名词
+                - 不要在 prompt 中写裸的 "AI"，应写「AI」或 AI（无引号）
 
                 【主题忠诚——最高优先级，违反则整表失败】
                 - 用户主题里的核心实体/事件/时间线必须在每一镜 visual.prompt 里可识别出现。

@@ -203,8 +203,9 @@ public class AigenBeanConfig {
     public RemotionHttpRenderAdapter remotionHttpRenderAdapter(
             AigenProperties props,
             ObjectMapper objectMapper,
-            RemotionProcessManager processManager) {
-        return new RemotionHttpRenderAdapter(props, objectMapper, processManager);
+            RemotionProcessManager processManager,
+            com.dwcode.okxbot.aigen.adapter.render.RemotionMediaRoots remotionMediaRoots) {
+        return new RemotionHttpRenderAdapter(props, objectMapper, processManager, remotionMediaRoots);
     }
 
     @Bean

@@ -109,39 +109,69 @@ export const videoApi = {
   },
 
   /**
-   * 视频资源路径（仅作调试/下载链接参考）。
-   * 注意：不能直接给 &lt;video src&gt; —— 浏览器不会带 Authorization，会 401。
-   * 播放请用 {@link fetchVideoBlob} + URL.createObjectURL。
+   * 代理流地址（回退用；query access_token）。
    */
   videoStreamUrl(taskId: string): string {
-    return `/api/v1/video/tasks/${taskId}/video`
+    const token = localStorage.getItem('okx_auth_token') || ''
+    const q = token ? `?access_token=${encodeURIComponent(token)}` : ''
+    return `/api/v1/video/tasks/${taskId}/video${q}`
   },
 
   /**
-   * 拉取视频 Blob（带 JWT）。用于 &lt;video&gt; 本地 object URL 播放。
+   * PR5：取媒体 URL。presign 时为 R2 直链；proxy 时补 access_token。
+   */
+  async resolvePlayUrl(taskId: string): Promise<{ url: string; mode: string; expiresAtMs: number }> {
+    const res = await request.get(`/v1/video/tasks/${taskId}/media-url`, {
+      params: { disposition: 'inline' }
+    })
+    return attachAccessTokenIfProxy(res.data)
+  },
+
+  async resolveDownloadUrl(taskId: string): Promise<{ url: string; mode: string }> {
+    const res = await request.get(`/v1/video/tasks/${taskId}/media-url`, {
+      params: { disposition: 'attachment' }
+    })
+    return attachAccessTokenIfProxy(res.data)
+  },
+
+  /**
+   * 整文件拉取。优先 R2 直链；失败回退代理。
    */
   async fetchVideoBlob(taskId: string): Promise<Blob> {
-    const token = localStorage.getItem('okx_auth_token') || ''
-    const res = await fetch(`/api/v1/video/tasks/${taskId}/video`, {
-      headers: {
-        ...(token ? { Authorization: `Bearer ${token}` } : {}),
-        Accept: 'video/mp4,video/*,*/*'
+    try {
+      const { url } = await this.resolveDownloadUrl(taskId)
+      const token = localStorage.getItem('okx_auth_token') || ''
+      const headers: Record<string, string> = { Accept: 'video/mp4,video/*,*/*' }
+      // 同源 proxy 才需要 Bearer；R2 直链靠签名
+      if (!url.startsWith('http') || url.startsWith(window.location.origin)) {
+        if (token) headers.Authorization = `Bearer ${token}`
       }
-    })
-    if (!res.ok) {
-      const text = await res.text().catch(() => '')
-      let msg = `视频加载失败 HTTP ${res.status}`
-      try {
-        const j = JSON.parse(text)
-        if (j?.message) msg = j.message
-      } catch {
-        if (text) msg = text.slice(0, 200)
+      const res = await fetch(url, { headers })
+      if (!res.ok) throw new Error(`HTTP ${res.status}`)
+      const buf = await res.arrayBuffer()
+      return new Blob([buf], { type: 'video/mp4' })
+    } catch {
+      const token = localStorage.getItem('okx_auth_token') || ''
+      const res = await fetch(`/api/v1/video/tasks/${taskId}/video`, {
+        headers: {
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+          Accept: 'video/mp4,video/*,*/*'
+        }
+      })
+      if (!res.ok) {
+        const text = await res.text().catch(() => '')
+        let msg = `视频加载失败 HTTP ${res.status}`
+        try {
+          const j = JSON.parse(text)
+          if (j?.message) msg = j.message
+        } catch {
+          if (text) msg = text.slice(0, 200)
+        }
+        throw new Error(msg)
       }
-      throw new Error(msg)
+      const buf = await res.arrayBuffer()
+      return new Blob([buf], { type: 'video/mp4' })
     }
-    const buf = await res.arrayBuffer()
-    // 始终用 video/mp4，避免 application/octet-stream 导致只出一帧、无法播
-    return new Blob([buf], { type: 'video/mp4' })
   },
 
   /** Cookie 文件状态（不含明文） */
@@ -161,6 +191,24 @@ export const videoApi = {
   clearCookie(platform = 'douyin'): Promise<{ data: null }> {
     return request.delete('/v1/video/cookies', { params: { platform } })
   }
+}
+
+/** proxy 模式相对路径补 access_token，便于 &lt;video src&gt; 直链。 */
+export function attachAccessTokenIfProxy(data: {
+  url?: string
+  mode?: string
+  proxyPath?: string
+  expiresAtMs?: number
+}): { url: string; mode: string; expiresAtMs: number } {
+  const mode = data?.mode || 'proxy'
+  let url = data?.url || data?.proxyPath || ''
+  if (mode === 'proxy' || (!url.startsWith('http://') && !url.startsWith('https://'))) {
+    const token = localStorage.getItem('okx_auth_token') || ''
+    const path = url.startsWith('/') ? url : data?.proxyPath || url
+    const sep = path.includes('?') ? '&' : '?'
+    url = token ? `${path}${sep}access_token=${encodeURIComponent(token)}` : path
+  }
+  return { url, mode, expiresAtMs: data?.expiresAtMs || 0 }
 }
 
 export interface VideoCookieStatus {

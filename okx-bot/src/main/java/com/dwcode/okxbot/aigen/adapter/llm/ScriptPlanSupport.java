@@ -23,6 +23,7 @@ public final class ScriptPlanSupport {
         String lang = cmd.getLanguage() != null ? cmd.getLanguage() : "zh";
         String common = """
                 你是短视频分镜编剧。只输出一个 JSON 对象，不要 markdown，不要解释。
+                字符串值内禁止未转义英文双引号 "；引用用「」或写成 \\"词\\"。
                 通用约束：
                 1. version 固定 "1.0"
                 2. meta.templateId 固定为 %s
@@ -69,8 +70,7 @@ public final class ScriptPlanSupport {
 
     public static StoryboardDto parseStoryboard(ObjectMapper objectMapper, String raw) {
         try {
-            String json = LlmContentHelper.extractJsonObject(raw);
-            return objectMapper.readValue(json, StoryboardDto.class);
+            return LlmContentHelper.parseJsonAs(objectMapper, raw, StoryboardDto.class);
         } catch (BusinessException e) {
             throw e;
         } catch (Exception e) {

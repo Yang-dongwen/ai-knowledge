@@ -3,6 +3,10 @@ package com.dwcode.okxbot.aigen;
 import com.dwcode.okxbot.aigen.config.AigenProperties;
 import com.dwcode.okxbot.aigen.service.AigenStorageService;
 import com.dwcode.okxbot.common.exception.BusinessException;
+import com.dwcode.okxbot.storage.LocalObjectStorage;
+import com.dwcode.okxbot.storage.ObjectKeyBuilder;
+import com.dwcode.okxbot.storage.ScratchWorkspace;
+import com.dwcode.okxbot.storage.config.StorageProperties;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -21,8 +25,17 @@ class StoryboardPathSecurityTest {
     @BeforeEach
     void setUp() {
         AigenProperties props = new AigenProperties();
-        props.setWorkDir(temp.toString());
-        storage = new AigenStorageService(props);
+        props.setWorkDir(temp.resolve("legacy-aigen").toString());
+
+        StorageProperties storageProps = new StorageProperties();
+        storageProps.setEnvPrefix("dev");
+        storageProps.getLocal().setRoot(temp.resolve("objects").toString());
+        storageProps.getScratch().setRoot(temp.resolve("scratch").toString());
+
+        LocalObjectStorage objectStorage = new LocalObjectStorage(storageProps);
+        ObjectKeyBuilder keys = new ObjectKeyBuilder(storageProps);
+        ScratchWorkspace scratch = new ScratchWorkspace(storageProps);
+        storage = new AigenStorageService(props, objectStorage, keys, scratch, storageProps);
     }
 
     @Test

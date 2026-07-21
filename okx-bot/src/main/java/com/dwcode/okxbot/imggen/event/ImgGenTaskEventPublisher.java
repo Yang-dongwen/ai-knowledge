@@ -174,9 +174,19 @@ public class ImgGenTaskEventPublisher {
     }
 
     private Map<String, Object> toLightData(ImgGenTaskEntity e) {
-        boolean outputAvailable = e.getCoverPath() != null
-                && !e.getCoverPath().isBlank()
-                && Files.isRegularFile(Path.of(e.getCoverPath()));
+        boolean outputAvailable = false;
+        String cp = e.getCoverPath();
+        if (cp != null && !cp.isBlank()) {
+            if (com.dwcode.okxbot.storage.ObjectKeyBuilder.looksLikeLocalAbsolutePath(cp)) {
+                try {
+                    outputAvailable = Files.isRegularFile(Path.of(cp));
+                } catch (Exception ignored) {
+                    outputAvailable = false;
+                }
+            } else {
+                outputAvailable = true;
+            }
+        }
         Map<String, Object> d = new LinkedHashMap<>();
         d.put("id", String.valueOf(e.getId()));
         d.put("taskId", String.valueOf(e.getId()));

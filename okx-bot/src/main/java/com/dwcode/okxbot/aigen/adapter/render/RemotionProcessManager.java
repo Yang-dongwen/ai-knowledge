@@ -42,6 +42,7 @@ public class RemotionProcessManager {
 
     private final AigenProperties aigenProperties;
     private final VideoProperties videoProperties;
+    private final RemotionMediaRoots remotionMediaRoots;
     private final ObjectMapper objectMapper = new ObjectMapper();
 
     private final Object lock = new Object();
@@ -236,9 +237,10 @@ public class RemotionProcessManager {
         if (cfg.getRenderToken() != null && !cfg.getRenderToken().isBlank()) {
             pb.environment().put("AIGEN_RENDER_TOKEN", cfg.getRenderToken());
         }
-        // 任务目录在 work-dir/{taskId} 下，允许根即 aigen.work-dir
-        Path workRoot = Path.of(aigenProperties.getWorkDir()).toAbsolutePath().normalize();
+        // 允许根须覆盖 scratch（data/_scratch/aigen）与遗留 work-dir（data/aigen）
+        Path workRoot = remotionMediaRoots.resolveAllowedWorkRoot();
         pb.environment().put("ALLOWED_WORK_ROOT", workRoot.toString());
+        log.info("aigen-remotion ALLOWED_WORK_ROOT={}", workRoot);
         // 成片旁白混音依赖 ffmpeg（修复 Remotion 静音轨）
         String ffmpeg = resolveFfmpegPath();
         if (ffmpeg != null) {

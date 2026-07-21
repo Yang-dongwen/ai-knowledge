@@ -11,6 +11,7 @@ import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.core.io.Resource;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
@@ -192,9 +193,27 @@ public class VideoProcessController {
         return ApiResult.ok(videoProcessService.getSummary(taskId));
     }
 
+    /**
+     * PR5：媒体直链（R2 预签名）。前端播放/下载优先调此接口，流量不经应用服务器。
+     *
+     * @param disposition inline（默认，播放）| attachment（下载）
+     */
+    @GetMapping("/tasks/{taskId}/media-url")
+    public ApiResult<com.dwcode.okxbot.storage.dto.MediaUrlResponse> videoMediaUrl(
+            @PathVariable Long taskId,
+            @RequestParam(required = false, defaultValue = "inline") String disposition) {
+        return ApiResult.ok(videoProcessService.resolveVideoMediaUrl(taskId, disposition));
+    }
+
+    /**
+     * 视频流代理（HTTP Range）。PR5 后作回退；优先 {@link #videoMediaUrl}。
+     * <p>浏览器 &lt;video src&gt; 可带 {@code ?access_token=}（见 JwtAuthFilter）。
+     */
     @GetMapping("/tasks/{taskId}/video")
-    public ResponseEntity<Resource> downloadVideo(@PathVariable Long taskId) {
-        return videoProcessService.downloadVideo(taskId);
+    public ResponseEntity<Resource> downloadVideo(
+            @PathVariable Long taskId,
+            @RequestHeader(value = HttpHeaders.RANGE, required = false) String range) {
+        return videoProcessService.downloadVideo(taskId, range);
     }
 
     @DeleteMapping("/tasks/{taskId}")

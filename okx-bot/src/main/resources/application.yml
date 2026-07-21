@@ -128,6 +128,37 @@ ai:
       models: []
     # openai / deepseek 的 models 也可清空，聊天模块若仍读 yml 可保留少量
 
+# 统一对象存储（PR1：local；PR2 接 Cloudflare R2）
+# 业务模块尚未全部切换；新代码应注入 ObjectStoragePort / ScratchWorkspace / ObjectKeyBuilder
+storage:
+  provider: r2          # local | r2（r2 需配置下方凭证；PR2 已实现）
+  env-prefix: dev          # 单桶分环境：dev / prod → key 前缀
+  # proxy=经应用转发；presign=R2 预签名直链（PR5，大文件不经 JVM）；hybrid=优先 presign 失败回退 proxy
+  serve-mode: presign
+  local:
+    root: ./data/_objects  # LocalObjectStorage：{root}/{objectKey}
+  scratch:
+    root: ./data/_scratch  # 流水线临时目录 {root}/{module}/{taskId}/
+    ttl-hours: 24
+  cleanup:
+    scratch-on-success: true
+    scratch-on-failure: true
+    r2-on-failure: true
+  r2:
+    account-id: de23e01745a69ed8802046185306343a
+    bucket: dwcode
+    access-key-id: debf3c19601c8a84d37d26fdbcd6e2a6
+    secret-access-key: 085ef3449a13ca35d5ad95f058f153e62aa55a0e1c1fed37aa18ed9a39d639a7
+    # endpoint 空则 https://{account-id}.r2.cloudflarestorage.com
+    endpoint: https://de23e01745a69ed8802046185306343a.r2.cloudflarestorage.com
+    region: auto
+    path-style: true
+    presign-ttl-seconds: 900
+    public-base-url: ""
+    # 超过阈值走 Multipart（aigen 成片等）
+    multipart-threshold-bytes: 104857600   # 100MB
+    multipart-part-size-bytes: 8388608     # 8MB
+
 # 视频核心内容提取（VideoCoreExtractor v2 持久化）
 video:
   # 按 taskId 分目录：video/audio/transcription.json/summary.json
@@ -238,7 +269,8 @@ aigen:
   visual:
     min-shots: 4
     max-shots: 12
-    image-concurrency: 2
+    # 并发出图；过高易触发 NVIDIA 5xx，建议 1～2
+    image-concurrency: 1
     # true=单镜出图失败即整单失败，避免「成功但假图」
     fail-on-shot-error: true
     # fail-on-shot-error=false 时：占位镜占比达到该阈值仍失败

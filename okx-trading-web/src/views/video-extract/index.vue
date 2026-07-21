@@ -707,7 +707,7 @@
                     <div class="video-box">
                       <!-- 不用 a-spin 包 video：嵌套高度算不准时竖屏会把控件裁出可视区，表现为「有画面点不了播放」 -->
                       <div v-if="videoBlobLoading" class="video-loading-mask">
-                        <a-spin tip="加载视频…" />
+                        <a-spin tip="准备播放…" />
                       </div>
                       <template v-else-if="videoObjectUrl">
                         <video
@@ -716,8 +716,9 @@
                           controls
                           playsinline
                           webkit-playsinline
-                          preload="auto"
+                          preload="metadata"
                           :src="videoObjectUrl"
+                          @loadedmetadata="onVideoLoaded"
                           @loadeddata="onVideoLoaded"
                           @play="videoPlaying = true"
                           @pause="videoPlaying = false"
@@ -1752,58 +1753,78 @@ async function selectTask(taskId: string) {
   selectedId.value = taskId
   activeTab.value = 'overview'
   transcriptQuery.value = ''
+  // 媒体加载由 detail watch 统一触发，避免与 refreshDetail 内/watch 重复打 media-url
   await refreshDetail()
-  await maybeLoadVideoBlob()
 }
 
 function revokeVideoObjectUrl() {
-  if (videoObjectUrl.value) {
+  if (videoObjectUrl.value?.startsWith('blob:')) {
     URL.revokeObjectURL(videoObjectUrl.value)
-    videoObjectUrl.value = ''
   }
+  videoObjectUrl.value = ''
   videoBlobTaskId.value = ''
   videoBlobError.value = ''
   videoPlaying.value = false
 }
 
+/** 同一 taskId 进行中的 media-url 请求（防并发双发） */
+let videoUrlInflight: { taskId: string; promise: Promise<void> } | null = null
+
 /**
- * 带 JWT 拉取视频 Blob，用 object URL 给 <video src>（浏览器不会给 video 标签带 Authorization）。
+ * PR5：优先 R2 预签名直链赋给 &lt;video src&gt;（流量不经后端）；
+ * 失败回退同源代理 + access_token（仍支持 Range 边下边播）。
  */
 async function loadVideoBlob(taskId: string, force = false) {
   if (!taskId) return
   if (!force && videoBlobTaskId.value === taskId && videoObjectUrl.value) return
-  videoBlobLoading.value = true
-  videoBlobError.value = ''
-  videoPlaying.value = false
-  try {
-    if (videoObjectUrl.value) {
-      URL.revokeObjectURL(videoObjectUrl.value)
+  if (!force && videoUrlInflight?.taskId === taskId) {
+    await videoUrlInflight.promise
+    return
+  }
+
+  const run = (async () => {
+    videoBlobLoading.value = true
+    videoBlobError.value = ''
+    videoPlaying.value = false
+    try {
+      if (videoObjectUrl.value?.startsWith('blob:')) {
+        URL.revokeObjectURL(videoObjectUrl.value)
+      }
       videoObjectUrl.value = ''
+      videoBlobTaskId.value = ''
+      let url: string
+      try {
+        const r = await videoApi.resolvePlayUrl(taskId)
+        url = r.url
+      } catch {
+        url = videoApi.videoStreamUrl(taskId)
+      }
+      if (selectedId.value !== taskId) return
+      videoObjectUrl.value = url
+      videoBlobTaskId.value = taskId
+      await nextTick()
+      const el = videoRef.value
+      if (el) {
+        el.load()
+      }
+    } catch (e: any) {
+      if (selectedId.value === taskId) {
+        videoBlobError.value = e?.message || '视频加载失败'
+        message.error(videoBlobError.value)
+      }
+    } finally {
+      if (selectedId.value === taskId) {
+        videoBlobLoading.value = false
+      }
     }
-    videoBlobTaskId.value = ''
-    const blob = await videoApi.fetchVideoBlob(taskId)
-    // 切换任务后丢弃过期结果
-    if (selectedId.value !== taskId) return
-    // 强制 MIME，避免 blob type 为空导致部分浏览器只显示一帧却无法播
-    const typed =
-      blob.type && blob.type.startsWith('video/')
-        ? blob
-        : new Blob([blob], { type: 'video/mp4' })
-    videoObjectUrl.value = URL.createObjectURL(typed)
-    videoBlobTaskId.value = taskId
-    await nextTick()
-    const el = videoRef.value
-    if (el) {
-      el.load()
-    }
-  } catch (e: any) {
-    if (selectedId.value === taskId) {
-      videoBlobError.value = e?.message || '视频加载失败'
-      message.error(videoBlobError.value)
-    }
+  })()
+
+  videoUrlInflight = { taskId, promise: run }
+  try {
+    await run
   } finally {
-    if (selectedId.value === taskId) {
-      videoBlobLoading.value = false
+    if (videoUrlInflight?.taskId === taskId) {
+      videoUrlInflight = null
     }
   }
 }
@@ -1852,16 +1873,9 @@ async function downloadTaskVideo(task?: VideoTaskItem | null) {
   if (videoDownloading.value) return
   videoDownloading.value = true
   try {
-    let objectUrl = ''
-    let needRevoke = false
-    // 已加载的播放 blob 可直接复用，避免二次请求
-    if (videoObjectUrl.value && videoBlobTaskId.value === t.taskId) {
-      objectUrl = videoObjectUrl.value
-    } else {
-      const blob = await videoApi.fetchVideoBlob(t.taskId)
-      objectUrl = URL.createObjectURL(blob)
-      needRevoke = true
-    }
+    // 播放用流地址；另存为需整文件拉取（带 JWT）
+    const blob = await videoApi.fetchVideoBlob(t.taskId)
+    const objectUrl = URL.createObjectURL(blob)
     const safeTitle = (t.title || `video-${t.taskId}`)
       .replace(/[\\/:*?"<>|]+/g, '_')
       .replace(/\s+/g, ' ')
@@ -1874,10 +1888,7 @@ async function downloadTaskVideo(task?: VideoTaskItem | null) {
     document.body.appendChild(a)
     a.click()
     a.remove()
-    if (needRevoke) {
-      // 稍延后释放，避免部分浏览器下载中断
-      window.setTimeout(() => URL.revokeObjectURL(objectUrl), 60_000)
-    }
+    window.setTimeout(() => URL.revokeObjectURL(objectUrl), 60_000)
     message.success('已开始下载视频')
   } catch (e: any) {
     message.error(e?.message || '下载视频失败')
@@ -1890,10 +1901,10 @@ function onVideoElementError() {
   videoBlobError.value =
     '视频解码失败（若为抖音 HEVC，请确认后端已生成 video.browser.mp4）。可点重试。'
   videoPlaying.value = false
-  if (videoObjectUrl.value) {
+  if (videoObjectUrl.value?.startsWith('blob:')) {
     URL.revokeObjectURL(videoObjectUrl.value)
-    videoObjectUrl.value = ''
   }
+  videoObjectUrl.value = ''
   videoBlobTaskId.value = ''
 }
 
@@ -2206,7 +2217,7 @@ async function refreshDetail() {
         understandingMode: res.data.understandingMode
       }
     }
-    await maybeLoadVideoBlob()
+    // 不在这里 load 视频：detail 赋值会触发下方 watch，避免 media-url 打两遍
   } catch {
     // ignore
   } finally {
@@ -2482,10 +2493,14 @@ watch(selectedId, (id, prev) => {
   }
 })
 
-// 详情 videoAvailable 变化时尝试加载播放 blob
+// 详情就绪 / 视频可用时加载播放地址（唯一自动触发点，避免 media-url 重复）
 watch(
   () => [detail.value?.taskId, detail.value?.videoAvailable, detail.value?.status] as const,
-  () => {
+  ([taskId, available], prev) => {
+    if (!taskId || !available) return
+    // 同任务且仅其它字段抖动时，loadVideoBlob 内部会 short-circuit
+    const sameTask = prev && prev[0] === taskId && prev[1] === available
+    if (sameTask && videoBlobTaskId.value === taskId && videoObjectUrl.value) return
     void maybeLoadVideoBlob()
   }
 )

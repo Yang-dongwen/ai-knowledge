@@ -20,13 +20,14 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.core.io.FileSystemResource;
+import org.springframework.core.io.InputStreamResource;
 import org.springframework.core.io.Resource;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Service;
 
+import java.io.InputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.LocalDateTime;
@@ -57,6 +58,7 @@ public class ImgGenTaskService {
     private final ImgGenProperties properties;
     private final AiProperties aiProperties;
     private final AiModelConfigService aiModelConfigService;
+    private final com.dwcode.okxbot.storage.MediaUrlService mediaUrlService;
     private final PromptEnhancePort promptEnhancePort;
     private final ObjectMapper objectMapper;
 
@@ -424,9 +426,9 @@ public class ImgGenTaskService {
         }
 
         try {
-            storageService.deleteTaskDir(String.valueOf(taskId));
+            storageService.deleteTaskStorage(entity.getUserId(), String.valueOf(taskId));
         } catch (Exception e) {
-            log.warn("重试前清理目录失败: {}", e.getMessage());
+            log.warn("重试前清理存储失败: {}", e.getMessage());
         }
 
         taskScheduler.clearCancelRequest(taskId);
@@ -461,7 +463,7 @@ public class ImgGenTaskService {
             taskScheduler.requestPause(taskId);
         }
         if (properties.isCleanupOnDelete()) {
-            storageService.deleteTaskDir(String.valueOf(taskId));
+            storageService.deleteTaskStorage(ownerId, String.valueOf(taskId));
         }
         int rows = taskMapper.deleteById(taskId);
         if (rows <= 0) {
@@ -471,20 +473,23 @@ public class ImgGenTaskService {
         eventPublisher.publishDeleted(ownerId, taskId);
     }
 
+    /**
+     * PR5：单图直链（R2 预签名优先）。
+     */
+    public com.dwcode.okxbot.storage.dto.MediaUrlResponse resolveMediaUrl(Long taskId, String fileName, String disposition) {
+        ImgGenTaskEntity entity = requireOwnedTask(taskId);
+        String keyOrPath = storageService.resolveOutputImageKeyOrPath(entity, fileName);
+        boolean attachment = disposition != null && disposition.equalsIgnoreCase("attachment");
+        String proxy = "/api/v1/imggen/tasks/" + taskId + "/media/"
+                + java.net.URLEncoder.encode(fileName, java.nio.charset.StandardCharsets.UTF_8);
+        return mediaUrlService.resolve(keyOrPath, proxy, attachment, fileName);
+    }
+
     public ResponseEntity<Resource> openMedia(Long taskId, String fileName) {
         ImgGenTaskEntity entity = requireOwnedTask(taskId);
         if (fileName == null || fileName.isBlank()
                 || fileName.contains("..") || fileName.contains("/") || fileName.contains("\\")) {
             throw new BusinessException(400, "非法文件名");
-        }
-        Path workRoot = storageService.resolveWorkRoot();
-        Path taskDir = storageService.resolveTaskDir(String.valueOf(taskId));
-        Path file = taskDir.resolve("outputs").resolve(fileName).normalize();
-        if (!file.startsWith(workRoot) || !file.startsWith(taskDir)) {
-            throw new BusinessException(403, "非法路径");
-        }
-        if (!Files.isRegularFile(file)) {
-            throw new BusinessException(404, "文件不存在");
         }
         String lower = fileName.toLowerCase();
         MediaType mediaType = MediaType.IMAGE_PNG;
@@ -493,11 +498,30 @@ public class ImgGenTaskService {
         } else if (lower.endsWith(".webp")) {
             mediaType = MediaType.parseMediaType("image/webp");
         }
-        Resource resource = new FileSystemResource(file);
-        return ResponseEntity.ok()
+        InputStream in = storageService.openOutputImage(entity, fileName);
+        long len = storageService.headOutputImage(entity, fileName)
+                .map(m -> m.getSizeBytes())
+                .orElse(-1L);
+        final long contentLen = len;
+        final String outName = fileName;
+        Resource resource = new InputStreamResource(in) {
+            @Override
+            public long contentLength() {
+                return contentLen > 0 ? contentLen : -1;
+            }
+
+            @Override
+            public String getFilename() {
+                return outName;
+            }
+        };
+        ResponseEntity.BodyBuilder bb = ResponseEntity.ok()
                 .contentType(mediaType)
-                .header(HttpHeaders.CONTENT_DISPOSITION, "inline; filename=\"" + fileName + "\"")
-                .body(resource);
+                .header(HttpHeaders.CONTENT_DISPOSITION, "inline; filename=\"" + fileName + "\"");
+        if (contentLen > 0) {
+            bb = bb.header(HttpHeaders.CONTENT_LENGTH, String.valueOf(contentLen));
+        }
+        return bb.body(resource);
     }
 
     private ImgGenTaskEntity requireOwnedTask(Long taskId) {
@@ -513,9 +537,11 @@ public class ImgGenTaskService {
     }
 
     private ImgGenTaskResponse toResponse(ImgGenTaskEntity e) {
-        boolean outputAvailable = e.getCoverPath() != null
-                && !e.getCoverPath().isBlank()
-                && Files.isRegularFile(Path.of(e.getCoverPath()));
+        boolean outputAvailable = storageService.mediaAvailable(e.getCoverPath());
+        // 兼容：cover 已清本地但 result 里仍有图
+        if (!outputAvailable && e.getResultJson() != null && e.getResultJson().contains("outputs/")) {
+            outputAvailable = true;
+        }
         List<ImgGenTaskResponse.ImageFileDto> images = parseImages(e);
         return ImgGenTaskResponse.builder()
                 .id(String.valueOf(e.getId()))

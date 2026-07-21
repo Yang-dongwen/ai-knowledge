@@ -1,5 +1,7 @@
 package com.dwcode.okxbot.video.event;
 
+import com.dwcode.okxbot.storage.ObjectKeyBuilder;
+import com.dwcode.okxbot.storage.ObjectStoragePort;
 import com.dwcode.okxbot.video.entity.VideoTaskEntity;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
@@ -41,6 +43,7 @@ public class VideoTaskEventPublisher {
     private static final DateTimeFormatter DT_FMT = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
 
     private final ObjectMapper objectMapper;
+    private final ObjectStoragePort objectStorage;
 
     /** userId → emitters */
     private final ConcurrentHashMap<Long, CopyOnWriteArrayList<SseEmitter>> userEmitters =
@@ -183,9 +186,29 @@ public class VideoTaskEventPublisher {
     }
 
     private Map<String, Object> toLightData(VideoTaskEntity e) {
-        boolean videoAvailable = e.getVideoPath() != null
-                && !e.getVideoPath().isBlank()
-                && Files.isRegularFile(Path.of(e.getVideoPath()));
+        boolean videoAvailable = false;
+        String vp = e.getVideoPath();
+        if (vp != null && !vp.isBlank()) {
+            if (ObjectKeyBuilder.looksLikeLocalAbsolutePath(vp)) {
+                try {
+                    videoAvailable = Files.isRegularFile(Path.of(vp));
+                } catch (Exception ignored) {
+                    videoAvailable = false;
+                }
+            } else {
+                try {
+                    videoAvailable = objectStorage.exists(vp);
+                    if (!videoAvailable && vp.contains("video.") && !vp.contains("browser")) {
+                        int slash = vp.lastIndexOf('/');
+                        String browserKey = (slash >= 0 ? vp.substring(0, slash + 1) : "") + "video.browser.mp4";
+                        videoAvailable = objectStorage.exists(browserKey);
+                    }
+                } catch (Exception ignored) {
+                    // 降级：非空 key 视为可用，避免 SSE 因存储抖动标红
+                    videoAvailable = true;
+                }
+            }
+        }
         Map<String, Object> d = new LinkedHashMap<>();
         d.put("taskId", String.valueOf(e.getId()));
         d.put("status", e.getStatus());

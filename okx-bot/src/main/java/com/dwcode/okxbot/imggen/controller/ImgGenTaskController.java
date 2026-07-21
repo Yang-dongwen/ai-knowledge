@@ -67,6 +67,21 @@ public class ImgGenTaskController {
         return ApiResult.ok(taskService.getTask(taskId));
     }
 
+    /**
+     * PR5：单图直链（R2 预签名）。
+     *
+     * @param fileName    outputs 下文件名
+     * @param disposition inline | attachment
+     */
+    @GetMapping("/tasks/{taskId}/media-url")
+    public ApiResult<com.dwcode.okxbot.storage.dto.MediaUrlResponse> mediaUrl(
+            @PathVariable Long taskId,
+            @RequestParam String fileName,
+            @RequestParam(required = false, defaultValue = "inline") String disposition) {
+        return ApiResult.ok(taskService.resolveMediaUrl(taskId, fileName, disposition));
+    }
+
+    /** 图片流代理（PR5 回退）。 */
     @GetMapping("/tasks/{taskId}/media/{fileName}")
     public ResponseEntity<Resource> media(
             @PathVariable Long taskId,

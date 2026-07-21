@@ -17,7 +17,8 @@ import org.springframework.web.filter.OncePerRequestFilter;
 import java.io.IOException;
 
 /**
- * 从 Authorization: Bearer &lt;token&gt; 解析 JWT 并写入 SecurityContext。
+ * 从 Authorization: Bearer 或查询参数 {@code access_token}/{@code token} 解析 JWT。
+ * <p>查询参数用于 &lt;video src&gt; / 浏览器原生 Range 请求（无法带 Authorization 头）。
  */
 @Slf4j
 @Component
@@ -31,11 +32,11 @@ public class JwtAuthFilter extends OncePerRequestFilter {
     protected void doFilterInternal(HttpServletRequest request,
                                     HttpServletResponse response,
                                     FilterChain filterChain) throws ServletException, IOException {
-        String header = request.getHeader(HttpHeaders.AUTHORIZATION);
-        if (header != null && header.startsWith("Bearer ")) {
-            String token = header.substring(7).trim();
+        String token = extractToken(request);
+        if (token != null && !token.isBlank()
+                && SecurityContextHolder.getContext().getAuthentication() == null) {
             try {
-                if (jwtService.isValid(token) && SecurityContextHolder.getContext().getAuthentication() == null) {
+                if (jwtService.isValid(token)) {
                     Claims claims = jwtService.parseClaims(token);
                     Long userId = Long.parseLong(claims.getSubject());
                     AuthUserPrincipal principal = userDetailsService.loadById(userId);
@@ -52,5 +53,21 @@ public class JwtAuthFilter extends OncePerRequestFilter {
             }
         }
         filterChain.doFilter(request, response);
+    }
+
+    private static String extractToken(HttpServletRequest request) {
+        String header = request.getHeader(HttpHeaders.AUTHORIZATION);
+        if (header != null && header.startsWith("Bearer ")) {
+            String t = header.substring(7).trim();
+            if (!t.isEmpty()) {
+                return t;
+            }
+        }
+        // 媒体直链：?access_token= 或 ?token=
+        String q = request.getParameter("access_token");
+        if (q == null || q.isBlank()) {
+            q = request.getParameter("token");
+        }
+        return q != null && !q.isBlank() ? q.trim() : null;
     }
 }

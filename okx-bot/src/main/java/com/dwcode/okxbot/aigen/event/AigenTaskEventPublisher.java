@@ -182,9 +182,20 @@ public class AigenTaskEventPublisher {
     }
 
     private Map<String, Object> toLightData(AigenTaskEntity e) {
-        boolean outputAvailable = e.getOutputPath() != null
-                && !e.getOutputPath().isBlank()
-                && Files.isRegularFile(Path.of(e.getOutputPath()));
+        boolean outputAvailable = false;
+        String op = e.getOutputPath();
+        if (op != null && !op.isBlank()) {
+            if (com.dwcode.okxbot.storage.ObjectKeyBuilder.looksLikeLocalAbsolutePath(op)) {
+                try {
+                    outputAvailable = Files.isRegularFile(Path.of(op));
+                } catch (Exception ignored) {
+                    outputAvailable = false;
+                }
+            } else {
+                // object key：非空即视为可用（避免 SSE 频繁 head）
+                outputAvailable = true;
+            }
+        }
         Map<String, Object> d = new LinkedHashMap<>();
         d.put("id", String.valueOf(e.getId()));
         d.put("taskId", String.valueOf(e.getId()));

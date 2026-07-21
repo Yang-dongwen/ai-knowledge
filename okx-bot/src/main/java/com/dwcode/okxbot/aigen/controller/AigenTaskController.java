@@ -104,11 +104,36 @@ public class AigenTaskController {
     }
 
     /**
-     * 成片流（需登录且为任务所有者）。前端建议 fetch+Authorization 转 blob 播放。
+     * PR5：成片直链（R2 预签名）。
+     *
+     * @param disposition inline | attachment
+     */
+    @GetMapping("/tasks/{taskId}/media-url")
+    public ApiResult<com.dwcode.okxbot.storage.dto.MediaUrlResponse> outputMediaUrl(
+            @PathVariable Long taskId,
+            @RequestParam(required = false, defaultValue = "inline") String disposition) {
+        return ApiResult.ok(aigenTaskService.resolveOutputMediaUrl(taskId, disposition));
+    }
+
+    /**
+     * PR5：镜头图直链。
+     */
+    @GetMapping("/tasks/{taskId}/shots/{shotId}/media-url")
+    public ApiResult<com.dwcode.okxbot.storage.dto.MediaUrlResponse> shotImageMediaUrl(
+            @PathVariable Long taskId,
+            @PathVariable String shotId) {
+        return ApiResult.ok(aigenTaskService.resolveShotImageMediaUrl(taskId, shotId));
+    }
+
+    /**
+     * 成片流代理（HTTP Range）。PR5 后作回退；优先 media-url。
+     * &lt;video src&gt; 可带 {@code ?access_token=}。
      */
     @GetMapping("/tasks/{taskId}/media/output")
-    public ResponseEntity<Resource> mediaOutput(@PathVariable Long taskId) {
-        return aigenTaskService.openOutputMedia(taskId);
+    public ResponseEntity<Resource> mediaOutput(
+            @PathVariable Long taskId,
+            @RequestHeader(value = org.springframework.http.HttpHeaders.RANGE, required = false) String range) {
+        return aigenTaskService.openOutputMedia(taskId, range);
     }
 
     @PostMapping("/tasks/{taskId}/cancel")

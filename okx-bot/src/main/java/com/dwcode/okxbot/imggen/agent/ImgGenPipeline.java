@@ -115,6 +115,9 @@ public class ImgGenPipeline {
                 }
             }
 
+            // 上传 outputs 到对象存储并清 scratch
+            storageService.persistAndCleanupAfterSuccess(task);
+
             task.setStatus(ImgGenTaskStatus.SUCCESS.name());
             task.setCurrentStep("生成完成");
             task.setProgress(100);
@@ -124,7 +127,8 @@ public class ImgGenPipeline {
             task.setUpdatedAt(LocalDateTime.now());
             taskMapper.updateById(task);
             eventPublisher.publishEntity(task, ImgGenTaskEventPublisher.TYPE_STATUS);
-            log.info("imggen 完成: taskId={} total={}ms", taskId, task.getTotalDurationMs());
+            log.info("imggen 完成: taskId={} total={}ms cover={}",
+                    taskId, task.getTotalDurationMs(), task.getCoverPath());
 
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
@@ -133,18 +137,22 @@ public class ImgGenPipeline {
             } else {
                 markCancelled(task, pipelineStart);
             }
+            storageService.cleanupAfterFailure(task);
         } catch (Exception e) {
             if (taskScheduler.isPauseRequested(taskId)) {
                 markPaused(task, pipelineStart, "用户暂停");
+                storageService.cleanupAfterFailure(task);
                 return;
             }
             if (taskScheduler.isCancelRequested(taskId)) {
                 markCancelled(task, pipelineStart);
+                storageService.cleanupAfterFailure(task);
                 return;
             }
             log.error("imggen 流水线失败: taskId={}", taskId, e);
             String msg = e.getMessage() != null ? e.getMessage() : e.getClass().getSimpleName();
             failTask(task, msg, System.currentTimeMillis() - pipelineStart);
+            storageService.cleanupAfterFailure(task);
         } finally {
             taskScheduler.markFinished(taskId);
         }

@@ -109,7 +109,7 @@ public class VideoProcessingPipeline {
             eventPublisher.publishEntity(task, VideoTaskEventPublisher.TYPE_STATUS);
             log.info("步骤耗时: taskId={}, download={}ms", taskId, downloadMs);
 
-            // 仅下载：到此结束
+            // 仅下载：持久化到对象存储后结束
             if (mode.isDownloadOnly()) {
                 if (shouldPause(taskId, task, pipelineStart)) {
                     return;
@@ -282,36 +282,32 @@ public class VideoProcessingPipeline {
             response.setTranscription(transcription);
 
             task.setResultJson(objectMapper.writeValueAsString(response));
-            task.setStatus(VideoTaskStatus.SUCCESS.name());
-            task.setCurrentStep(degraded ? "完成（已降级为纯音频总结）" : "完成");
-            task.setFinishedAt(LocalDateTime.now());
-            task.setTotalDurationMs(System.currentTimeMillis() - pipelineStart);
-            task.setUpdatedAt(LocalDateTime.now());
-            task.setErrorMessage(null);
             if (degraded) {
                 task.setDegraded(1);
                 task.setDegradeReason(truncate(degradeReason, 500));
             } else {
                 task.setDegraded(0);
             }
+
+            // 上传 durable 产物到对象存储（local/R2），路径改为 object key，并清 scratch
+            storageService.persistAndCleanupAfterSuccess(task);
+
+            task.setStatus(VideoTaskStatus.SUCCESS.name());
+            task.setCurrentStep(degraded ? "完成（已降级为纯音频总结）" : "完成");
+            task.setFinishedAt(LocalDateTime.now());
+            task.setTotalDurationMs(System.currentTimeMillis() - pipelineStart);
+            task.setUpdatedAt(LocalDateTime.now());
+            task.setErrorMessage(null);
             videoTaskMapper.updateById(task);
             eventPublisher.publishEntity(task, VideoTaskEventPublisher.TYPE_STATUS);
 
-            // 仅下载模式绝不清理视频；总结模式才按配置清理中间媒体
-            if (videoProperties.isCleanupMedia() && !mode.isDownloadOnly()) {
-                cleanupMediaOnly(taskIdStr);
-                task.setVideoPath(null);
-                task.setAudioPath(null);
-                task.setUpdatedAt(LocalDateTime.now());
-                videoTaskMapper.updateById(task);
-                eventPublisher.publishEntity(task, VideoTaskEventPublisher.TYPE_STATUS);
-            }
-
-            log.info("视频任务完成: taskId={}, title={}, mode={}, degraded={}, total={}ms",
-                    taskId, task.getTitle(), mode.wireValue(), degraded, task.getTotalDurationMs());
+            log.info("视频任务完成: taskId={}, title={}, mode={}, degraded={}, total={}ms, videoKey={}",
+                    taskId, task.getTitle(), mode.wireValue(), degraded, task.getTotalDurationMs(),
+                    task.getVideoPath());
         } catch (Exception e) {
             if (taskScheduler.isPauseRequested(taskId) || isPausedInDb(taskId)) {
                 markPaused(task, pipelineStart, "用户暂停（当前步骤被中断）");
+                storageService.cleanupAfterFailure(task);
                 return;
             }
             log.error("视频任务失败: taskId={}", taskId, e);
@@ -323,6 +319,7 @@ public class VideoProcessingPipeline {
             task.setUpdatedAt(LocalDateTime.now());
             videoTaskMapper.updateById(task);
             eventPublisher.publishEntity(task, VideoTaskEventPublisher.TYPE_STATUS);
+            storageService.cleanupAfterFailure(task);
         } finally {
             taskScheduler.markFinished(taskId);
         }
@@ -339,19 +336,21 @@ public class VideoProcessingPipeline {
         response.setSourceUrl(task.getSourceUrl());
         response.setUnderstandingMode(UnderstandingMode.DOWNLOAD_ONLY.wireValue());
         response.setDegraded(false);
-        // 无 summary / transcription，前端按 videoAvailable 展示播放器
 
         task.setResultJson(objectMapper.writeValueAsString(response));
+        task.setDegraded(0);
+        // 上传视频到对象存储并清理本地 scratch
+        storageService.persistAndCleanupAfterSuccess(task);
+
         task.setStatus(VideoTaskStatus.SUCCESS.name());
         task.setCurrentStep("下载完成");
         task.setFinishedAt(LocalDateTime.now());
         task.setTotalDurationMs(System.currentTimeMillis() - pipelineStart);
         task.setUpdatedAt(LocalDateTime.now());
         task.setErrorMessage(null);
-        task.setDegraded(0);
         videoTaskMapper.updateById(task);
         eventPublisher.publishEntity(task, VideoTaskEventPublisher.TYPE_STATUS);
-        log.info("仅下载任务完成: taskId={}, title={}, total={}ms, video={}",
+        log.info("仅下载任务完成: taskId={}, title={}, total={}ms, videoKey={}",
                 task.getId(), task.getTitle(), task.getTotalDurationMs(), task.getVideoPath());
     }
 
@@ -416,6 +415,8 @@ public class VideoProcessingPipeline {
         task.setCurrentStep(latest.getCurrentStep());
         task.setTotalDurationMs(latest.getTotalDurationMs());
         eventPublisher.publishEntity(latest, VideoTaskEventPublisher.TYPE_STATUS);
+        // 暂停也清 scratch（未完成的中间文件）；已上传对象较少，不强制删 R2
+        storageService.cleanupAfterFailure(latest);
         log.info("任务已暂停: taskId={}, step={}", task.getId(), step);
     }
 
@@ -431,7 +432,8 @@ public class VideoProcessingPipeline {
         log.info("任务状态更新: taskId={}, status={}, step={}", task.getId(), status, step);
     }
 
-    /** 仅删除媒体与分片，保留 json */
+    /** @deprecated PR3 起由 persistAndCleanupAfterSuccess 统一清理 */
+    @SuppressWarnings("unused")
     private void cleanupMediaOnly(String taskIdStr) {
         Path dir = storageService.resolveTaskDir(taskIdStr);
         if (!Files.isDirectory(dir)) {

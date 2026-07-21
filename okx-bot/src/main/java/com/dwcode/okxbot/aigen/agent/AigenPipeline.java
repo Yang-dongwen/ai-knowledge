@@ -140,11 +140,15 @@ public class AigenPipeline {
             // 成功前再扫一次磁盘：兼容历史「渲了文件但 path 未写入」的情况
             ensureOutputPathFromDisk(task, workDir);
 
-            // 诚实成功：无可用成片不得标 SUCCESS
+            // 诚实成功：无可用成片不得标 SUCCESS（此时仍是本地路径）
             if (!isPlayableOutput(task)) {
                 throw new IllegalStateException(
                         "渲染流程结束但未产出可播放的 output.mp4（请检查 aigen-remotion / ffmpeg / 磁盘路径）");
             }
+
+            // 上传 output + assets 到对象存储，outputPath 改为 object key，清 scratch
+            storageService.persistAndCleanupAfterSuccess(task);
+
             task.setStatus(AigenTaskStatus.SUCCESS.name());
             task.setCurrentStep("生成完成");
             task.setProgress(100);
@@ -166,13 +170,16 @@ public class AigenPipeline {
             } else {
                 markCancelled(task, pipelineStart);
             }
+            storageService.cleanupAfterFailure(task);
         } catch (Exception e) {
             if (taskScheduler.isPauseRequested(taskId) || isPausedInDb(taskId)) {
                 markPaused(task, pipelineStart, "用户暂停（当前步骤被中断）");
+                storageService.cleanupAfterFailure(task);
                 return;
             }
             if (taskScheduler.isCancelRequested(taskId)) {
                 markCancelled(task, pipelineStart);
+                storageService.cleanupAfterFailure(task);
                 return;
             }
             log.error("aigen 流水线失败: taskId={}", taskId, e);
@@ -186,6 +193,7 @@ public class AigenPipeline {
             } else {
                 failTask(task, msg, System.currentTimeMillis() - pipelineStart);
             }
+            storageService.cleanupAfterFailure(task);
         } finally {
             taskScheduler.markFinished(taskId);
         }

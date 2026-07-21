@@ -19,11 +19,13 @@ import com.dwcode.okxbot.chat.config.AiProperties;
 import com.dwcode.okxbot.chat.config.AiProperties.ProviderConfig;
 import com.dwcode.okxbot.common.exception.BusinessException;
 import com.dwcode.okxbot.imggen.util.AspectRatioMapper;
+import com.dwcode.okxbot.storage.ObjectKeyBuilder;
 import com.dwcode.okxbot.video.service.AiModelConfigService;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.core.io.FileSystemResource;
+import org.springframework.core.io.InputStreamResource;
 import org.springframework.core.io.Resource;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
@@ -31,6 +33,8 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
 
+import java.io.IOException;
+import java.io.InputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.LocalDateTime;
@@ -64,6 +68,7 @@ public class AigenTaskService {
     private final AiModelConfigService aiModelConfigService;
     private final VisualShotAssetService visualShotAssetService;
     private final VideoRenderPort videoRenderPort;
+    private final com.dwcode.okxbot.storage.MediaUrlService mediaUrlService;
 
     public AigenTaskResponse create(AigenCreateRequest request) {
         String prompt = request.getPrompt().trim();
@@ -441,11 +446,11 @@ public class AigenTaskService {
             }
         }
 
-        // 清空工作目录中的旧分镜/成片，避免成功任务重跑残留文件
+        // 清空 scratch / 对象前缀，避免成功任务重跑残留
         try {
-            storageService.deleteTaskDir(String.valueOf(taskId));
+            storageService.deleteTaskStorage(entity.getUserId(), String.valueOf(taskId));
         } catch (Exception e) {
-            log.warn("重试前清理任务目录失败 taskId={}: {}", taskId, e.getMessage());
+            log.warn("重试前清理任务存储失败 taskId={}: {}", taskId, e.getMessage());
         }
 
         taskScheduler.clearCancelRequest(taskId);
@@ -488,7 +493,7 @@ public class AigenTaskService {
         }
 
         if (aigenProperties.isCleanupOnDelete()) {
-            storageService.deleteTaskDir(String.valueOf(taskId));
+            storageService.deleteTaskStorage(ownerId, String.valueOf(taskId));
         }
 
         int rows = aigenTaskMapper.deleteById(taskId);
@@ -520,26 +525,81 @@ public class AigenTaskService {
     }
 
     /**
-     * 鉴权后流式输出成片。
+     * PR5：成片直链（R2 预签名优先）。
      */
-    public ResponseEntity<Resource> openOutputMedia(Long taskId) {
+    public com.dwcode.okxbot.storage.dto.MediaUrlResponse resolveOutputMediaUrl(Long taskId, String disposition) {
         AigenTaskEntity entity = requireOwnedTask(taskId);
-        if (entity.getOutputPath() == null || entity.getOutputPath().isBlank()) {
-            throw new BusinessException(404, "成片尚未生成");
+        String keyOrPath = storageService.resolveOutputKeyOrPath(entity);
+        boolean attachment = disposition != null && disposition.equalsIgnoreCase("attachment");
+        return mediaUrlService.resolve(
+                keyOrPath,
+                "/api/v1/aigen/tasks/" + taskId + "/media/output",
+                attachment,
+                "output.mp4");
+    }
+
+    /**
+     * PR5：镜头预览图直链。
+     */
+    public com.dwcode.okxbot.storage.dto.MediaUrlResponse resolveShotImageMediaUrl(Long taskId, String shotId) {
+        AigenTaskEntity entity = requireOwnedTask(taskId);
+        ShotlistDto list = loadShotlist(entity);
+        ShotDto shot = findShot(list, shotId);
+        Path workDir = resolveWorkDir(entity);
+        Path path = resolveShotPreviewImage(workDir, shot);
+        String keyOrPath;
+        String fileName = "shot.jpg";
+        String rel = null;
+        if (path != null && Files.isRegularFile(path)) {
+            keyOrPath = path.toAbsolutePath().toString();
+            fileName = path.getFileName().toString();
+            try {
+                rel = workDir.toAbsolutePath().normalize()
+                        .relativize(path.toAbsolutePath().normalize())
+                        .toString().replace('\\', '/');
+            } catch (Exception ignored) {
+                // ignore
+            }
+        } else {
+            rel = resolveShotPreviewRelative(shot);
+            if (rel == null) {
+                throw new BusinessException(404, "镜头图片不存在（仅有视频或文件缺失）");
+            }
+            keyOrPath = storageService.resolveRelativeKeyOrPath(entity, rel);
+            if (keyOrPath == null) {
+                throw new BusinessException(404, "镜头图片不存在（本地已清理且对象存储无此文件）");
+            }
+            fileName = rel.contains("/") ? rel.substring(rel.lastIndexOf('/') + 1) : rel;
         }
-        Path path = Path.of(entity.getOutputPath()).toAbsolutePath().normalize();
-        Path workRoot = storageService.resolveWorkRoot();
-        if (!path.startsWith(workRoot)) {
-            throw new BusinessException(403, "非法成片路径");
+        // 若本地路径已失效但 R2 有对象，改用 object key 做 presign
+        if (ObjectKeyBuilder.looksLikeLocalAbsolutePath(keyOrPath)
+                && !Files.isRegularFile(Path.of(keyOrPath))
+                && rel != null) {
+            String obj = storageService.resolveRelativeKeyOrPath(entity, rel);
+            if (obj != null && !ObjectKeyBuilder.looksLikeLocalAbsolutePath(obj)) {
+                keyOrPath = obj;
+            }
         }
-        if (!Files.isRegularFile(path)) {
-            throw new BusinessException(404, "成片文件不存在");
-        }
-        Resource resource = new FileSystemResource(path);
-        return ResponseEntity.ok()
-                .contentType(MediaType.parseMediaType("video/mp4"))
-                .header(HttpHeaders.CONTENT_DISPOSITION, "inline; filename=\"output.mp4\"")
-                .body(resource);
+        String proxy = "/api/v1/aigen/tasks/" + taskId + "/shots/"
+                + java.net.URLEncoder.encode(shotId, java.nio.charset.StandardCharsets.UTF_8) + "/image";
+        return mediaUrlService.resolve(keyOrPath, proxy, false, fileName);
+    }
+
+    /**
+     * 鉴权后流式输出成片（本地路径或对象存储 key），支持 HTTP Range 边下边播。
+     * PR5 后作回退；优先 {@link #resolveOutputMediaUrl}。
+     *
+     * @param rangeHeader 请求头 Range，可为 null
+     */
+    public ResponseEntity<Resource> openOutputMedia(Long taskId, String rangeHeader) {
+        AigenTaskEntity entity = requireOwnedTask(taskId);
+        long len = storageService.headOutput(entity).map(m -> m.getSizeBytes()).orElse(0L);
+        return com.dwcode.okxbot.common.web.MediaRangeSupport.build(
+                rangeHeader,
+                len,
+                "video/mp4",
+                "output.mp4",
+                (start, end) -> storageService.openOutputMedia(entity, start, end));
     }
 
     public Map<String, Object> getStoryboard(Long taskId) {
@@ -571,7 +631,7 @@ public class AigenTaskService {
         Path workDir = resolveWorkDir(entity);
         List<AigenShotSummary> out = new ArrayList<>();
         for (ShotDto s : list.getShots()) {
-            out.add(toShotSummary(workDir, s));
+            out.add(toShotSummary(entity, workDir, s));
         }
         return out;
     }
@@ -586,17 +646,60 @@ public class AigenTaskService {
         }
         // 页面 <img> 必须用静图：优先 assetPath 图片；若误指 mp4 则找同名 jpg
         Path path = resolveShotPreviewImage(workDir, shot);
-        if (path == null) {
-            throw new BusinessException(404, "镜头图片不存在（仅有视频或文件缺失）");
+        String fileName = "shot.jpg";
+        InputStream in;
+        if (path != null && Files.isRegularFile(path)) {
+            fileName = path.getFileName().toString();
+            try {
+                in = Files.newInputStream(path);
+            } catch (IOException e) {
+                throw new BusinessException("打开镜头图失败: " + e.getMessage());
+            }
+        } else {
+            // 对象存储：按相对路径打开
+            String rel = resolveShotPreviewRelative(shot);
+            if (rel == null) {
+                throw new BusinessException(404, "镜头图片不存在（仅有视频或文件缺失）");
+            }
+            fileName = rel.contains("/") ? rel.substring(rel.lastIndexOf('/') + 1) : rel;
+            in = storageService.openRelative(entity, rel);
         }
-        String name = path.getFileName().toString().toLowerCase(Locale.ROOT);
+        String name = fileName.toLowerCase(Locale.ROOT);
         MediaType mt = name.endsWith(".png") ? MediaType.IMAGE_PNG
                 : name.endsWith(".webp") ? MediaType.parseMediaType("image/webp")
                 : MediaType.IMAGE_JPEG;
+        final String outName = fileName;
+        Resource resource = new InputStreamResource(in) {
+            @Override
+            public String getFilename() {
+                return outName;
+            }
+        };
         return ResponseEntity.ok()
                 .contentType(mt)
-                .header(HttpHeaders.CONTENT_DISPOSITION, "inline; filename=\"" + path.getFileName() + "\"")
-                .body(new FileSystemResource(path));
+                .header(HttpHeaders.CONTENT_DISPOSITION, "inline; filename=\"" + outName + "\"")
+                .body(resource);
+    }
+
+    /** 无本地文件时，从 shot 解析对象存储相对路径 */
+    private String resolveShotPreviewRelative(ShotDto shot) {
+        if (shot == null || shot.getVisual() == null) {
+            return null;
+        }
+        String asset = shot.getVisual().getAssetPath();
+        if (asset == null || asset.isBlank()) {
+            return null;
+        }
+        String rel = asset.replace('\\', '/');
+        if (looksLikeImageName(rel)) {
+            return rel;
+        }
+        if (looksLikeVideoName(rel)) {
+            int dot = rel.lastIndexOf('.');
+            String base = dot > 0 ? rel.substring(0, dot) : rel;
+            return base + ".jpg";
+        }
+        return null;
     }
 
     /**
@@ -740,7 +843,7 @@ public class AigenTaskService {
             entity.setUpdatedAt(LocalDateTime.now());
             aigenTaskMapper.updateById(entity);
             eventPublisher.publishEntity(entity, AigenTaskEventPublisher.TYPE_STATUS);
-            return toShotSummary(workDir, shot);
+            return toShotSummary(entity, workDir, shot);
         } catch (BusinessException e) {
             throw e;
         } catch (Exception e) {
@@ -866,31 +969,39 @@ public class AigenTaskService {
         entity.setFinishedAt(LocalDateTime.now());
     }
 
-    private AigenShotSummary toShotSummary(Path workDir, ShotDto s) {
-        // 页面能否出缩略图 = 能否解析到静图（兼容旧数据 assetPath 误为 mp4）
-        boolean img = resolveShotPreviewImage(workDir, s) != null;
+    private AigenShotSummary toShotSummary(AigenTaskEntity entity, Path workDir, ShotDto s) {
+        // 页面能否出缩略图：本地静图 或 对象存储（成功后 scratch 已清，图只在 R2）
+        Path previewFile = resolveShotPreviewImage(workDir, s);
+        String stillRel = null;
+        if (previewFile != null && workDir != null) {
+            try {
+                stillRel = workDir.toAbsolutePath().normalize()
+                        .relativize(previewFile.toAbsolutePath().normalize())
+                        .toString().replace('\\', '/');
+            } catch (Exception ignored) {
+                // ignore
+            }
+        }
+        if (stillRel == null || stillRel.isBlank()) {
+            stillRel = resolveShotPreviewRelative(s);
+        }
+        boolean img = previewFile != null
+                || (stillRel != null && storageService.relativeExists(entity, stillRel));
         boolean audio = false;
-        if (s.getAudioSrc() != null) {
-            Path p = workDir.resolve(s.getAudioSrc()).normalize();
-            audio = Files.isRegularFile(p);
+        if (s.getAudioSrc() != null && !s.getAudioSrc().isBlank()) {
+            String aRel = s.getAudioSrc().replace('\\', '/');
+            Path p = workDir != null ? workDir.resolve(aRel).normalize() : null;
+            audio = (p != null && Files.isRegularFile(p))
+                    || storageService.relativeExists(entity, aRel);
         }
         String prompt = s.getVisual() != null ? s.getVisual().getPrompt() : null;
         String preview = prompt;
         if (preview != null && preview.length() > 80) {
             preview = preview.substring(0, 80) + "…";
         }
-        // 对外 assetPath 尽量返回静图路径，避免前端误当视频
-        String assetPath = s.getVisual() != null ? s.getVisual().getAssetPath() : null;
-        Path previewFile = resolveShotPreviewImage(workDir, s);
-        if (previewFile != null && workDir != null) {
-            try {
-                assetPath = workDir.toAbsolutePath().normalize()
-                        .relativize(previewFile.toAbsolutePath().normalize())
-                        .toString().replace('\\', '/');
-            } catch (Exception ignored) {
-                // keep original
-            }
-        }
+        // 对外 assetPath 尽量返回静图相对路径
+        String assetPath = stillRel != null ? stillRel
+                : (s.getVisual() != null ? s.getVisual().getAssetPath() : null);
         return AigenShotSummary.builder()
                 .id(s.getId())
                 .order(s.getOrder())
@@ -928,9 +1039,7 @@ public class AigenTaskService {
     }
 
     private AigenTaskResponse toResponse(AigenTaskEntity e) {
-        boolean outputAvailable = e.getOutputPath() != null
-                && !e.getOutputPath().isBlank()
-                && Files.isRegularFile(Path.of(e.getOutputPath()));
+        boolean outputAvailable = storageService.mediaAvailable(e.getOutputPath());
         return AigenTaskResponse.builder()
                 .id(String.valueOf(e.getId()))
                 .title(e.getTitle())

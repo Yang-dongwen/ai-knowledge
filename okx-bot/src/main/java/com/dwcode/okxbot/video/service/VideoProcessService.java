@@ -19,10 +19,9 @@ import com.dwcode.okxbot.video.util.VideoUrlNormalizer;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.core.io.FileSystemResource;
+import com.dwcode.okxbot.common.web.MediaRangeSupport;
 import org.springframework.core.io.Resource;
 import org.springframework.http.HttpHeaders;
-import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Service;
 
@@ -59,6 +58,7 @@ public class VideoProcessService {
     private final LlmChatClient llmChatClient;
     private final AiModelConfigService aiModelConfigService;
     private final VideoTaskEventPublisher eventPublisher;
+    private final com.dwcode.okxbot.storage.MediaUrlService mediaUrlService;
 
     /**
      * 提交处理任务，立即返回 taskId，后台异步执行。
@@ -293,7 +293,7 @@ public class VideoProcessService {
             }
         }
 
-        storageService.deleteTaskDir(String.valueOf(taskId));
+        storageService.deleteTaskStorage(entity.getUserId(), String.valueOf(taskId));
         taskScheduler.clearPauseRequest(taskId);
 
         entity.setStatus(VideoTaskStatus.PENDING.name());
@@ -451,80 +451,172 @@ public class VideoProcessService {
     }
 
     /**
-     * 下载原始视频文件流。
-     * <p>若源文件为 HEVC 等浏览器不友好编码，会按需转成同目录 {@code video.browser.mp4} 再返回。
+     * PR5：返回可直链播放/下载的 URL（R2 预签名优先，失败或 local 回退代理路径）。
+     *
+     * @param disposition inline（播放）或 attachment（下载）
      */
-    public ResponseEntity<Resource> downloadVideo(Long taskId) {
+    public com.dwcode.okxbot.storage.dto.MediaUrlResponse resolveVideoMediaUrl(Long taskId, String disposition) {
         VideoTaskEntity entity = requireOwnedTask(taskId);
-        Path path = storageService.requireExistingFile(entity.getVideoPath(), "视频文件");
-        // 已有任务可能是抖音 HEVC：首次播放时懒转 H.264，避免前端黑屏/无法点播放
-        try {
-            path = downloadService.ensureBrowserPlayable(path);
-        } catch (Exception e) {
-            log.warn("浏览器可播转码跳过: taskId={}, err={}", taskId, e.getMessage());
-        }
-        Resource resource = new FileSystemResource(path);
-        // 前端 <video> 对 video/mp4 最稳；browser 转码产物也是 mp4
-        String contentType = "video/mp4";
-        String name = path.getFileName() != null ? path.getFileName().toString().toLowerCase() : "";
-        if (name.endsWith(".webm")) {
-            contentType = "video/webm";
-        }
-        String filename = path.getFileName() != null ? path.getFileName().toString() : "video.mp4";
-
-        long len = 0L;
-        try {
-            len = Files.size(path);
-        } catch (Exception ignored) {
-            // ignore
-        }
-
-        ResponseEntity.BodyBuilder bb = ResponseEntity.ok()
-                .contentType(MediaType.parseMediaType(contentType))
-                .header(HttpHeaders.CONTENT_DISPOSITION, "inline; filename=\"" + filename + "\"")
-                .header(HttpHeaders.CACHE_CONTROL, "private, max-age=60")
-                .header("Accept-Ranges", "bytes");
-        if (len > 0) {
-            bb = bb.header(HttpHeaders.CONTENT_LENGTH, String.valueOf(len));
-        }
-        return bb.body(resource);
+        ResolvedMedia loc = resolvePlayableVideo(entity, taskId);
+        boolean attachment = disposition != null && disposition.equalsIgnoreCase("attachment");
+        String proxyPath = "/api/v1/video/tasks/" + taskId + "/video";
+        String downloadName = loc.filename() != null ? loc.filename() : "video.mp4";
+        return mediaUrlService.resolve(loc.keyOrPath(), proxyPath, attachment, downloadName);
     }
 
     /**
-     * 删除视频任务：数据库记录 + 任务目录下视频/音频/转录/摘要等文件。
+     * 下载/播放视频流（支持本地绝对路径或对象存储 key）。
+     * <p>支持 HTTP Range（206），浏览器可边下边播、拖动进度条。
+     * <p>HEVC 等不友好编码会懒转 H.264 并回写 browser 对象。
+     * <p>PR5 起播放/下载优先走 {@link #resolveVideoMediaUrl} 直连 R2；本接口作回退代理。
+     *
+     * @param rangeHeader 请求头 {@code Range}，可为 null
+     */
+    public ResponseEntity<Resource> downloadVideo(Long taskId, String rangeHeader) {
+        VideoTaskEntity entity = requireOwnedTask(taskId);
+        ResolvedMedia loc = resolvePlayableVideo(entity, taskId);
+        String streamKeyOrPath = loc.keyOrPath();
+        String filename = loc.filename() != null ? loc.filename() : "video.mp4";
+        long len = loc.sizeBytes();
+
+        if (com.dwcode.okxbot.storage.ObjectKeyBuilder.looksLikeLocalAbsolutePath(streamKeyOrPath)) {
+            final Path playPath = Path.of(streamKeyOrPath);
+            String ct = filename.toLowerCase().endsWith(".webm") ? "video/webm" : "video/mp4";
+            return MediaRangeSupport.build(rangeHeader, len, ct, filename, (start, end) -> {
+                try {
+                    long size = Files.size(playPath);
+                    long s = Math.max(0, start);
+                    long e = Math.min(end, size - 1);
+                    var in = Files.newInputStream(playPath);
+                    if (s > 0) {
+                        in.skipNBytes(s);
+                    }
+                    return new com.dwcode.okxbot.common.web.LimitedInputStream(in, e - s + 1);
+                } catch (Exception ex) {
+                    throw new BusinessException("读取本地视频失败: " + ex.getMessage());
+                }
+            });
+        }
+
+        final String streamLoc = streamKeyOrPath;
+        String ct = filename.toLowerCase().endsWith(".webm") ? "video/webm" : "video/mp4";
+        return MediaRangeSupport.build(rangeHeader, len, ct, filename,
+                (start, end) -> storageService.openMediaStream(streamLoc, start, end));
+    }
+
+    private record ResolvedMedia(String keyOrPath, String filename, long sizeBytes) {
+    }
+
+    /**
+     * 解析可播位置：本地 browser 优先；对象存储 browser key 优先；必要时懒转码并回写。
+     */
+    private ResolvedMedia resolvePlayableVideo(VideoTaskEntity entity, Long taskId) {
+        String loc = entity.getVideoPath();
+        if (loc == null || loc.isBlank()) {
+            throw new BusinessException(404, "视频路径为空");
+        }
+        String streamKeyOrPath = loc;
+        String filename = "video.mp4";
+        long len = 0L;
+
+        if (com.dwcode.okxbot.storage.ObjectKeyBuilder.looksLikeLocalAbsolutePath(loc)) {
+            Path path = storageService.requireExistingFile(loc, "视频文件");
+            try {
+                path = downloadService.ensureBrowserPlayable(path);
+            } catch (Exception e) {
+                log.warn("浏览器可播转码跳过: taskId={}, err={}", taskId, e.getMessage());
+            }
+            filename = path.getFileName() != null ? path.getFileName().toString() : "video.mp4";
+            try {
+                len = Files.size(path);
+            } catch (Exception ignored) {
+                // ignore
+            }
+            return new ResolvedMedia(path.toAbsolutePath().toString(), filename, len);
+        }
+
+        String browserKey = siblingBrowserObjectKey(loc);
+        try {
+            if (browserKey != null && storageService.objectStorage().exists(browserKey)) {
+                streamKeyOrPath = browserKey;
+            } else if (!storageService.objectStorage().exists(loc)) {
+                throw new BusinessException(404, "视频对象不存在: " + loc);
+            } else if (browserKey != null && loc.endsWith(".mp4") && !loc.contains("browser")) {
+                String tid = String.valueOf(taskId);
+                try {
+                    Path local = storageService.materializeToScratch(loc, tid, "video.source.mp4");
+                    Path playable = downloadService.ensureBrowserPlayable(local);
+                    if (playable != null && Files.isRegularFile(playable)
+                            && playable.getFileName() != null
+                            && playable.getFileName().toString().contains("browser")) {
+                        String key = storageService.publishFile(
+                                StorageService.effectiveUserId(entity),
+                                tid,
+                                playable,
+                                "video.browser.mp4");
+                        streamKeyOrPath = key;
+                        entity.setVideoPath(key);
+                        entity.setUpdatedAt(LocalDateTime.now());
+                        videoTaskMapper.updateById(entity);
+                    }
+                } catch (Exception e) {
+                    log.warn("对象视频懒转码失败，回退原 key: taskId={} — {}", taskId, e.getMessage());
+                } finally {
+                    try {
+                        storageService.cleanupScratchOnly(tid);
+                    } catch (Exception cleanEx) {
+                        log.warn("懒转码后清理 scratch 失败: taskId={} — {}", taskId, cleanEx.getMessage());
+                    }
+                }
+            }
+        } catch (BusinessException e) {
+            throw e;
+        } catch (Exception e) {
+            throw new BusinessException("读取视频对象失败: " + e.getMessage());
+        }
+
+        var meta = storageService.headMedia(streamKeyOrPath);
+        if (meta.isPresent()) {
+            len = meta.get().getSizeBytes();
+            int slash = streamKeyOrPath.lastIndexOf('/');
+            filename = slash >= 0 ? streamKeyOrPath.substring(slash + 1) : streamKeyOrPath;
+        }
+        return new ResolvedMedia(streamKeyOrPath, filename, len);
+    }
+
+    private static String siblingBrowserObjectKey(String key) {
+        if (key == null || key.isBlank()) {
+            return null;
+        }
+        int slash = key.lastIndexOf('/');
+        String name = slash >= 0 ? key.substring(slash + 1) : key;
+        String prefix = slash >= 0 ? key.substring(0, slash + 1) : "";
+        if ("video.browser.mp4".equals(name)) {
+            return key;
+        }
+        if (name.startsWith("video.")) {
+            return prefix + "video.browser.mp4";
+        }
+        return null;
+    }
+
+    /**
+     * 删除视频任务：数据库记录 + scratch/对象存储前缀。
      */
     public void deleteTask(Long taskId) {
         VideoTaskEntity entity = requireOwnedTask(taskId);
         Long ownerId = entity.getUserId();
         String taskIdStr = String.valueOf(taskId);
 
-        int filesRemoved = storageService.deleteTaskDir(taskIdStr);
-        deleteIfExistsQuietly(entity.getVideoPath());
-        deleteIfExistsQuietly(entity.getAudioPath());
-        deleteIfExistsQuietly(entity.getTranscriptionPath());
-        deleteIfExistsQuietly(entity.getSummaryPath());
+        int filesRemoved = storageService.deleteTaskStorage(ownerId, taskIdStr);
 
         int rows = videoTaskMapper.deleteById(taskId);
         if (rows <= 0) {
             throw new BusinessException(404, "任务不存在或已删除: " + taskId);
         }
         eventPublisher.publishDeleted(ownerId, taskId);
-        log.info("已删除视频任务: taskId={}, title={}, filesRemoved≈{}",
+        log.info("已删除视频任务: taskId={}, title={}, storageRemoved≈{}",
                 taskId, entity.getTitle(), filesRemoved);
-    }
-
-    private void deleteIfExistsQuietly(String absolutePath) {
-        if (absolutePath == null || absolutePath.isBlank()) {
-            return;
-        }
-        try {
-            Path p = Path.of(absolutePath);
-            if (Files.isRegularFile(p)) {
-                Files.deleteIfExists(p);
-            }
-        } catch (Exception e) {
-            log.debug("删除路径忽略: {} — {}", absolutePath, e.getMessage());
-        }
     }
 
     private VideoTaskEntity requireOwnedTask(Long taskId) {
@@ -547,18 +639,7 @@ public class VideoProcessService {
     }
 
     private VideoTaskResponse toResponse(VideoTaskEntity entity, boolean includeResult) {
-        boolean videoAvailable = entity.getVideoPath() != null
-                && !entity.getVideoPath().isBlank()
-                && Files.isRegularFile(Path.of(entity.getVideoPath()));
-        // 懒转码产出 video.browser.mp4 时也算可播放
-        if (!videoAvailable && entity.getVideoPath() != null && !entity.getVideoPath().isBlank()) {
-            try {
-                Path browser = Path.of(entity.getVideoPath()).resolveSibling("video.browser.mp4");
-                videoAvailable = Files.isRegularFile(browser) && Files.size(browser) > 0;
-            } catch (Exception ignored) {
-                // ignore
-            }
-        }
+        boolean videoAvailable = storageService.mediaAvailable(entity.getVideoPath());
 
         VideoTaskResponse.VideoTaskResponseBuilder builder = VideoTaskResponse.builder()
                 .taskId(String.valueOf(entity.getId()))
