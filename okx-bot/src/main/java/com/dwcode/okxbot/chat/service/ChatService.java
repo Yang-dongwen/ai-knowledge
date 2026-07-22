@@ -15,7 +15,7 @@ import com.dwcode.okxbot.chat.stream.StreamCancelledException;
 import com.dwcode.okxbot.common.ai.LlmCallOptions;
 import com.dwcode.okxbot.common.ai.LlmChatGateway;
 import com.dwcode.okxbot.common.exception.BusinessException;
-import com.dwcode.okxbot.video.service.AiModelConfigService;
+import com.dwcode.okxbot.common.ai.AiModelConfigService;
 import com.dwcode.okxbot.chat.dto.ChatMessageDTO;
 import com.dwcode.okxbot.chat.dto.ChatRequest;
 import com.dwcode.okxbot.chat.dto.EditResendRequest;

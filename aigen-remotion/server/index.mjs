@@ -60,16 +60,21 @@ function ensureMediaStatic(root) {
   }
 }
 
+function isInsideRoot(child, root) {
+  const rel = path.relative(root, child);
+  return rel === "" || (!rel.startsWith("..") && !path.isAbsolute(rel));
+}
+
 function assertSafePath(workDir, outputFile) {
   const wd = path.resolve(workDir);
   const out = path.resolve(outputFile);
   if (MEDIA_ROOT) {
-    const rootN = MEDIA_ROOT.toLowerCase();
-    if (!wd.toLowerCase().startsWith(rootN)) {
-      throw new Error("workDir outside MEDIA_ROOT: " + wd);
+    const root = path.resolve(MEDIA_ROOT);
+    if (!isInsideRoot(wd, root)) {
+      throw new Error("workDir outside MEDIA_ROOT: " + wd + " (root=" + root + ")");
     }
-    if (!out.toLowerCase().startsWith(rootN)) {
-      throw new Error("outputFile outside MEDIA_ROOT: " + out);
+    if (!isInsideRoot(out, root)) {
+      throw new Error("outputFile outside MEDIA_ROOT: " + out + " (root=" + root + ")");
     }
   }
   if (!fs.existsSync(wd)) {
@@ -98,6 +103,29 @@ function rewriteAudioToHttp(inputProps, workDir) {
       return { ...t, src: undefined, absSrc: undefined };
     }
     let rel = (t.src || "").trim();
+    // 已是 http(s)（Java 侧预写过）：保留，尽量反查本地路径
+    if (rel.startsWith("http://") || rel.startsWith("https://")) {
+      let local = t._localPath || null;
+      if (!local) {
+        try {
+          const u = new URL(rel);
+          if (u.pathname.startsWith("/media/")) {
+            const underMedia = decodeURIComponent(u.pathname.slice("/media/".length));
+            const candidate = path.resolve(mediaRoot, underMedia);
+            if (fs.existsSync(candidate)) local = candidate;
+          }
+        } catch {
+          /* ignore */
+        }
+      }
+      return {
+        sceneId: t.sceneId,
+        durationMs: t.durationMs,
+        mock: false,
+        src: rel,
+        _localPath: local || undefined,
+      };
+    }
     if (rel && (path.isAbsolute(rel) || /^[A-Za-z]:[\\/]/.test(rel))) {
       rel = path.relative(wd, rel).split(path.sep).join("/");
     }
@@ -155,9 +183,28 @@ function resolveLocalAudioFile(workDir, track) {
   let rel = (track.src || "").trim();
   if (!rel) return null;
   if (rel.startsWith("http://") || rel.startsWith("https://")) {
-    const m = rel.match(/\/media\/[^/]+\/(.+)$/i);
-    if (!m) return null;
-    rel = m[1];
+    try {
+      const u = new URL(rel);
+      if (u.pathname.startsWith("/media/")) {
+        const underMedia = decodeURIComponent(u.pathname.slice("/media/".length));
+        const mediaRoot = MEDIA_ROOT || path.dirname(path.resolve(workDir));
+        const candidate = path.resolve(mediaRoot, underMedia);
+        if (fs.existsSync(candidate)) return candidate;
+        // 再试：去掉「任务相对段」后相对 workDir
+        const onlyUnderTask = path.relative(path.resolve(workDir), candidate);
+        if (onlyUnderTask && !onlyUnderTask.startsWith("..") && fs.existsSync(path.resolve(workDir, onlyUnderTask))) {
+          return path.resolve(workDir, onlyUnderTask);
+        }
+      }
+    } catch {
+      /* fall through */
+    }
+    const m = rel.match(/\/media\/(?:.+?\/)?((?:assets|audio)\/.+)$/i);
+    if (m) {
+      rel = m[1];
+    } else {
+      return null;
+    }
   }
   if (path.isAbsolute(rel) || /^[A-Za-z]:[\\/]/.test(rel)) {
     return fs.existsSync(rel) ? rel : null;

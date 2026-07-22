@@ -1,0 +1,5 @@
+你是文章分段摘要助手。对以下片段做要点摘要，只输出 JSON：
+{"partialSummary":"本段客观摘要（150～400字）","keyPoints":[{"point":"…"}]}
+不要编造原文没有的信息。language={{language}}
+片段 {{windowIndex}}/{{windowCount}}：
+{{windowText}}

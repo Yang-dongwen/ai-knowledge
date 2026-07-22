@@ -1,64 +1,9 @@
+@import './tokens.scss';
+
 * {
   margin: 0;
   padding: 0;
   box-sizing: border-box;
-}
-
-:root {
-  /* 品牌 / 状态 */
-  --primary-color: #{$primary-color};
-  --primary-strong: #{$primary-strong};
-  --accent-color: #{$accent-color};
-  --success-color: #{$success-color};
-  --danger-color: #{$danger-color};
-  --warning-color: #{$warning-color};
-  --page-bg: #{$page-bg};
-  --card-bg: #{$card-bg};
-  --surface-1: #ffffff;
-  --surface-2: #fafafa;
-  --surface-3: #f3f4f6;
-  --surface-hover: #f8fafc;
-  --surface-input: #ffffff;
-  --surface-muted: #f1f5f9;
-  --surface-chip: #f3f4f6;
-
-  /* 文字 */
-  --text-primary: #{$text-primary};
-  --text-secondary: #{$text-secondary};
-  --text-muted: #{$text-muted};
-  --text-inverse: #ffffff;
-
-  /* 边框 / 阴影 / 玻璃 */
-  --border-color: #{$border-color};
-  --border-strong: #d1d5db;
-  --border-subtle: #f3f4f6;
-  --card-shadow: #{$card-shadow};
-  --glass-bg: rgba(255, 255, 255, 0.78);
-  --glass-border: rgba(229, 231, 235, 0.9);
-  --focus-ring: rgba(15, 23, 42, 0.08);
-  --btn-primary-bg: #1f2937;
-  --btn-primary-hover: #111827;
-  --btn-primary-active: #030712;
-  --btn-primary-text: #ffffff;
-  --btn-default-bg: #ffffff;
-  --btn-default-hover: #f9fafb;
-
-  /* 轻强调（替代刺眼 indigo 浅底） */
-  --soft-accent-bg: #f3f4f6;
-  --soft-accent-border: #e5e7eb;
-  --soft-accent-text: #374151;
-
-  /* 滚动条 */
-  --scrollbar-thumb: #d1d5db;
-  --scrollbar-thumb-hover: #9ca3af;
-
-  /* 布局 */
-  --sidebar-width: #{$sidebar-width};
-  --header-height: #{$header-height};
-  --content-padding: #{$content-padding};
-  --card-radius: #{$card-radius};
-  --control-height: 36px;
-  --control-radius: 10px;
 }
 
 body {
@@ -80,6 +25,7 @@ body {
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   text-rendering: optimizeLegibility;
+  transition: background-color 0.2s ease, color 0.2s ease;
 }
 
 #app {
@@ -99,7 +45,7 @@ html.immersive-page #app {
   overflow: hidden;
 }
 
-// 卡片 · 干净轻浮层（去掉紫边悬停）
+// 卡片 · 干净轻浮层
 .page-card {
   position: relative;
   background: var(--card-bg);
@@ -108,7 +54,7 @@ html.immersive-page #app {
   border: 1px solid var(--border-color);
   padding: 20px 22px;
   margin-bottom: 16px;
-  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease, background 0.15s ease;
 
   &:hover {
     border-color: var(--border-strong);
@@ -116,7 +62,7 @@ html.immersive-page #app {
   }
 }
 
-// 页面标题 · 实色墨黑（去掉紫渐变字）
+// 页面标题
 .page-title {
   font-size: 22px;
   font-weight: 700;
@@ -142,7 +88,7 @@ html.immersive-page #app {
   font-weight: 500;
 }
 
-// 滚动条 · 中性细圆
+// 滚动条
 ::-webkit-scrollbar {
   width: 6px;
   height: 6px;
@@ -273,14 +219,14 @@ textarea.ant-input {
 
 .ant-modal-content {
   overflow: hidden;
-  box-shadow:
-    0 20px 48px rgba(15, 23, 42, 0.12),
-    0 0 0 1px rgba(15, 23, 42, 0.04) !important;
+  background: var(--surface-elevated) !important;
+  box-shadow: var(--shadow-lg) !important;
 }
 
 .ant-modal-header {
   border-bottom-color: var(--border-subtle) !important;
   margin-bottom: 0 !important;
+  background: transparent !important;
 }
 
 .ant-modal-title {
@@ -292,7 +238,7 @@ textarea.ant-input {
   border-top-color: var(--border-subtle) !important;
 }
 
-// Tabs 更干净
+// Tabs
 .ant-tabs-top > .ant-tabs-nav::before {
   border-bottom-color: var(--border-subtle) !important;
 }
@@ -323,7 +269,7 @@ textarea.ant-input {
   border-radius: 2px;
 }
 
-// Progress 中性
+// Progress
 .ant-progress-bg {
   background-color: var(--primary-color) !important;
 }
@@ -332,17 +278,17 @@ textarea.ant-input {
   background-color: var(--surface-3) !important;
 }
 
-// Alert 圆角统一
+// Alert
 .ant-alert {
   border-radius: 12px !important;
 }
 
-// Empty 默认图高度更收敛
+// Empty
 .ant-empty-image {
   height: 56px !important;
 }
 
-// Tooltip / Dropdown 轻阴影
+// Tooltip / Dropdown
 .ant-tooltip-inner {
   border-radius: 8px !important;
   font-size: 12px !important;
@@ -350,13 +296,17 @@ textarea.ant-input {
 
 .ant-dropdown-menu {
   padding: 6px !important;
-  box-shadow:
-    0 8px 24px rgba(15, 23, 42, 0.1),
-    0 0 0 1px rgba(15, 23, 42, 0.04) !important;
+  background: var(--surface-elevated) !important;
+  box-shadow: var(--shadow-pop) !important;
 }
 
 .ant-dropdown-menu-item {
   border-radius: 8px !important;
+  color: var(--text-primary) !important;
+
+  &:hover {
+    background: var(--surface-3) !important;
+  }
 }
 
 // 页脚
@@ -379,7 +329,7 @@ a {
   }
 }
 
-/* —— 全局浮层：保证 message / notification / modal / tooltip 始终可见 —— */
+/* —— 全局浮层：message / notification / modal / tooltip —— */
 .ant-message {
   position: fixed !important;
   top: 16px !important;
@@ -394,7 +344,6 @@ a {
 .ant-message-notice {
   padding: 8px !important;
   text-align: center !important;
-  /* 避免入场动画未触发时一直停在 opacity:0 */
   opacity: 1 !important;
   animation: none !important;
   transform: none !important;
@@ -406,15 +355,13 @@ a {
   gap: 8px !important;
   padding: 10px 16px !important;
   border-radius: 10px !important;
-  background: #ffffff !important;
-  color: #0f172a !important;
+  background: var(--message-bg) !important;
+  color: var(--message-color) !important;
   font-size: 14px !important;
   line-height: 1.5 !important;
   pointer-events: all !important;
   opacity: 1 !important;
-  box-shadow:
-    0 4px 16px rgba(15, 23, 42, 0.12),
-    0 0 0 1px rgba(15, 23, 42, 0.06) !important;
+  box-shadow: var(--shadow-message) !important;
 }
 
 .ant-message .anticon {
@@ -426,20 +373,18 @@ a {
 }
 
 .ant-notification-notice {
-  background: #ffffff !important;
-  color: #0f172a !important;
+  background: var(--message-bg) !important;
+  color: var(--message-color) !important;
   border-radius: 12px !important;
-  box-shadow:
-    0 8px 24px rgba(15, 23, 42, 0.12),
-    0 0 0 1px rgba(15, 23, 42, 0.06) !important;
+  box-shadow: var(--shadow-message) !important;
 }
 
 .ant-notification-notice-message {
-  color: #0f172a !important;
+  color: var(--text-primary) !important;
 }
 
 .ant-notification-notice-description {
-  color: #64748b !important;
+  color: var(--text-secondary) !important;
 }
 
 .ant-modal-wrap,
@@ -451,6 +396,7 @@ a {
 .ant-modal-mask,
 .ant-image-preview-mask {
   z-index: 3999 !important;
+  background: var(--overlay-mask) !important;
 }
 
 .ant-tooltip {
@@ -458,18 +404,23 @@ a {
 }
 
 .ant-tooltip-inner {
-  background: #1f2937 !important;
-  color: #ffffff !important;
+  background: var(--tooltip-bg) !important;
+  color: var(--tooltip-color) !important;
   border-radius: 8px !important;
   font-size: 12px !important;
 }
 
 .ant-tooltip-arrow::before {
-  background: #1f2937 !important;
+  background: var(--tooltip-bg) !important;
 }
 
 .ant-popover {
   z-index: 5100 !important;
+}
+
+.ant-popover-inner {
+  background: var(--surface-elevated) !important;
+  color: var(--text-primary) !important;
 }
 
 .ant-select-dropdown,
@@ -479,6 +430,19 @@ a {
   z-index: 4200 !important;
 }
 
+.ant-select-dropdown {
+  background: var(--surface-elevated) !important;
+}
+
+.ant-select-item {
+  color: var(--text-primary) !important;
+}
+
+.ant-select-item-option-active:not(.ant-select-item-option-disabled),
+.ant-select-item-option-selected:not(.ant-select-item-option-disabled) {
+  background: var(--surface-3) !important;
+}
+
 // 分割线
 .ant-divider {
   border-color: var(--border-subtle) !important;
@@ -486,7 +450,27 @@ a {
 
 // Spin 主色
 .ant-spin-dot-item {
-  background-color: #1f2937 !important;
+  background-color: var(--primary-color) !important;
+}
+
+// 卡片 / 抽屉等容器
+.ant-card {
+  background: var(--card-bg) !important;
+  color: var(--text-primary);
+}
+
+.ant-drawer-content {
+  background: var(--surface-1) !important;
+}
+
+.ant-drawer-header {
+  border-bottom-color: var(--border-subtle) !important;
+}
+
+// 菜单（用户下拉等）
+.ant-menu {
+  background: transparent !important;
+  color: var(--text-primary) !important;
 }
 
 // 工具页按钮 / checkbox / radio

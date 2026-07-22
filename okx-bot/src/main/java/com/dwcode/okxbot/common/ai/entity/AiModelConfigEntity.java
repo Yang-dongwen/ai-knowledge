@@ -1,4 +1,4 @@
-package com.dwcode.okxbot.video.entity;
+package com.dwcode.okxbot.common.ai.entity;
 
 import com.baomidou.mybatisplus.annotation.IdType;
 import com.baomidou.mybatisplus.annotation.TableId;

@@ -23,7 +23,7 @@ public class ObjectKeyBuilder {
     private final StorageProperties storageProperties;
 
     /**
-     * @param module       video | aigen | imggen
+     * @param module       video | aigen | imggen | article
      * @param userId       任务所属用户
      * @param taskId       任务 ID（字符串，雪花也行）
      * @param relativePath 任务内相对路径，如 {@code video.browser.mp4} 或 {@code assets/images/a.jpg}
@@ -85,7 +85,7 @@ public class ObjectKeyBuilder {
         }
         String m = module.trim().toLowerCase(Locale.ROOT);
         return switch (m) {
-            case "video", "aigen", "imggen" -> m;
+            case "video", "aigen", "imggen", "article" -> m;
             default -> throw new BusinessException(400, "不支持的 storage module: " + module);
         };
     }

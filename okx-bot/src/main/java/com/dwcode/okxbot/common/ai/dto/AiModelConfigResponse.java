@@ -1,4 +1,4 @@
-package com.dwcode.okxbot.video.dto;
+package com.dwcode.okxbot.common.ai.dto;
 
 import lombok.Builder;
 import lombok.Data;

@@ -10,7 +10,7 @@
         <em>变成作品</em>
       </h1>
       <p class="hero-sub">
-        对话、视频提取、视频生成、文生图 — 一站式工具台。圆润科技感界面，专注创作流。
+        对话、视频提取、文章提取、视频生成、文生图 — 一站式工具台。圆润科技感界面，专注创作流。
       </p>
       <div class="hero-actions">
         <a-button type="primary" size="large" class="cta-main" @click="go('ai-chat')">
@@ -75,7 +75,8 @@ import {
   VideoCameraOutlined,
   PictureOutlined,
   ThunderboltOutlined,
-  CrownOutlined
+  CrownOutlined,
+  FileTextOutlined
 } from '@ant-design/icons-vue'
 
 const router = useRouter()
@@ -96,8 +97,8 @@ const toolCards: ToolCard[] = [
     title: 'AI 对话',
     desc: '多模型自由切换，连续会话与灵感头脑风暴。',
     tags: ['Chat', '多模型'],
-    accent: '#1f2937',
-    accentSoft: '#f3f4f6',
+    accent: 'var(--primary-color)',
+    accentSoft: 'var(--surface-3)',
     icon: markRaw(RobotOutlined)
   },
   {
@@ -105,8 +106,8 @@ const toolCards: ToolCard[] = [
     title: '视频提取',
     desc: '粘贴链接即可转录、总结、二创脚本与画面理解。',
     tags: ['Whisper', 'Omni'],
-    accent: '#1f2937',
-    accentSoft: '#f3f4f6',
+    accent: 'var(--primary-color)',
+    accentSoft: 'var(--surface-3)',
     icon: markRaw(VideoCameraOutlined)
   },
   {
@@ -114,8 +115,8 @@ const toolCards: ToolCard[] = [
     title: 'AI 视频生成',
     desc: '一句话生成分镜、画面与口播，自动合成短片。',
     tags: ['分镜', 'TTS'],
-    accent: '#1f2937',
-    accentSoft: '#f3f4f6',
+    accent: 'var(--primary-color)',
+    accentSoft: 'var(--surface-3)',
     icon: markRaw(ThunderboltOutlined)
   },
   {
@@ -123,17 +124,26 @@ const toolCards: ToolCard[] = [
     title: 'AI 文生图',
     desc: '提示词润色后调用 FLUX，多比例批量出图。',
     tags: ['FLUX', '润色'],
-    accent: '#1f2937',
-    accentSoft: '#f3f4f6',
+    accent: 'var(--primary-color)',
+    accentSoft: 'var(--surface-3)',
     icon: markRaw(PictureOutlined)
+  },
+  {
+    key: 'article-extract',
+    title: '文章提取',
+    desc: '粘贴新闻链接或正文，提取核心要点并二次创作。',
+    tags: ['抓取', '二创'],
+    accent: 'var(--primary-color)',
+    accentSoft: 'var(--surface-3)',
+    icon: markRaw(FileTextOutlined)
   },
   {
     key: 'member',
     title: '会员中心',
     desc: '查看会员状态，Mock 支付开通 / 续费会员。',
     tags: ['充值', 'MEMBER'],
-    accent: '#b45309',
-    accentSoft: '#fffbeb',
+    accent: 'var(--warning-text)',
+    accentSoft: 'var(--warning-bg)',
     icon: markRaw(CrownOutlined)
   }
 ]
@@ -157,8 +167,8 @@ function go(key: string) {
   border: 1px solid var(--border-color);
   background: var(--surface-1);
   box-shadow:
-    0 1px 2px rgba(15, 23, 42, 0.03),
-    0 8px 24px rgba(15, 23, 42, 0.04);
+    0 1px 2px color-mix(in srgb, var(--text-primary) 3%, transparent),
+    0 8px 24px var(--grid-line);
   overflow: hidden;
   margin-bottom: 20px;
   animation: hero-in 0.45s ease both;
@@ -189,8 +199,8 @@ function go(key: string) {
   width: 8px;
   height: 8px;
   border-radius: 50%;
-  background: #22c55e;
-  box-shadow: 0 0 0 0 rgba(34, 197, 94, 0.45);
+  background: var(--success-strong);
+  box-shadow: 0 0 0 0 color-mix(in srgb, var(--success-strong) 45%, transparent);
   animation: pulse-ring 1.8s ease-out infinite;
 }
 
@@ -207,7 +217,7 @@ function go(key: string) {
   em {
     font-style: normal;
     color: var(--primary-color);
-    border-bottom: 2px solid #e5e7eb;
+    border-bottom: 2px solid var(--border-color);
     padding-bottom: 1px;
   }
 }
@@ -285,8 +295,8 @@ function go(key: string) {
   border: 1px solid var(--border-color);
   background: var(--surface-1);
   box-shadow:
-    0 1px 2px rgba(15, 23, 42, 0.03),
-    0 6px 18px rgba(15, 23, 42, 0.03);
+    0 1px 2px color-mix(in srgb, var(--text-primary) 3%, transparent),
+    0 6px 18px color-mix(in srgb, var(--text-primary) 3%, transparent);
   cursor: pointer;
   overflow: hidden;
   transition: border-color 0.15s ease, box-shadow 0.15s ease, background 0.15s ease;
@@ -297,8 +307,8 @@ function go(key: string) {
     border-color: var(--border-strong);
     background: var(--surface-2);
     box-shadow:
-      0 1px 2px rgba(15, 23, 42, 0.04),
-      0 10px 24px rgba(15, 23, 42, 0.06);
+      0 1px 2px var(--grid-line),
+      0 10px 24px color-mix(in srgb, var(--text-primary) 6%, transparent);
 
     .card-arrow {
       transform: translateX(3px);
@@ -376,7 +386,7 @@ function go(key: string) {
   font-weight: 550;
   padding: 2px 8px;
   border-radius: 6px;
-  color: #4b5563;
+  color: var(--soft-accent-text);
   background: var(--surface-3);
   border: 1px solid var(--border-color);
 }
@@ -406,7 +416,7 @@ function go(key: string) {
 
   &:hover {
     border-color: var(--border-strong);
-    box-shadow: 0 4px 12px rgba(15, 23, 42, 0.06);
+    box-shadow: 0 4px 12px color-mix(in srgb, var(--text-primary) 6%, transparent);
   }
 }
 
@@ -449,13 +459,13 @@ function go(key: string) {
 
 @keyframes pulse-ring {
   0% {
-    box-shadow: 0 0 0 0 rgba(34, 197, 94, 0.45);
+    box-shadow: 0 0 0 0 color-mix(in srgb, var(--success-strong) 45%, transparent);
   }
   70% {
-    box-shadow: 0 0 0 8px rgba(34, 197, 94, 0);
+    box-shadow: 0 0 0 8px transparent;
   }
   100% {
-    box-shadow: 0 0 0 0 rgba(34, 197, 94, 0);
+    box-shadow: 0 0 0 0 transparent;
   }
 }
 

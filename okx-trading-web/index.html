@@ -6,6 +6,26 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="theme-color" content="#f5f6f8" />
     <title>AI 工具台</title>
+    <script>
+      // 首屏防闪烁：在 CSS 加载前同步解析主题
+      (function () {
+        try {
+          var key = 'ai-workspace-theme'
+          var mode = localStorage.getItem(key) || 'system'
+          var dark =
+            mode === 'dark' ||
+            (mode === 'system' &&
+              window.matchMedia &&
+              window.matchMedia('(prefers-color-scheme: dark)').matches)
+          var theme = dark ? 'dark' : 'light'
+          document.documentElement.dataset.theme = theme
+          document.documentElement.style.colorScheme = theme
+          document.documentElement.classList.add(dark ? 'theme-dark' : 'theme-light')
+          var meta = document.querySelector('meta[name="theme-color"]')
+          if (meta) meta.setAttribute('content', dark ? '#0b1220' : '#f5f6f8')
+        } catch (e) {}
+      })()
+    </script>
   </head>
   <body>
     <div id="app"></div>

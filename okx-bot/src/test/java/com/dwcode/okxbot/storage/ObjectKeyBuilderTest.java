@@ -39,6 +39,13 @@ class ObjectKeyBuilderTest {
     }
 
     @Test
+    void buildArticleModuleKey() {
+        String key = builder.build("article", 42L, "task-1", "main.txt");
+        assertEquals("prod/article/42/task-1/main.txt", key);
+        assertEquals("prod/article/42/task-1/", builder.taskPrefix("article", 42L, "task-1"));
+    }
+
+    @Test
     void rejectPathTraversal() {
         assertThrows(BusinessException.class,
                 () -> builder.build("video", 1L, "t1", "../etc/passwd"));

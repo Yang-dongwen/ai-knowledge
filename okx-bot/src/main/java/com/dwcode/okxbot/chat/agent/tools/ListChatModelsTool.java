@@ -4,7 +4,7 @@ import com.dwcode.okxbot.chat.agent.AgentTool;
 import com.dwcode.okxbot.chat.agent.ToolContext;
 import com.dwcode.okxbot.chat.agent.ToolResult;
 import com.dwcode.okxbot.chat.agent.ToolRisk;
-import com.dwcode.okxbot.video.service.AiModelConfigService;
+import com.dwcode.okxbot.common.ai.AiModelConfigService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 

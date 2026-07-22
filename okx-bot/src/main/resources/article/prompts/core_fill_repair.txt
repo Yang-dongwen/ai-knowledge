@@ -1,0 +1,15 @@
+上一次 CORE 提取结果不完整或 JSON 非法。请只输出合法 JSON，补全缺失的必填字段。
+已有内容（可能残缺，尽量保留合理部分）：
+{{previousJson}}
+
+原文摘要参考（可能截断）：
+{{mainTextBrief}}
+
+必填：
+- title 非空
+- summary 非空且尽量 ≥20 字
+- keyPoints 数组且至少 1 项，每项 point 非空
+
+可选：entities/timeline/quotes 可为空数组。
+extractMindMap={{extractMindMap}}
+只输出 JSON 对象，不要解释。

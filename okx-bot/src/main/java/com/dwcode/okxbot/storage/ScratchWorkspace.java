@@ -104,7 +104,7 @@ public class ScratchWorkspace {
         String s = raw.trim().toLowerCase(Locale.ROOT);
         if ("module".equals(label)) {
             s = raw.trim().toLowerCase(Locale.ROOT);
-            if (!s.equals("video") && !s.equals("aigen") && !s.equals("imggen")) {
+            if (!s.equals("video") && !s.equals("aigen") && !s.equals("imggen") && !s.equals("article")) {
                 throw new BusinessException(400, "非法 module: " + raw);
             }
             return s;

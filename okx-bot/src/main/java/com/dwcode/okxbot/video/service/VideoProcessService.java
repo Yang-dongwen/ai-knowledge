@@ -7,6 +7,7 @@ import com.dwcode.okxbot.common.exception.BusinessException;
 import com.dwcode.okxbot.chat.config.AiProperties;
 import com.dwcode.okxbot.chat.config.AiProperties.ProviderConfig;
 import com.dwcode.okxbot.video.agent.VideoTaskScheduler;
+import com.dwcode.okxbot.common.ai.AiModelConfigService;
 import com.dwcode.okxbot.common.ai.LlmChatClient;
 import com.dwcode.okxbot.video.config.VideoProperties;
 import com.dwcode.okxbot.video.dto.*;

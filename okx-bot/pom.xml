@@ -133,6 +133,13 @@
             <artifactId>okhttp</artifactId>
         </dependency>
 
+        <!-- 文章正文 HTML 抽取 -->
+        <dependency>
+            <groupId>org.jsoup</groupId>
+            <artifactId>jsoup</artifactId>
+            <version>1.18.3</version>
+        </dependency>
+
         <!-- 支付宝开放平台 Java SDK -->
         <dependency>
             <groupId>com.alipay.sdk</groupId>
@@ -179,6 +186,13 @@
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-test</artifactId>
+            <scope>test</scope>
+        </dependency>
+
+        <!-- OkHttp MockWebServer：文章 SSRF / 钉扎抓取单测 -->
+        <dependency>
+            <groupId>com.squareup.okhttp3</groupId>
+            <artifactId>mockwebserver</artifactId>
             <scope>test</scope>
         </dependency>
     </dependencies>

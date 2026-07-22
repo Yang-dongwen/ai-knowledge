@@ -14,7 +14,7 @@ import com.dwcode.okxbot.video.exception.UnderstandingDegradedException;
 import com.dwcode.okxbot.video.mapper.VideoTaskMapper;
 import com.dwcode.okxbot.video.port.VideoUnderstandingCommand;
 import com.dwcode.okxbot.video.port.VisualUnderstandingResult;
-import com.dwcode.okxbot.video.service.AiModelConfigService;
+import com.dwcode.okxbot.common.ai.AiModelConfigService;
 import com.dwcode.okxbot.video.service.StorageService;
 import com.dwcode.okxbot.video.service.SummarizationService;
 import com.dwcode.okxbot.video.service.TranscriptionService;

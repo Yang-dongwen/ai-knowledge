@@ -348,6 +348,57 @@ aigen:
     node-path: node                   # 或 node.exe 绝对路径
     startup-timeout-seconds: 180      # 首次 bundle 可能较慢
 
+# 文章/新闻提取（PR-1 骨架；业务流水线见后续 PR）
+article:
+  enabled: true
+  work-dir: ./data/article
+  max-concurrent-tasks: 2
+  max-concurrent-tasks-per-user: 2
+  # true=假数据流水线（本地无抓取/LLM 也可验收调度与 SSE）
+  mock-pipeline: false
+  mock-step-delay-ms: 200
+  cleanup-on-delete: true
+  # 默认不强制 robots；依赖产品文案「仅提交有权访问的内容」
+  respect-robots: false
+  async:
+    core-pool-size: 2
+    max-pool-size: 4
+    queue-capacity: 50
+  fetch:
+    connect-timeout-ms: 10000
+    read-timeout-ms: 20000
+    max-bytes: 2000000
+    max-redirects: 5
+    user-agent: "okx-bot-article-bot/1.0 (+internal; research)"
+    # toutiao=RENDER_DATA 图文自动提取（失败可粘贴降级）
+    enabled-adapters: generic,paste,toutiao
+    allow-user-cookie: false
+  extract:
+    max-main-text-chars: 80000
+    min-quality-score: 0.35
+  llm:
+    default-provider:
+    default-model: ""
+    core-temperature: 0.3
+    rewrite-temperature: 0.8
+    digest-window-chars: 8000
+    digest-single-window-chars: 12000
+    json-object-enabled: true
+  rewrite:
+    default-variants: short_video_script,wechat_article,x_thread
+    required: false
+  safety:
+    block-private-ip: true
+    block-metadata-ip: true
+    # 生产必须 false；仅单测可开 allow-loopback
+    allow-loopback: false
+    allowed-schemes: http,https
+    host-allowlist: []
+  degrade:
+    needs-paste-on-fetch-fail: true
+  platform:
+    reject-unsupported-on-create: false
+
 # AI 文生图（NVIDIA FLUX）
 # mock-pipeline=true 时全 mock；false 时按 steps 切换
 imggen:

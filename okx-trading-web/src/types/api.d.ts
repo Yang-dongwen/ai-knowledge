@@ -463,3 +463,115 @@ export interface ImgGenTaskPage {
   size: number
 }
 
+// ---------- 文章/新闻提取 ----------
+
+export interface ArticleCreateOptions {
+  language?: string
+  llmProvider?: string
+  llmModel?: string
+  extractMindMap?: boolean
+  generateRewrite?: boolean
+  rewriteVariants?: string[]
+  allowPasteFallback?: boolean
+  forcePasteOnly?: boolean
+}
+
+export interface ArticleCreateRequest {
+  url?: string
+  pasteText?: string
+  options?: ArticleCreateOptions
+}
+
+export interface ArticleCore {
+  title?: string
+  summary?: string
+  keyPoints?: Array<{ point?: string; importance?: string }>
+  entities?: {
+    people?: string[]
+    orgs?: string[]
+    places?: string[]
+    products?: string[]
+  }
+  timeline?: Array<{ time?: string; event?: string }>
+  quotes?: Array<{ text?: string; speaker?: string }>
+  sentiment?: string
+  category?: string
+  mindMapMarkdown?: string | null
+  sourceFidelityNotes?: string
+  truncatedInput?: boolean
+  [key: string]: unknown
+}
+
+export interface ArticleRewriteVariant {
+  id?: string
+  label?: string
+  platform?: string
+  content?: string
+  hook?: string
+  cta?: string
+  [key: string]: unknown
+}
+
+export interface ArticleRewrite {
+  rewriteVariants?: ArticleRewriteVariant[]
+  variants?: ArticleRewriteVariant[]
+  [key: string]: unknown
+}
+
+export interface ArticleTaskItem {
+  id: string
+  userId?: string
+  sourceUrl?: string
+  canonicalUrl?: string
+  platform?: string
+  supportLevel?: 'FULL' | 'PARTIAL' | 'PASTE_ONLY' | 'UNSUPPORTED' | string
+  title?: string
+  author?: string
+  status: string
+  currentStep?: string
+  progress: number
+  language?: string
+  inputMode?: 'url' | 'paste' | 'url_and_paste' | string
+  llmProvider?: string
+  llmModel?: string
+  extractMindMap?: boolean
+  generateRewrite?: boolean
+  rewriteVariants?: string[]
+  mainTextChars?: number
+  qualityScore?: number
+  degraded?: boolean
+  degradeReason?: string
+  errorCode?: string
+  errorMessage?: string
+  core?: ArticleCore
+  rewrite?: ArticleRewrite
+  disclaimer?: string
+  resolveDurationMs?: number
+  fetchDurationMs?: number
+  extractDurationMs?: number
+  coreDurationMs?: number
+  rewriteDurationMs?: number
+  totalDurationMs?: number
+  startedAt?: string
+  finishedAt?: string
+  createdAt?: string
+  updatedAt?: string
+}
+
+export interface ArticleTaskPage {
+  items: ArticleTaskItem[]
+  total: number
+  page: number
+  size: number
+}
+
+export interface ArticlePlatformDetectResult {
+  url?: string
+  host?: string
+  platform?: string
+  supportLevel?: string
+  message?: string
+  skipFetch?: boolean
+}
+
+

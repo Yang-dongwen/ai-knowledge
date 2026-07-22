@@ -1,5 +1,6 @@
 <template>
   <div class="auth-page">
+    <ThemeToggle floating />
     <div class="auth-card">
       <div class="brand">
         <div class="brand-mark">AI</div>
@@ -48,6 +49,7 @@ import { reactive, ref, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { message } from 'ant-design-vue'
 import { authApi } from '@/api/auth.api'
+import ThemeToggle from '@/components/ThemeToggle.vue'
 
 const router = useRouter()
 const loading = ref(false)

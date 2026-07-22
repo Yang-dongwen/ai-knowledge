@@ -44,4 +44,12 @@ class ScratchWorkspaceTest {
         assertThrows(BusinessException.class,
                 () -> scratch.openTaskScratch("evil", "t1"));
     }
+
+    @Test
+    void openArticleModule() throws Exception {
+        Path dir = scratch.openTaskScratch("article", "task-a1");
+        assertTrue(Files.isDirectory(dir));
+        assertTrue(scratch.cleanupScratch("article", "task-a1") >= 0);
+        assertFalse(Files.isDirectory(dir));
+    }
 }

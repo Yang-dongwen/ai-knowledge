@@ -1141,7 +1141,7 @@ onUnmounted(() => {
   aspect-ratio: 1;
   display: grid;
   place-items: center;
-  background: #0f172a0a;
+  background: var(--text-primary)0a;
   cursor: zoom-in;
   min-height: 160px;
 
@@ -1182,12 +1182,12 @@ onUnmounted(() => {
   &:focus-within {
     background: var(--surface-1);
     border-color: var(--text-muted);
-    box-shadow: 0 0 0 3px rgba(15, 23, 42, 0.06);
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--text-primary) 6%, transparent);
   }
 
   &.is-enhanced {
-    border-color: #a7f3d0;
-    box-shadow: 0 0 0 2px rgba(16, 185, 129, 0.1);
+    border-color: var(--success-border);
+    box-shadow: 0 0 0 2px color-mix(in srgb, var(--success-strong) 10%, transparent);
   }
 
   :deep(.prompt-textarea-in-box.ant-input),
@@ -1267,9 +1267,9 @@ onUnmounted(() => {
     color: var(--text-secondary);
 
     &:hover:not(:disabled) {
-      color: #334155;
+      color: var(--stage-border);
       background: var(--surface-hover);
-      border-color: #cbd5e1;
+      border-color: var(--border-strong);
     }
   }
 }
@@ -1277,7 +1277,7 @@ onUnmounted(() => {
 .enhance-hint {
   margin: 8px 0 0;
   font-size: 12px;
-  color: #16a34a;
+  color: var(--success-color);
   line-height: 1.4;
 }
 
@@ -1295,7 +1295,7 @@ onUnmounted(() => {
 .enhance-modal-label {
   font-size: 13px;
   font-weight: 500;
-  color: #334155;
+  color: var(--stage-border);
   margin-bottom: 6px;
 }
 

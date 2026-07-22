@@ -50,7 +50,7 @@
             >
               <div class="dropdown-head">
                 <div class="dropdown-head-left">
-                  <span class="dropdown-head-icon" :style="{ background: group.accentSoft, color: group.accent }">
+                  <span class="dropdown-head-icon">
                     <component :is="group.icon" />
                   </span>
                   <div class="dropdown-head-text">
@@ -72,7 +72,7 @@
                   :class="{ active: currentRouteKey === item.key }"
                   @click="goTo(item.key)"
                 >
-                  <span class="item-icon" :style="{ background: item.iconBg, color: item.iconColor }">
+                  <span class="item-icon">
                     <component :is="item.icon" />
                   </span>
                   <span class="item-body">
@@ -92,6 +92,7 @@
 
       <!-- 右侧操作 -->
       <div class="header-right">
+        <ThemeToggle />
         <a-tooltip title="刷新页面">
           <button type="button" class="icon-btn" @click="handleRefresh">
             <SyncOutlined />
@@ -146,9 +147,11 @@ import {
   BellOutlined,
   DownOutlined,
   TeamOutlined,
-  AppstoreOutlined
+  AppstoreOutlined,
+  FileTextOutlined
 } from '@ant-design/icons-vue'
 import ProfileCardModal from '@/components/ProfileCardModal.vue'
+import ThemeToggle from '@/components/ThemeToggle.vue'
 import { roleLabel } from '@/api/auth.api'
 
 interface MenuItem {
@@ -156,8 +159,6 @@ interface MenuItem {
   title: string
   description: string
   icon: Component
-  iconBg: string
-  iconColor: string
 }
 
 interface MenuGroup {
@@ -165,13 +166,18 @@ interface MenuGroup {
   title: string
   description: string
   icon: Component
-  accent: string
-  accentSoft: string
   cols: number
   children: MenuItem[]
 }
 
-const TOOLS_KEYS = new Set(['home', 'video-extract', 'video-generate', 'image-generate', 'ai-chat'])
+const TOOLS_KEYS = new Set([
+  'home',
+  'video-extract',
+  'video-generate',
+  'image-generate',
+  'article-extract',
+  'ai-chat'
+])
 const ADMIN_KEYS = new Set(['user-manage'])
 const SUPER_ADMIN_ONLY_GROUPS = new Set(['admin'])
 
@@ -179,51 +185,45 @@ const ALL_MENU_GROUPS: MenuGroup[] = [
   {
     key: 'tools',
     title: 'AI 工具',
-    description: '工作台、对话、视频与文生图',
+    description: '工作台、对话、视频、文生图与文章提取',
     icon: markRaw(ToolOutlined),
-    accent: '#1f2937',
-    accentSoft: '#f3f4f6',
     cols: 2,
     children: [
       {
         key: 'home',
         title: '工作台',
         description: '工具门户与快捷入口',
-        icon: markRaw(AppstoreOutlined),
-        iconBg: '#f3f4f6',
-        iconColor: '#1f2937'
+        icon: markRaw(AppstoreOutlined)
       },
       {
         key: 'ai-chat',
         title: 'AI 对话',
         description: '纯聊天助手，可自由切换模型',
-        icon: markRaw(RobotOutlined),
-        iconBg: '#f3f4f6',
-        iconColor: '#374151'
+        icon: markRaw(RobotOutlined)
       },
       {
         key: 'video-extract',
         title: '视频提取',
         description: '粘贴链接，自动转录并提炼核心内容',
-        icon: markRaw(VideoCameraOutlined),
-        iconBg: '#f3f4f6',
-        iconColor: '#374151'
+        icon: markRaw(VideoCameraOutlined)
       },
       {
         key: 'video-generate',
         title: 'AI 视频生成',
         description: '输入提示词，自动规划分镜并生成视频',
-        icon: markRaw(RobotOutlined),
-        iconBg: '#f3f4f6',
-        iconColor: '#374151'
+        icon: markRaw(RobotOutlined)
       },
       {
         key: 'image-generate',
         title: 'AI 文生图',
         description: '提示词驱动，NVIDIA FLUX 生成图片',
-        icon: markRaw(PictureOutlined),
-        iconBg: '#f3f4f6',
-        iconColor: '#374151'
+        icon: markRaw(PictureOutlined)
+      },
+      {
+        key: 'article-extract',
+        title: '文章提取',
+        description: '链接或粘贴正文，提取核心并二次创作',
+        icon: markRaw(FileTextOutlined)
       }
     ]
   },
@@ -232,17 +232,13 @@ const ALL_MENU_GROUPS: MenuGroup[] = [
     title: '系统管理',
     description: '用户与权限等管理功能',
     icon: markRaw(TeamOutlined),
-    accent: '#1f2937',
-    accentSoft: '#f3f4f6',
     cols: 1,
     children: [
       {
         key: 'user-manage',
         title: '用户管理',
         description: '查询用户并启用/禁用账号',
-        icon: markRaw(TeamOutlined),
-        iconBg: '#f3f4f6',
-        iconColor: '#1f2937'
+        icon: markRaw(TeamOutlined)
       }
     ]
   }
@@ -347,13 +343,13 @@ async function onUserMenu({ key }: { key: string }) {
   top: 0;
   z-index: 200;
   height: 64px;
-  background: rgba(255, 255, 255, 0.7);
+  background: var(--header-bg);
   backdrop-filter: saturate(180%) blur(18px);
   -webkit-backdrop-filter: saturate(180%) blur(18px);
-  border-bottom: 1px solid rgba(226, 232, 240, 0.72);
+  border-bottom: 1px solid var(--header-border);
   box-shadow:
-    0 1px 0 rgba(255, 255, 255, 0.9) inset,
-    0 4px 16px rgba(15, 23, 42, 0.04);
+    0 1px 0 var(--header-inset) inset,
+    var(--header-shadow);
 }
 
 .header-inner {
@@ -386,7 +382,7 @@ async function onUserMenu({ key }: { key: string }) {
   width: 36px;
   height: 36px;
   border-radius: 10px;
-  background: #1f2937;
+  background: var(--primary-color);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -398,13 +394,13 @@ async function onUserMenu({ key }: { key: string }) {
     position: absolute;
     inset: 1px;
     border-radius: 9px;
-    background: linear-gradient(180deg, rgba(255, 255, 255, 0.12), transparent 55%);
+    background: var(--logo-sheen);
     pointer-events: none;
   }
 }
 
 .logo-mark-inner {
-  color: #fff;
+  color: var(--text-on-primary);
   font-size: 12px;
   font-weight: 700;
   letter-spacing: 0.4px;
@@ -419,19 +415,19 @@ async function onUserMenu({ key }: { key: string }) {
 .logo-title {
   font-size: 15px;
   font-weight: 700;
-  color: #111827;
+  color: var(--primary-strong);
 }
 
 .logo-subtitle {
   font-size: 11px;
-  color: #9CA3AF;
+  color: var(--text-tertiary);
   letter-spacing: 0.4px;
 }
 
 .header-divider {
   width: 1px;
   height: 28px;
-  background: #E5E7EB;
+  background: var(--border-color);
   flex-shrink: 0;
 
   &.thin {
@@ -461,27 +457,27 @@ async function onUserMenu({ key }: { key: string }) {
   border: 1px solid transparent;
   border-radius: 999px;
   background: transparent;
-  color: #475569;
+  color: var(--text-secondary);
   cursor: pointer;
   transition: all 0.18s ease;
   font-size: 14px;
 
   &:hover,
   &.open {
-    background: rgba(248, 250, 252, 0.95);
-    border-color: rgba(226, 232, 240, 0.9);
-    color: #0f172a;
-    box-shadow: 0 4px 14px rgba(15, 23, 42, 0.05);
+    background: var(--nav-hover-bg);
+    border-color: var(--nav-hover-border);
+    color: var(--text-primary);
+    box-shadow: 0 4px 14px color-mix(in srgb, var(--text-primary) 5%, transparent);
   }
 
   &.active {
-    background: #f3f4f6;
-    border-color: #e5e7eb;
-    color: #111827;
+    background: var(--surface-3);
+    border-color: var(--border-color);
+    color: var(--primary-strong);
     box-shadow: none;
 
     .nav-trigger-icon {
-      color: #111827;
+      color: var(--primary-strong);
     }
   }
 }
@@ -489,7 +485,7 @@ async function onUserMenu({ key }: { key: string }) {
 .nav-trigger-icon {
   display: inline-flex;
   font-size: 15px;
-  color: #6B7280;
+  color: var(--text-muted);
 }
 
 .nav-trigger-label {
@@ -504,15 +500,15 @@ async function onUserMenu({ key }: { key: string }) {
   white-space: nowrap;
   padding: 2px 8px;
   border-radius: 999px;
-  background: #f3f4f6;
-  color: #374151;
+  background: var(--surface-3);
+  color: var(--soft-accent-text);
   font-size: 12px;
   font-weight: 500;
 }
 
 .nav-arrow {
   font-size: 10px;
-  color: #9CA3AF;
+  color: var(--text-tertiary);
   transition: transform 0.18s ease;
 
   &.rotated {
@@ -528,11 +524,11 @@ async function onUserMenu({ key }: { key: string }) {
   max-width: min(920px, calc(100vw - 32px));
   padding: 12px;
   border-radius: 14px;
-  background: #fff;
-  border: 1px solid #e5e7eb;
+  background: var(--surface-1);
+  border: 1px solid var(--border-color);
   box-shadow:
-    0 4px 6px -1px rgba(15, 23, 42, 0.05),
-    0 16px 36px -10px rgba(15, 23, 42, 0.12);
+    0 4px 6px -1px color-mix(in srgb, var(--text-primary) 5%, transparent),
+    0 16px 36px -10px color-mix(in srgb, var(--text-primary) 12%, transparent);
   z-index: 50;
 
   /* 单列工具菜单：固定舒适宽度，条目纵向排列 */
@@ -565,7 +561,7 @@ async function onUserMenu({ key }: { key: string }) {
   justify-content: space-between;
   padding: 8px 10px 12px;
   margin-bottom: 2px;
-  border-bottom: 1px solid #F3F4F6;
+  border-bottom: 1px solid var(--surface-3);
 }
 
 .dropdown-head-left {
@@ -588,18 +584,20 @@ async function onUserMenu({ key }: { key: string }) {
   justify-content: center;
   font-size: 17px;
   flex-shrink: 0;
+  background: var(--icon-soft-bg);
+  color: var(--icon-soft-fg-strong);
 }
 
 .dropdown-head-title {
   font-size: 14px;
   font-weight: 700;
-  color: #111827;
+  color: var(--primary-strong);
   line-height: 1.3;
 }
 
 .dropdown-head-desc {
   font-size: 12px;
-  color: #9CA3AF;
+  color: var(--text-tertiary);
   margin-top: 2px;
   line-height: 1.35;
   white-space: nowrap;
@@ -628,28 +626,28 @@ async function onUserMenu({ key }: { key: string }) {
   box-sizing: border-box;
 
   &:hover {
-    background: #f9fafb;
-    border-color: #e5e7eb;
+    background: var(--btn-default-hover);
+    border-color: var(--border-color);
 
     .item-chevron {
       opacity: 1;
       transform: translateX(2px);
-      color: #374151;
+      color: var(--soft-accent-text);
     }
   }
 
   &.active {
-    background: #f3f4f6;
-    border-color: #e5e7eb;
+    background: var(--surface-3);
+    border-color: var(--border-color);
     box-shadow: none;
 
     .item-title {
-      color: #111827;
+      color: var(--primary-strong);
     }
 
     .item-chevron {
       opacity: 1;
-      color: #111827;
+      color: var(--primary-strong);
     }
   }
 }
@@ -669,6 +667,8 @@ async function onUserMenu({ key }: { key: string }) {
   justify-content: center;
   font-size: 18px;
   flex-shrink: 0;
+  background: var(--icon-soft-bg);
+  color: var(--icon-soft-fg);
 }
 
 .item-body {
@@ -685,15 +685,15 @@ async function onUserMenu({ key }: { key: string }) {
   gap: 8px;
   font-size: 14px;
   font-weight: 600;
-  color: #1F2937;
+  color: var(--primary-color);
   line-height: 1.3;
 }
 
 .item-badge {
   font-size: 11px;
   font-weight: 500;
-  color: #374151;
-  background: #e5e7eb;
+  color: var(--soft-accent-text);
+  background: var(--border-color);
   border-radius: 999px;
   padding: 0 7px;
   line-height: 18px;
@@ -702,7 +702,7 @@ async function onUserMenu({ key }: { key: string }) {
 
 .item-desc {
   font-size: 12px;
-  color: #9CA3AF;
+  color: var(--text-tertiary);
   line-height: 1.4;
   display: -webkit-box;
   -webkit-line-clamp: 2;
@@ -716,7 +716,7 @@ async function onUserMenu({ key }: { key: string }) {
   text-align: center;
   font-size: 18px;
   line-height: 1;
-  color: #D1D5DB;
+  color: var(--border-strong);
   opacity: 0.65;
   transition: opacity 0.15s ease, transform 0.15s ease, color 0.15s ease;
   font-weight: 300;
@@ -748,7 +748,7 @@ async function onUserMenu({ key }: { key: string }) {
   border: 1px solid transparent;
   border-radius: 999px;
   background: transparent;
-  color: #64748b;
+  color: var(--text-secondary);
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -757,10 +757,10 @@ async function onUserMenu({ key }: { key: string }) {
   font-size: 16px;
 
   &:hover {
-    background: rgba(248, 250, 252, 0.95);
-    border-color: #e2e8f0;
-    color: #0f172a;
-    box-shadow: 0 4px 12px rgba(15, 23, 42, 0.05);
+    background: var(--nav-hover-bg);
+    border-color: var(--border-soft);
+    color: var(--text-primary);
+    box-shadow: 0 4px 12px color-mix(in srgb, var(--text-primary) 5%, transparent);
   }
 }
 
@@ -771,14 +771,14 @@ async function onUserMenu({ key }: { key: string }) {
   padding: 4px 6px 4px 4px;
   margin-left: 2px;
   border-radius: 999px;
-  border: 1px solid #e5e7eb;
-  background: #fff;
+  border: 1px solid var(--border-color);
+  background: var(--surface-1);
   box-shadow: none;
   transition: border-color 0.15s ease, background 0.15s ease;
 
   &:hover {
-    border-color: #d1d5db;
-    background: #fafafa;
+    border-color: var(--border-strong);
+    background: var(--surface-2);
   }
 }
 
@@ -792,7 +792,8 @@ async function onUserMenu({ key }: { key: string }) {
 }
 
 .user-avatar {
-  background: #1f2937 !important;
+  background: var(--btn-primary-bg) !important;
+  color: var(--btn-primary-text) !important;
   font-size: 13px;
   font-weight: 600;
 }
@@ -806,12 +807,12 @@ async function onUserMenu({ key }: { key: string }) {
 .user-name {
   font-size: 13px;
   font-weight: 600;
-  color: #111827;
+  color: var(--primary-strong);
 }
 
 .user-role {
   font-size: 11px;
-  color: #9CA3AF;
+  color: var(--text-tertiary);
 }
 
 .user-caret-wrap {
@@ -822,11 +823,11 @@ async function onUserMenu({ key }: { key: string }) {
   height: 22px;
   border-radius: 999px;
   cursor: pointer;
-  color: #9CA3AF;
+  color: var(--text-tertiary);
 
   &:hover {
-    background: #F3F4F6;
-    color: #6B7280;
+    background: var(--surface-3);
+    color: var(--text-muted);
   }
 }
 

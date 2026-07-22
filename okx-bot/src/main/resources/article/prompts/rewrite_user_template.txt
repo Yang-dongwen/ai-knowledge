@@ -1,0 +1,23 @@
+根据以下核心提取结果，生成二次创作 variants，JSON：
+{
+  "rewriteVariants": [
+    {
+      "id": "variant_id",
+      "label": "展示名",
+      "platform": "目标平台",
+      "content": "正文",
+      "hook": "开头钩子",
+      "cta": "行动号召"
+    }
+  ]
+}
+
+需要生成的 variant id 列表：{{variants}}
+language={{language}}
+titleHint={{titleHint}}
+
+核心 JSON：
+{{coreJson}}
+
+正文节选（参考语气，勿照搬全文）：
+{{mainTextBrief}}

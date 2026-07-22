@@ -541,19 +541,19 @@ function onDelete(record: AiModelConfig) {
   color: var(--primary-strong);
 
   &.cap-chat {
-    background: #111827;
+    background: var(--primary-strong);
     border-color: var(--primary-strong);
-    color: #fff;
+    color: var(--surface-1);
   }
   &.cap-image {
-    background: #065f46;
-    border-color: #065f46;
-    color: #fff;
+    background: var(--success-text);
+    border-color: var(--success-text);
+    color: var(--surface-1);
   }
   &.cap-video_omni {
-    background: #1e3a5f;
-    border-color: #1e3a5f;
-    color: #fff;
+    background: var(--info-text);
+    border-color: var(--info-text);
+    color: var(--surface-1);
   }
 }
 
@@ -595,7 +595,7 @@ function onDelete(record: AiModelConfig) {
   text-align: left;
   padding: 12px 12px 12px 10px;
   border-radius: 12px;
-  border: 1.5px solid #e5e7eb;
+  border: 1.5px solid var(--border-color);
   background: var(--surface-1);
   cursor: pointer;
   transition:
@@ -613,7 +613,7 @@ function onDelete(record: AiModelConfig) {
   &.active {
     border-color: var(--primary-strong);
     background: var(--surface-hover);
-    box-shadow: 0 0 0 3px rgba(17, 24, 39, 0.08);
+    box-shadow: 0 0 0 3px var(--focus-ring);
 
     .cap-option-title {
       color: var(--primary-strong);
@@ -621,39 +621,39 @@ function onDelete(record: AiModelConfig) {
     }
 
     .cap-option-check {
-      background: #111827;
+      background: var(--primary-strong);
       border-color: var(--primary-strong);
-      color: #fff;
+      color: var(--surface-1);
     }
   }
 
   &.active.cap-image {
-    border-color: #065f46;
-    box-shadow: 0 0 0 3px rgba(6, 95, 70, 0.1);
+    border-color: var(--success-text);
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--success-text) 10%, transparent);
 
     .cap-option-check {
-      background: #065f46;
-      border-color: #065f46;
+      background: var(--success-text);
+      border-color: var(--success-text);
     }
 
     .cap-option-badge {
-      background: #ecfdf5;
-      color: #065f46;
+      background: var(--success-bg);
+      color: var(--success-text);
     }
   }
 
   &.active.cap-video_omni {
-    border-color: #1e3a5f;
-    box-shadow: 0 0 0 3px rgba(30, 58, 95, 0.12);
+    border-color: var(--info-text);
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--info-text) 12%, transparent);
 
     .cap-option-check {
-      background: #1e3a5f;
-      border-color: #1e3a5f;
+      background: var(--info-text);
+      border-color: var(--info-text);
     }
 
     .cap-option-badge {
-      background: #eff6ff;
-      color: #1e3a5f;
+      background: var(--info-bg);
+      color: var(--info-text);
     }
   }
 
@@ -668,7 +668,7 @@ function onDelete(record: AiModelConfig) {
   width: 20px;
   height: 20px;
   border-radius: 999px;
-  border: 1.5px solid #d1d5db;
+  border: 1.5px solid var(--border-strong);
   display: grid;
   place-items: center;
   flex-shrink: 0;
@@ -708,8 +708,8 @@ function onDelete(record: AiModelConfig) {
   letter-spacing: 0.04em;
   padding: 2px 6px;
   border-radius: 999px;
-  background: #111827;
-  color: #fff;
+  background: var(--primary-strong);
+  color: var(--surface-1);
 }
 
 .cap-lock-hint {

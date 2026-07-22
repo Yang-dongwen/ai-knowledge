@@ -1,16 +1,20 @@
-// 主题色 · 舒适中性墨色（亮色基准，运行时用 CSS 变量切换）
+// 设计 token 源（SCSS 编译期默认 = 亮色）
+// 运行时切换：global.scss 的 :root / [data-theme="dark"] CSS 变量
+
+// 品牌 / 状态
 $primary-color: #1f2937;
 $primary-strong: #111827;
 $accent-color: #64748b;
 $success-color: #059669;
 $danger-color: #e11d48;
 $warning-color: #d97706;
+$info-color: #2563eb;
 
-// 背景色 · 冷中性灰
+// 背景
 $page-bg: #f5f6f8;
 $card-bg: #ffffff;
 
-// 文字色
+// 文字
 $text-primary: #0f172a;
 $text-secondary: #64748b;
 $text-muted: #94a3b8;

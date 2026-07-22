@@ -58,6 +58,12 @@ const routes: RouteRecordRaw[] = [
         meta: { title: 'AI 文生图', group: 'tools' }
       },
       {
+        path: 'article-extract',
+        name: 'ArticleExtract',
+        component: () => import('@/views/article-extract/index.vue'),
+        meta: { title: '文章提取', group: 'tools' }
+      },
+      {
         path: 'ai-chat',
         name: 'AiChat',
         component: () => import('@/views/ai-chat/index.vue'),

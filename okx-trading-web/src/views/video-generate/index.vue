@@ -1890,10 +1890,10 @@ function confirmDelete(task: AigenTaskItem) {
     title: '确认删除该任务？',
     icon: createVNode(ExclamationCircleOutlined),
     content: createVNode('div', { class: 'aigen-delete-confirm' }, [
-      createVNode('p', { style: 'margin:0 0 8px;color:#1f2937;font-weight:500' }, title),
+      createVNode('p', { style: 'margin:0 0 8px;color:var(--text-primary);font-weight:500' }, title),
       createVNode(
         'p',
-        { style: 'margin:0;color:#6b7280;font-size:13px;line-height:1.6' },
+        { style: 'margin:0;color:var(--text-muted);font-size:13px;line-height:1.6' },
         `${runningHint}将同时删除：数据库记录、任务目录中的分镜与成片文件。`
       )
     ]),

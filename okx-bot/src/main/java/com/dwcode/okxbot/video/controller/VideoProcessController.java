@@ -1,10 +1,12 @@
 package com.dwcode.okxbot.video.controller;
 
 import com.dwcode.okxbot.auth.security.SecurityUtils;
+import com.dwcode.okxbot.common.ai.AiModelConfigService;
+import com.dwcode.okxbot.common.ai.dto.AiModelConfigRequest;
+import com.dwcode.okxbot.common.ai.dto.AiModelConfigResponse;
 import com.dwcode.okxbot.common.response.ApiResult;
 import com.dwcode.okxbot.video.dto.*;
 import com.dwcode.okxbot.video.event.VideoTaskEventPublisher;
-import com.dwcode.okxbot.video.service.AiModelConfigService;
 import com.dwcode.okxbot.video.service.VideoCookieService;
 import com.dwcode.okxbot.video.service.VideoProcessService;
 import jakarta.validation.Valid;

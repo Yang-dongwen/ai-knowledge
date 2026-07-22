@@ -1,0 +1,26 @@
+请分析以下文章并输出 JSON，字段：
+{
+  "title": "规范化标题",
+  "summary": "200字内客观摘要",
+  "keyPoints": [{"point":"核心事实或观点","importance":"high|medium|low"}],
+  "entities": {"people":[],"orgs":[],"places":[],"products":[]},
+  "timeline": [{"time":"原文时间表述","event":"…"}],
+  "quotes": [{"text":"…","speaker":"可选"}],
+  "sentiment": "neutral|positive|negative|mixed",
+  "category": "科技|财经|社会|其它",
+  "mindMapMarkdown": null或Markdown导图,
+  "sourceFidelityNotes": "不确定处说明",
+  "truncatedInput": false
+}
+
+要求：
+- extractMindMap={{extractMindMap}} → 为 true 时 mindMapMarkdown 必须非空
+- truncatedInput 若正文被截断则为 true
+- language={{language}}
+- platform={{platform}}
+- sourceUrl={{sourceUrl}}
+
+标题提示：{{titleHint}}
+
+正文：
+{{mainText}}

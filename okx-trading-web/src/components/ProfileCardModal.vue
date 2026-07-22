@@ -237,7 +237,7 @@ async function loadProfile() {
   }
 
   & + & {
-    border-top: 1px solid #f3f4f6;
+    border-top: 1px solid var(--surface-3);
   }
 
   .label {
@@ -255,7 +255,7 @@ async function loadProfile() {
   .mono {
     font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
     font-size: 12px;
-    color: #4b5563;
+    color: var(--soft-accent-text);
   }
 }
 

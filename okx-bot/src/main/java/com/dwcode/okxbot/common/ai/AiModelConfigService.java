@@ -1,13 +1,13 @@
-package com.dwcode.okxbot.video.service;
+package com.dwcode.okxbot.common.ai;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.dwcode.okxbot.chat.config.AiProperties;
 import com.dwcode.okxbot.chat.config.AiProperties.ProviderConfig;
 import com.dwcode.okxbot.common.exception.BusinessException;
-import com.dwcode.okxbot.video.dto.AiModelConfigRequest;
-import com.dwcode.okxbot.video.dto.AiModelConfigResponse;
-import com.dwcode.okxbot.video.entity.AiModelConfigEntity;
-import com.dwcode.okxbot.video.mapper.AiModelConfigMapper;
+import com.dwcode.okxbot.common.ai.dto.AiModelConfigRequest;
+import com.dwcode.okxbot.common.ai.dto.AiModelConfigResponse;
+import com.dwcode.okxbot.common.ai.entity.AiModelConfigEntity;
+import com.dwcode.okxbot.common.ai.mapper.AiModelConfigMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;

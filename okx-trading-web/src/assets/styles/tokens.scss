@@ -1,0 +1,319 @@
+/**
+ * 运行时主题 token
+ * 亮色：:root
+ * 暗色：[data-theme="dark"]
+ * 业务样式只引用 var(--*)，禁止硬编码色值。
+ */
+
+:root {
+  color-scheme: light;
+
+  /* 品牌 */
+  --primary-color: #1f2937;
+  --primary-strong: #111827;
+  --accent-color: #64748b;
+
+  /* 语义色 · 前景 */
+  --success-color: #059669;
+  --danger-color: #e11d48;
+  --warning-color: #d97706;
+  --info-color: #2563eb;
+
+  /* 语义色 · 浅底 / 边 / 字（状态条、Tag、Alert） */
+  --success-bg: #ecfdf5;
+  --success-border: #a7f3d0;
+  --success-text: #047857;
+  --success-strong: #10b981;
+
+  --danger-bg: #fef2f2;
+  --danger-border: #fecaca;
+  --danger-text: #b91c1c;
+  --danger-strong: #e11d48;
+  --danger-hover: #be123c;
+  --danger-soft-border: #fecdd3;
+  --danger-soft-border-hover: #fda4af;
+
+  --warning-bg: #fffbeb;
+  --warning-border: #fde68a;
+  --warning-text: #b45309;
+  --warning-strong: #f59e0b;
+  --warning-text-deep: #92400e;
+  --warning-text-mid: #a16207;
+
+  --info-bg: #eff6ff;
+  --info-border: #bfdbfe;
+  --info-text: #1d4ed8;
+  --info-strong: #3b82f6;
+
+  --indigo-bg: #e0e7ff;
+  --indigo-border: #c7d2fe;
+  --indigo-text: #4338ca;
+  --indigo-soft: #818cf8;
+  --indigo-mid: #a5b4fc;
+
+  /* 页面 / 卡片 */
+  --page-bg: #f5f6f8;
+  --card-bg: #ffffff;
+  --surface-1: #ffffff;
+  --surface-2: #fafafa;
+  --surface-3: #f3f4f6;
+  --surface-hover: #f8fafc;
+  --surface-input: #ffffff;
+  --surface-muted: #f1f5f9;
+  --surface-chip: #f3f4f6;
+  --surface-elevated: #ffffff;
+
+  /* 固定舞台（视频预览等，亮暗都保持深色） */
+  --stage-bg: #0b1220;
+  --stage-bg-elevated: #111827;
+  --stage-border: #334155;
+  --stage-text: #e2e8f0;
+  --stage-text-muted: #cbd5e1;
+
+  /* 文字 */
+  --text-primary: #0f172a;
+  --text-secondary: #64748b;
+  --text-muted: #94a3b8;
+  --text-tertiary: #9ca3af;
+  --text-quaternary: #d1d5db;
+  --text-inverse: #ffffff;
+  --text-on-primary: #ffffff;
+
+  /* 边框 */
+  --border-color: #e5e7eb;
+  --border-strong: #d1d5db;
+  --border-subtle: #f3f4f6;
+  --border-soft: #e2e8f0;
+
+  /* 阴影 */
+  --card-shadow:
+    0 1px 2px rgba(15, 23, 42, 0.04),
+    0 8px 24px rgba(15, 23, 42, 0.04);
+  --shadow-sm: 0 4px 12px rgba(15, 23, 42, 0.05);
+  --shadow-md:
+    0 4px 6px -1px rgba(15, 23, 42, 0.05),
+    0 16px 36px -10px rgba(15, 23, 42, 0.12);
+  --shadow-lg:
+    0 20px 48px rgba(15, 23, 42, 0.12),
+    0 0 0 1px rgba(15, 23, 42, 0.04);
+  --shadow-pop:
+    0 8px 24px rgba(15, 23, 42, 0.1),
+    0 0 0 1px rgba(15, 23, 42, 0.04);
+  --shadow-message:
+    0 4px 16px rgba(15, 23, 42, 0.12),
+    0 0 0 1px rgba(15, 23, 42, 0.06);
+
+  /* 玻璃 / 焦点 */
+  --glass-bg: rgba(255, 255, 255, 0.78);
+  --glass-bg-strong: rgba(255, 255, 255, 0.88);
+  --glass-border: rgba(229, 231, 235, 0.9);
+  --header-bg: rgba(255, 255, 255, 0.7);
+  --header-border: rgba(226, 232, 240, 0.72);
+  --header-inset: rgba(255, 255, 255, 0.9);
+  --header-shadow: 0 4px 16px rgba(15, 23, 42, 0.04);
+  --focus-ring: rgba(15, 23, 42, 0.08);
+
+  /* 按钮 */
+  --btn-primary-bg: #1f2937;
+  --btn-primary-hover: #111827;
+  --btn-primary-active: #030712;
+  --btn-primary-text: #ffffff;
+  --btn-primary-disabled: #9ca3af;
+  --btn-default-bg: #ffffff;
+  --btn-default-hover: #f9fafb;
+
+  /* 轻强调 */
+  --soft-accent-bg: #f3f4f6;
+  --soft-accent-border: #e5e7eb;
+  --soft-accent-text: #374151;
+
+  /* 图标软底（导航等） */
+  --icon-soft-bg: #f3f4f6;
+  --icon-soft-fg: #374151;
+  --icon-soft-fg-strong: #1f2937;
+
+  /* 导航态 */
+  --nav-hover-bg: rgba(248, 250, 252, 0.95);
+  --nav-hover-border: rgba(226, 232, 240, 0.9);
+  --nav-active-bg: #f3f4f6;
+  --nav-active-border: #e5e7eb;
+
+  /* 氛围层 */
+  --ambient-bg:
+    radial-gradient(1000px 520px at 12% -8%, rgba(148, 163, 184, 0.18), transparent 55%),
+    radial-gradient(800px 460px at 90% 4%, rgba(203, 213, 225, 0.2), transparent 52%),
+    radial-gradient(640px 380px at 48% 100%, rgba(226, 232, 240, 0.35), transparent 55%),
+    linear-gradient(180deg, #f8f9fb 0%, #f3f4f6 50%, #eef0f4 100%);
+  --orb-a: rgba(148, 163, 184, 0.45);
+  --orb-b: rgba(203, 213, 225, 0.5);
+  --orb-c: rgba(226, 232, 240, 0.55);
+  --grid-line: rgba(15, 23, 42, 0.035);
+
+  /* 滚动条 */
+  --scrollbar-thumb: #d1d5db;
+  --scrollbar-thumb-hover: #9ca3af;
+
+  /* 浮层 */
+  --message-bg: #ffffff;
+  --message-color: #0f172a;
+  --tooltip-bg: #1f2937;
+  --tooltip-color: #ffffff;
+  --overlay-mask: rgba(15, 23, 42, 0.45);
+
+  /* 进度 / 杂项 */
+  --progress-track: #e2e8f0;
+  --live-dot: #94a3b8;
+  --logo-sheen: linear-gradient(180deg, rgba(255, 255, 255, 0.12), transparent 55%);
+
+  /* 布局尺寸（非色） */
+  --sidebar-width: 220px;
+  --header-height: 64px;
+  --content-padding: 24px;
+  --card-radius: 16px;
+  --control-height: 36px;
+  --control-radius: 10px;
+}
+
+[data-theme='dark'] {
+  color-scheme: dark;
+
+  --primary-color: #e5e7eb;
+  --primary-strong: #f9fafb;
+  --accent-color: #94a3b8;
+
+  --success-color: #34d399;
+  --danger-color: #fb7185;
+  --warning-color: #fbbf24;
+  --info-color: #60a5fa;
+
+  --success-bg: rgba(16, 185, 129, 0.14);
+  --success-border: rgba(52, 211, 153, 0.35);
+  --success-text: #6ee7b7;
+  --success-strong: #34d399;
+
+  --danger-bg: rgba(244, 63, 94, 0.14);
+  --danger-border: rgba(251, 113, 133, 0.35);
+  --danger-text: #fda4af;
+  --danger-strong: #fb7185;
+  --danger-hover: #f43f5e;
+  --danger-soft-border: rgba(251, 113, 133, 0.4);
+  --danger-soft-border-hover: rgba(251, 113, 133, 0.55);
+
+  --warning-bg: rgba(245, 158, 11, 0.14);
+  --warning-border: rgba(251, 191, 36, 0.35);
+  --warning-text: #fcd34d;
+  --warning-strong: #fbbf24;
+  --warning-text-deep: #fde68a;
+  --warning-text-mid: #fcd34d;
+
+  --info-bg: rgba(59, 130, 246, 0.14);
+  --info-border: rgba(96, 165, 250, 0.35);
+  --info-text: #93c5fd;
+  --info-strong: #60a5fa;
+
+  --indigo-bg: rgba(99, 102, 241, 0.16);
+  --indigo-border: rgba(129, 140, 248, 0.35);
+  --indigo-text: #c7d2fe;
+  --indigo-soft: #a5b4fc;
+  --indigo-mid: #818cf8;
+
+  --page-bg: #0b1220;
+  --card-bg: #111827;
+  --surface-1: #111827;
+  --surface-2: #0f172a;
+  --surface-3: #1e293b;
+  --surface-hover: #1e293b;
+  --surface-input: #0f172a;
+  --surface-muted: #1e293b;
+  --surface-chip: #1e293b;
+  --surface-elevated: #1e293b;
+
+  --stage-bg: #020617;
+  --stage-bg-elevated: #0b1220;
+  --stage-border: #334155;
+  --stage-text: #e2e8f0;
+  --stage-text-muted: #94a3b8;
+
+  --text-primary: #e5e7eb;
+  --text-secondary: #94a3b8;
+  --text-muted: #64748b;
+  --text-tertiary: #64748b;
+  --text-quaternary: #475569;
+  --text-inverse: #0f172a;
+  --text-on-primary: #0b1220;
+
+  --border-color: #334155;
+  --border-strong: #475569;
+  --border-subtle: #1e293b;
+  --border-soft: #334155;
+
+  --card-shadow:
+    0 1px 2px rgba(0, 0, 0, 0.35),
+    0 8px 24px rgba(0, 0, 0, 0.28);
+  --shadow-sm: 0 4px 12px rgba(0, 0, 0, 0.35);
+  --shadow-md:
+    0 4px 6px -1px rgba(0, 0, 0, 0.35),
+    0 16px 36px -10px rgba(0, 0, 0, 0.45);
+  --shadow-lg:
+    0 20px 48px rgba(0, 0, 0, 0.5),
+    0 0 0 1px rgba(148, 163, 184, 0.08);
+  --shadow-pop:
+    0 8px 24px rgba(0, 0, 0, 0.4),
+    0 0 0 1px rgba(148, 163, 184, 0.08);
+  --shadow-message:
+    0 4px 16px rgba(0, 0, 0, 0.45),
+    0 0 0 1px rgba(148, 163, 184, 0.1);
+
+  --glass-bg: rgba(15, 23, 42, 0.78);
+  --glass-bg-strong: rgba(15, 23, 42, 0.9);
+  --glass-border: rgba(51, 65, 85, 0.9);
+  --header-bg: rgba(11, 18, 32, 0.78);
+  --header-border: rgba(51, 65, 85, 0.72);
+  --header-inset: rgba(255, 255, 255, 0.04);
+  --header-shadow: 0 4px 16px rgba(0, 0, 0, 0.35);
+  --focus-ring: rgba(148, 163, 184, 0.18);
+
+  --btn-primary-bg: #e5e7eb;
+  --btn-primary-hover: #f9fafb;
+  --btn-primary-active: #ffffff;
+  --btn-primary-text: #0b1220;
+  --btn-primary-disabled: #475569;
+  --btn-default-bg: #111827;
+  --btn-default-hover: #1e293b;
+
+  --soft-accent-bg: #1e293b;
+  --soft-accent-border: #334155;
+  --soft-accent-text: #cbd5e1;
+
+  --icon-soft-bg: #1e293b;
+  --icon-soft-fg: #cbd5e1;
+  --icon-soft-fg-strong: #e5e7eb;
+
+  --nav-hover-bg: rgba(30, 41, 59, 0.95);
+  --nav-hover-border: rgba(51, 65, 85, 0.9);
+  --nav-active-bg: #1e293b;
+  --nav-active-border: #334155;
+
+  --ambient-bg:
+    radial-gradient(1000px 520px at 12% -8%, rgba(56, 189, 248, 0.06), transparent 55%),
+    radial-gradient(800px 460px at 90% 4%, rgba(129, 140, 248, 0.07), transparent 52%),
+    radial-gradient(640px 380px at 48% 100%, rgba(51, 65, 85, 0.35), transparent 55%),
+    linear-gradient(180deg, #0b1220 0%, #0f172a 50%, #111827 100%);
+  --orb-a: rgba(56, 189, 248, 0.12);
+  --orb-b: rgba(129, 140, 248, 0.12);
+  --orb-c: rgba(148, 163, 184, 0.1);
+  --grid-line: rgba(148, 163, 184, 0.06);
+
+  --scrollbar-thumb: #475569;
+  --scrollbar-thumb-hover: #64748b;
+
+  --message-bg: #1e293b;
+  --message-color: #e5e7eb;
+  --tooltip-bg: #e5e7eb;
+  --tooltip-color: #0b1220;
+  --overlay-mask: rgba(0, 0, 0, 0.55);
+
+  --progress-track: #334155;
+  --live-dot: #64748b;
+  --logo-sheen: linear-gradient(180deg, rgba(255, 255, 255, 0.14), transparent 55%);
+}

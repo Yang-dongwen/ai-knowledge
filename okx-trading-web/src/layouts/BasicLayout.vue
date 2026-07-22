@@ -87,19 +87,14 @@ onUnmounted(() => {
   }
 }
 
-/* 全站氛围层：柔光 + 微网格，营造科技感 */
+/* 全站氛围层：柔光 + 微网格，跟随主题 token */
 .ambient {
   position: fixed;
   inset: 0;
   z-index: 0;
   pointer-events: none;
   overflow: hidden;
-  /* 更克制的环境光：低饱和灰青，避免整页偏紫 */
-  background:
-    radial-gradient(1000px 520px at 12% -8%, rgba(148, 163, 184, 0.18), transparent 55%),
-    radial-gradient(800px 460px at 90% 4%, rgba(203, 213, 225, 0.2), transparent 52%),
-    radial-gradient(640px 380px at 48% 100%, rgba(226, 232, 240, 0.35), transparent 55%),
-    linear-gradient(180deg, #f8f9fb 0%, #f3f4f6 50%, #eef0f4 100%);
+  background: var(--ambient-bg);
 }
 
 .orb {
@@ -115,7 +110,7 @@ onUnmounted(() => {
   height: 320px;
   left: -70px;
   top: 14%;
-  background: radial-gradient(circle, rgba(148, 163, 184, 0.45), transparent 70%);
+  background: radial-gradient(circle, var(--orb-a), transparent 70%);
 }
 
 .orb-b {
@@ -123,7 +118,7 @@ onUnmounted(() => {
   height: 380px;
   right: -90px;
   top: 30%;
-  background: radial-gradient(circle, rgba(203, 213, 225, 0.5), transparent 70%);
+  background: radial-gradient(circle, var(--orb-b), transparent 70%);
   animation-delay: -6s;
   animation-duration: 24s;
 }
@@ -133,7 +128,7 @@ onUnmounted(() => {
   height: 260px;
   left: 42%;
   bottom: -50px;
-  background: radial-gradient(circle, rgba(226, 232, 240, 0.55), transparent 70%);
+  background: radial-gradient(circle, var(--orb-c), transparent 70%);
   animation-delay: -11s;
   animation-duration: 22s;
 }
@@ -143,8 +138,8 @@ onUnmounted(() => {
   inset: 0;
   opacity: 0.22;
   background-image:
-    linear-gradient(rgba(15, 23, 42, 0.035) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(15, 23, 42, 0.035) 1px, transparent 1px);
+    linear-gradient(var(--grid-line) 1px, transparent 1px),
+    linear-gradient(90deg, var(--grid-line) 1px, transparent 1px);
   background-size: 48px 48px;
   mask-image: radial-gradient(ellipse 80% 70% at 50% 30%, #000 20%, transparent 75%);
 }

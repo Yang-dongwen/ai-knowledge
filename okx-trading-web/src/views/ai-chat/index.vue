@@ -2065,8 +2065,8 @@ onMounted(() => {
   border-radius: 16px;
   overflow: hidden;
   box-shadow:
-    0 1px 2px rgba(15, 23, 42, 0.03),
-    0 8px 24px rgba(15, 23, 42, 0.04);
+    0 1px 2px color-mix(in srgb, var(--text-primary) 3%, transparent),
+    0 8px 24px var(--grid-line);
 }
 
 .chat-sidebar {
@@ -2299,14 +2299,14 @@ onMounted(() => {
   border-radius: 12px;
   border: 1px solid var(--border-color);
   background: var(--surface-1);
-  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
+  box-shadow: 0 1px 2px var(--grid-line);
   overflow: hidden;
 }
 
 .agent-card-accent {
   width: 4px;
   flex-shrink: 0;
-  background: #94a3b8;
+  background: var(--text-muted);
 }
 
 .agent-card-body {
@@ -2317,34 +2317,34 @@ onMounted(() => {
 }
 
 .agent-card.is-confirm {
-  border-color: #fcd34d;
-  background: #fffbeb;
+  border-color: var(--warning-border);
+  background: var(--warning-bg);
 
   .agent-card-accent {
-    background: linear-gradient(180deg, #f59e0b 0%, #d97706 100%);
+    background: linear-gradient(180deg, var(--warning-strong) 0%, var(--warning-color) 100%);
   }
 }
 
 .agent-card.is-confirm.is-pending {
-  border-color: #fbbf24;
+  border-color: var(--warning-strong);
   opacity: 0.95;
 }
 
 .agent-card.is-success {
-  border-color: #86efac;
-  background: #f0fdf4;
+  border-color: var(--success-border);
+  background: var(--success-bg);
 
   .agent-card-accent {
-    background: linear-gradient(180deg, #22c55e 0%, #16a34a 100%);
+    background: linear-gradient(180deg, var(--success-strong) 0%, var(--success-color) 100%);
   }
 }
 
 .agent-card.is-fail {
-  border-color: #fca5a5;
-  background: #fef2f2;
+  border-color: var(--danger-border);
+  background: var(--danger-bg);
 
   .agent-card-accent {
-    background: linear-gradient(180deg, #ef4444 0%, #dc2626 100%);
+    background: linear-gradient(180deg, var(--danger-strong) 0%, var(--danger-strong) 100%);
   }
 }
 
@@ -2353,16 +2353,16 @@ onMounted(() => {
   background: var(--surface-hover);
 
   .agent-card-accent {
-    background: #9ca3af;
+    background: var(--text-tertiary);
   }
 }
 
 .agent-card.is-info {
-  border-color: #bfdbfe;
+  border-color: var(--info-border);
   background: var(--surface-hover);
 
   .agent-card-accent {
-    background: linear-gradient(180deg, #3b82f6 0%, #2563eb 100%);
+    background: linear-gradient(180deg, var(--info-strong) 0%, var(--info-color) 100%);
   }
 }
 
@@ -2388,18 +2388,18 @@ onMounted(() => {
 }
 
 .is-confirm .agent-card-icon {
-  background: #fef3c7;
-  color: #b45309;
+  background: var(--warning-bg);
+  color: var(--warning-text);
 }
 
 .is-success .agent-card-icon {
-  background: #dcfce7;
-  color: #15803d;
+  background: var(--success-bg);
+  color: var(--success-text);
 }
 
 .is-fail .agent-card-icon {
-  background: #fee2e2;
-  color: #b91c1c;
+  background: var(--danger-bg);
+  color: var(--danger-text);
 }
 
 .is-rejected .agent-card-icon {
@@ -2426,23 +2426,23 @@ onMounted(() => {
   padding: 1px 8px;
   border-radius: 999px;
   line-height: 1.6;
-  background: #e0e7ff;
-  color: #4338ca;
+  background: var(--indigo-bg);
+  color: var(--indigo-text);
 }
 
 .is-confirm .agent-card-badge {
-  background: #fef3c7;
-  color: #b45309;
+  background: var(--warning-bg);
+  color: var(--warning-text);
 }
 
 .is-success .agent-card-badge {
-  background: #dcfce7;
-  color: #15803d;
+  background: var(--success-bg);
+  color: var(--success-text);
 }
 
 .is-fail .agent-card-badge {
-  background: #fee2e2;
-  color: #b91c1c;
+  background: var(--danger-bg);
+  color: var(--danger-text);
 }
 
 .is-rejected .agent-card-badge {
@@ -2461,7 +2461,7 @@ onMounted(() => {
   margin-top: 6px;
   font-size: 13px;
   line-height: 1.55;
-  color: #4b5563;
+  color: var(--soft-accent-text);
   white-space: pre-wrap;
   word-break: break-word;
 }
@@ -2470,8 +2470,8 @@ onMounted(() => {
   margin: 4px 14px 10px;
   padding: 10px 12px;
   border-radius: 8px;
-  background: rgba(255, 255, 255, 0.78);
-  border: 1px solid rgba(251, 191, 36, 0.35);
+  background: var(--glass-bg);
+  border: 1px solid color-mix(in srgb, var(--warning-strong) 35%, transparent);
   display: flex;
   flex-direction: column;
   gap: 10px;
@@ -2505,13 +2505,13 @@ onMounted(() => {
   padding: 2px 0;
 
   & + & {
-    border-top: 1px solid rgba(251, 191, 36, 0.22);
+    border-top: 1px solid color-mix(in srgb, var(--warning-strong) 22%, transparent);
     padding-top: 8px;
   }
 }
 
 .agent-param-k {
-  color: #92400e;
+  color: var(--warning-text-deep);
   font-weight: 600;
   flex-shrink: 0;
   font-size: 12px;
@@ -2555,12 +2555,12 @@ onMounted(() => {
   }
 
   :deep(.ant-radio-button-wrapper-checked:not(.ant-radio-button-wrapper-disabled)) {
-    background: #d97706;
-    border-color: #d97706;
+    background: var(--warning-color);
+    border-color: var(--warning-color);
   }
 
   :deep(.ant-radio-button-wrapper-checked:not(.ant-radio-button-wrapper-disabled)::before) {
-    background: #d97706;
+    background: var(--warning-color);
   }
 }
 
@@ -2580,7 +2580,7 @@ onMounted(() => {
 
 .agent-param-hint {
   font-size: 11px;
-  color: #b45309;
+  color: var(--warning-text);
   line-height: 1.4;
   margin-top: -4px;
 }
@@ -2591,14 +2591,14 @@ onMounted(() => {
   align-items: stretch;
   gap: 10px;
   padding: 10px 14px 14px;
-  border-top: 1px solid rgba(251, 191, 36, 0.28);
-  background: rgba(255, 255, 255, 0.55);
+  border-top: 1px solid color-mix(in srgb, var(--warning-strong) 28%, transparent);
+  background: color-mix(in srgb, var(--surface-1) 55%, transparent);
 }
 
 .agent-card-tip {
   margin: 0;
   font-size: 12px;
-  color: #a16207;
+  color: var(--warning-text-mid);
   line-height: 1.45;
 }
 
@@ -2620,12 +2620,12 @@ onMounted(() => {
   min-width: 108px;
   height: 34px !important;
   font-weight: 600 !important;
-  background: #d97706 !important;
-  border-color: #d97706 !important;
+  background: var(--warning-color) !important;
+  border-color: var(--warning-color) !important;
 
   &:hover:not(:disabled) {
-    background: #b45309 !important;
-    border-color: #b45309 !important;
+    background: var(--warning-text) !important;
+    border-color: var(--warning-text) !important;
   }
 
   &:disabled {
@@ -2647,15 +2647,15 @@ onMounted(() => {
   width: 7px;
   height: 7px;
   border-radius: 50%;
-  background: #9ca3af;
+  background: var(--text-tertiary);
   flex-shrink: 0;
 }
 
 .agent-card-done.done-ok {
-  color: #15803d;
+  color: var(--success-text);
 
   .agent-card-done-dot {
-    background: #22c55e;
+    background: var(--success-strong);
   }
 }
 
@@ -2663,7 +2663,7 @@ onMounted(() => {
   color: var(--text-secondary);
 
   .agent-card-done-dot {
-    background: #9ca3af;
+    background: var(--text-tertiary);
   }
 }
 
@@ -2720,7 +2720,7 @@ onMounted(() => {
   padding: 10px 12px;
   border-radius: 10px;
   background: var(--surface-2);
-  border: 1px solid #eef0f3;
+  border: 1px solid var(--page-bg);
 }
 
 .agent-task-left,
@@ -2756,7 +2756,7 @@ onMounted(() => {
 .agent-model-provider {
   font-size: 12px;
   font-weight: 600;
-  color: #4b5563;
+  color: var(--soft-accent-text);
   margin-bottom: 6px;
 }
 
@@ -2807,8 +2807,8 @@ onMounted(() => {
     color: var(--warning-color);
     margin-bottom: 20px;
     padding: 8px 16px;
-    background: #FFF7ED;
-    border: 1px solid #FDBA74;
+    background: var(--surface-1)7ED;
+    border: 1px solid var(--warning-border);
     border-radius: 8px;
   }
 
@@ -2820,7 +2820,7 @@ onMounted(() => {
   }
 
   .prompt-card {
-    background: #FAFBFC;
+    background: var(--surface-2);
     border: 1px solid var(--border-color);
     border-radius: 10px;
     padding: 14px 16px;
@@ -2972,7 +2972,7 @@ onMounted(() => {
       }
 
       :deep(code) {
-        background: rgba(0, 0, 0, 0.06);
+        background: color-mix(in srgb, #000 6%, transparent);
         padding: 2px 5px;
         border-radius: 3px;
         font-size: 0.9em;
@@ -2980,7 +2980,7 @@ onMounted(() => {
       }
 
       :deep(pre.hljs) {
-        background: #f6f8fa;
+        background: var(--surface-2);
         border-radius: 6px;
         padding: 12px 16px;
         margin: 8px 0;
@@ -2999,8 +2999,8 @@ onMounted(() => {
       :deep(blockquote) {
         margin: 8px 0;
         padding: 4px 12px;
-        border-left: 3px solid #ddd;
-        color: #666;
+        border-left: 3px solid var(--border-color);
+        color: var(--text-secondary);
       }
 
       :deep(table) {
@@ -3011,13 +3011,13 @@ onMounted(() => {
       }
 
       :deep(th), :deep(td) {
-        border: 1px solid #ddd;
+        border: 1px solid var(--border-color);
         padding: 6px 10px;
         text-align: left;
       }
 
       :deep(th) {
-        background: #f5f7fa;
+        background: var(--surface-muted);
         font-weight: 600;
       }
 
@@ -3033,7 +3033,7 @@ onMounted(() => {
 
       :deep(hr) {
         border: none;
-        border-top: 1px solid #eee;
+        border-top: 1px solid var(--border-subtle);
         margin: 12px 0;
       }
     }
@@ -3062,13 +3062,13 @@ onMounted(() => {
   &:hover {
     opacity: 1;
     color: var(--primary-color);
-    background: rgba(22, 119, 255, 0.08);
+    background: color-mix(in srgb, var(--info-color) 8%, transparent);
   }
 
   &.copied {
     opacity: 1;
-    color: #16a34a;
-    background: rgba(22, 163, 74, 0.08);
+    color: var(--success-color);
+    background: color-mix(in srgb, var(--success-color) 8%, transparent);
   }
 }
 
@@ -3093,7 +3093,7 @@ onMounted(() => {
   margin-top: 6px;
   padding-left: 2px;
   font-size: 12px;
-  color: var(--text-muted, #6b7280);
+  color: var(--text-muted, var(--text-muted));
   letter-spacing: 0.01em;
 }
 
@@ -3111,7 +3111,7 @@ onMounted(() => {
     display: flex;
     align-items: flex-end;
     gap: 8px;
-    background: #F5F7FA;
+    background: var(--surface-muted);
     border: 1px solid var(--border-color);
     border-radius: 10px;
     padding: 8px 8px 8px 14px;

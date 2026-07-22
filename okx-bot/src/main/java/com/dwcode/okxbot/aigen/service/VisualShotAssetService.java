@@ -19,7 +19,7 @@ import com.dwcode.okxbot.aigen.port.ImageToVideoResult;
 import com.dwcode.okxbot.aigen.port.TtsCommand;
 import com.dwcode.okxbot.aigen.port.TtsPort;
 import com.dwcode.okxbot.aigen.port.TtsResult;
-import com.dwcode.okxbot.video.service.AiModelConfigService;
+import com.dwcode.okxbot.common.ai.AiModelConfigService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;

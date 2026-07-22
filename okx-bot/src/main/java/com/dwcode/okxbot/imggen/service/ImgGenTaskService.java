@@ -15,7 +15,7 @@ import com.dwcode.okxbot.imggen.event.ImgGenTaskEventPublisher;
 import com.dwcode.okxbot.imggen.mapper.ImgGenTaskMapper;
 import com.dwcode.okxbot.imggen.port.PromptEnhancePort;
 import com.dwcode.okxbot.imggen.util.AspectRatioMapper;
-import com.dwcode.okxbot.video.service.AiModelConfigService;
+import com.dwcode.okxbot.common.ai.AiModelConfigService;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
@@ -177,7 +177,7 @@ public class ImgGenTaskService {
         String resolvedModelId;
         int steps;
         if (needReal) {
-            com.dwcode.okxbot.video.entity.AiModelConfigEntity imgCfg;
+            com.dwcode.okxbot.common.ai.entity.AiModelConfigEntity imgCfg;
             try {
                 imgCfg = aiModelConfigService.requireEnabledImageModel(imageProviderHint, imageModelId);
             } catch (BusinessException ex) {

@@ -7,7 +7,7 @@ import com.dwcode.okxbot.imggen.port.ImageGenCommand;
 import com.dwcode.okxbot.imggen.port.ImageGenPort;
 import com.dwcode.okxbot.imggen.port.ImageGenResult;
 import com.dwcode.okxbot.imggen.util.AspectRatioMapper;
-import com.dwcode.okxbot.video.service.AiModelConfigService;
+import com.dwcode.okxbot.common.ai.AiModelConfigService;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;

@@ -289,7 +289,7 @@ onMounted(load)
   border-radius: 12px;
   padding: 16px;
   margin-bottom: 12px;
-  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
+  box-shadow: 0 1px 2px var(--grid-line);
 }
 
 .filters {

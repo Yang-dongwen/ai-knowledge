@@ -2155,10 +2155,10 @@ function confirmDelete(task: VideoTaskItem) {
     title: '确认删除该任务？',
     icon: createVNode(ExclamationCircleOutlined),
     content: createVNode('div', { class: 'video-delete-confirm' }, [
-      createVNode('p', { style: 'margin:0 0 8px;color:#1f2937;font-weight:500' }, title),
+      createVNode('p', { style: 'margin:0 0 8px;color:var(--text-primary);font-weight:500' }, title),
       createVNode(
         'p',
-        { style: 'margin:0;color:#6b7280;font-size:13px;line-height:1.6' },
+        { style: 'margin:0;color:var(--text-muted);font-size:13px;line-height:1.6' },
         `${runningHint}将同时删除：数据库记录、本地视频/音频、转录与摘要文件。`
       )
     ]),
@@ -2550,8 +2550,8 @@ onUnmounted(() => {
   background: var(--surface-1);
   border: 1px solid var(--border-color);
   box-shadow:
-    0 1px 2px rgba(15, 23, 42, 0.03),
-    0 8px 24px rgba(15, 23, 42, 0.04);
+    0 1px 2px color-mix(in srgb, var(--text-primary) 3%, transparent),
+    0 8px 24px var(--grid-line);
   position: relative;
   overflow: hidden;
 
@@ -2595,7 +2595,7 @@ onUnmounted(() => {
       height: 7px;
       border-radius: 50%;
       flex-shrink: 0;
-      background: #9ca3af;
+      background: var(--text-tertiary);
     }
 
     .live-label {
@@ -2612,39 +2612,39 @@ onUnmounted(() => {
     }
 
     &.sse {
-      background: #ecfdf5;
-      border-color: #a7f3d0;
+      background: var(--success-bg);
+      border-color: var(--success-border);
       .live-dot {
-        background: #10b981;
-        box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.25);
+        background: var(--success-strong);
+        box-shadow: 0 0 0 3px color-mix(in srgb, var(--success-strong) 25%, transparent);
         animation: live-pulse 1.6s ease-in-out infinite;
       }
       .live-label {
-        color: #047857;
+        color: var(--success-text);
       }
     }
 
     &.poll {
-      background: #fff7ed;
-      border-color: #fed7aa;
+      background: var(--surface-1)7ed;
+      border-color: var(--warning-border);
       .live-dot {
-        background: #f59e0b;
+        background: var(--warning-strong);
         animation: live-pulse 1.6s ease-in-out infinite;
       }
       .live-label {
-        color: #c2410c;
+        color: var(--warning-text);
       }
     }
 
     &.connecting {
-      background: #eff6ff;
-      border-color: #bfdbfe;
+      background: var(--info-bg);
+      border-color: var(--info-border);
       .live-dot {
-        background: #3b82f6;
+        background: var(--info-strong);
         animation: live-pulse 0.9s ease-in-out infinite;
       }
       .live-label {
-        color: #1d4ed8;
+        color: var(--info-text);
       }
     }
 
@@ -2652,7 +2652,7 @@ onUnmounted(() => {
       background: var(--surface-hover);
       border-color: var(--border-color);
       .live-dot {
-        background: #9ca3af;
+        background: var(--text-tertiary);
       }
       .live-label {
         color: var(--text-secondary);
@@ -2693,12 +2693,12 @@ onUnmounted(() => {
       padding: 0 20px;
       font-weight: 560;
       border: none;
-      background: #1f2937;
-      color: #fff;
+      background: var(--primary-color);
+      color: var(--surface-1);
       box-shadow: none;
 
       &:hover:not(:disabled) {
-        background: #111827;
+        background: var(--primary-strong);
         filter: none;
         transform: none;
       }
@@ -2723,10 +2723,10 @@ onUnmounted(() => {
     &.model-row-omni {
       margin-top: 22px;
       padding-top: 18px;
-      border-color: rgba(114, 46, 209, 0.18);
+      border-color: color-mix(in srgb, var(--indigo-text) 18%, transparent);
       background: linear-gradient(
         180deg,
-        rgba(114, 46, 209, 0.05) 0%,
+        color-mix(in srgb, var(--indigo-text) 5%, transparent) 0%,
         var(--surface-2) 48%
       );
     }
@@ -2782,7 +2782,7 @@ onUnmounted(() => {
     padding: 14px 14px 12px;
     border-radius: 14px;
     border: 1px solid var(--border-color);
-    background: linear-gradient(180deg, rgba(22, 119, 255, 0.04) 0%, rgba(255, 255, 255, 0.02) 100%);
+    background: linear-gradient(180deg, color-mix(in srgb, var(--info-color) 4%, transparent) 0%, color-mix(in srgb, var(--surface-1) 2%, transparent) 100%);
   }
 
   .mode-section-head {
@@ -2844,7 +2844,7 @@ onUnmounted(() => {
     cursor: pointer;
     border: 1px solid var(--border-color);
     border-radius: 12px;
-    background: var(--surface-1, #fff);
+    background: var(--surface-1, var(--surface-1));
     padding: 12px 12px 10px;
     transition:
       border-color 0.15s ease,
@@ -2859,34 +2859,34 @@ onUnmounted(() => {
     font: inherit;
 
     &:hover {
-      border-color: rgba(22, 119, 255, 0.45);
+      border-color: color-mix(in srgb, var(--info-color) 45%, transparent);
       transform: translateY(-1px);
-      box-shadow: 0 6px 16px rgba(15, 23, 42, 0.06);
+      box-shadow: 0 6px 16px color-mix(in srgb, var(--text-primary) 6%, transparent);
     }
 
     &.active {
-      border-color: #1677ff;
-      background: linear-gradient(165deg, rgba(22, 119, 255, 0.1) 0%, rgba(22, 119, 255, 0.03) 100%);
+      border-color: var(--info-color);
+      background: linear-gradient(165deg, color-mix(in srgb, var(--info-color) 10%, transparent) 0%, color-mix(in srgb, var(--info-color) 3%, transparent) 100%);
       box-shadow:
-        0 0 0 1px rgba(22, 119, 255, 0.2),
-        0 8px 18px rgba(22, 119, 255, 0.12);
+        0 0 0 1px color-mix(in srgb, var(--info-color) 20%, transparent),
+        0 8px 18px color-mix(in srgb, var(--info-color) 12%, transparent);
     }
 
     &.tone-download.active {
-      border-color: #13c2c2;
+      border-color: var(--success-color);
       box-shadow:
-        0 0 0 1px rgba(19, 194, 194, 0.25),
-        0 8px 18px rgba(19, 194, 194, 0.12);
-      background: linear-gradient(165deg, rgba(19, 194, 194, 0.12) 0%, rgba(19, 194, 194, 0.03) 100%);
+        0 0 0 1px color-mix(in srgb, var(--success-color) 25%, transparent),
+        0 8px 18px color-mix(in srgb, var(--success-color) 12%, transparent);
+      background: linear-gradient(165deg, color-mix(in srgb, var(--success-color) 12%, transparent) 0%, color-mix(in srgb, var(--success-color) 3%, transparent) 100%);
     }
 
     &.tone-hybrid.active,
     &.tone-omni.active {
-      border-color: #722ed1;
+      border-color: var(--indigo-text);
       box-shadow:
-        0 0 0 1px rgba(114, 46, 209, 0.22),
-        0 8px 18px rgba(114, 46, 209, 0.12);
-      background: linear-gradient(165deg, rgba(114, 46, 209, 0.1) 0%, rgba(114, 46, 209, 0.03) 100%);
+        0 0 0 1px color-mix(in srgb, var(--indigo-text) 22%, transparent),
+        0 8px 18px color-mix(in srgb, var(--indigo-text) 12%, transparent);
+      background: linear-gradient(165deg, color-mix(in srgb, var(--indigo-text) 10%, transparent) 0%, color-mix(in srgb, var(--indigo-text) 3%, transparent) 100%);
     }
   }
 
@@ -2905,8 +2905,8 @@ onUnmounted(() => {
     width: 20px;
     height: 20px;
     border-radius: 50%;
-    background: #1677ff;
-    color: #fff;
+    background: var(--info-color);
+    color: var(--surface-1);
     font-size: 12px;
     font-weight: 700;
     display: inline-flex;
@@ -2915,12 +2915,12 @@ onUnmounted(() => {
   }
 
   .mode-card.tone-download.active .mode-card-check {
-    background: #13c2c2;
+    background: var(--success-color);
   }
 
   .mode-card.tone-hybrid.active .mode-card-check,
   .mode-card.tone-omni.active .mode-card-check {
-    background: #722ed1;
+    background: var(--indigo-text);
   }
 
   .mode-card-name {
@@ -2952,7 +2952,7 @@ onUnmounted(() => {
 
   .flow-arrow {
     margin: 0 3px;
-    color: rgba(0, 0, 0, 0.25);
+    color: color-mix(in srgb, #000 25%, transparent);
   }
 
   .mode-card-need {
@@ -2966,15 +2966,15 @@ onUnmounted(() => {
     font-size: 11px;
     padding: 1px 7px;
     border-radius: 999px;
-    background: rgba(0, 0, 0, 0.04);
+    background: color-mix(in srgb, #000 4%, transparent);
     color: var(--text-secondary);
-    border: 1px solid rgba(0, 0, 0, 0.06);
+    border: 1px solid color-mix(in srgb, #000 6%, transparent);
   }
 
   .mode-card.active .need-chip {
-    background: rgba(22, 119, 255, 0.08);
-    border-color: rgba(22, 119, 255, 0.18);
-    color: #0958d9;
+    background: color-mix(in srgb, var(--info-color) 8%, transparent);
+    border-color: color-mix(in srgb, var(--info-color) 18%, transparent);
+    color: var(--info-text);
   }
 
   .mode-section-hint {
@@ -3013,7 +3013,7 @@ onUnmounted(() => {
     .hint-chip {
       font-size: 12px;
       color: var(--primary-color);
-      background: rgba(22, 119, 255, 0.08);
+      background: color-mix(in srgb, var(--info-color) 8%, transparent);
       border-radius: 999px;
       padding: 2px 10px;
     }
@@ -3034,11 +3034,11 @@ onUnmounted(() => {
   overflow: hidden;
   max-height: calc(100vh - 220px);
   border-radius: 16px !important;
-  border: 1px solid rgba(226, 232, 240, 0.9) !important;
+  border: 1px solid var(--nav-hover-border) !important;
   box-shadow:
-    0 1px 2px rgba(15, 23, 42, 0.03),
-    0 8px 24px rgba(15, 23, 42, 0.04) !important;
-  background: linear-gradient(180deg, rgba(255, 255, 255, 0.96), rgba(255, 255, 255, 0.9)) !important;
+    0 1px 2px color-mix(in srgb, var(--text-primary) 3%, transparent),
+    0 8px 24px var(--grid-line) !important;
+  background: linear-gradient(180deg, color-mix(in srgb, var(--surface-1) 96%, transparent), color-mix(in srgb, var(--surface-1) 90%, transparent)) !important;
   backdrop-filter: blur(10px);
 
   .panel-header {
@@ -3074,7 +3074,7 @@ onUnmounted(() => {
   transition: all 0.16s ease;
   border: 1px solid transparent;
   margin-bottom: 6px;
-  background: rgba(248, 250, 252, 0.65);
+  background: color-mix(in srgb, var(--surface-hover) 65%, transparent);
 
   &:hover {
     background: var(--surface-3);
@@ -3128,7 +3128,7 @@ onUnmounted(() => {
     }
 
     .task-pause-btn {
-      color: var(--warning-color, #f59e0b);
+      color: var(--warning-color, var(--warning-strong));
     }
   }
 
@@ -3182,7 +3182,7 @@ onUnmounted(() => {
   white-space: nowrap;
 
   &.llm-badge {
-    background: #eef2ff;
+    background: var(--indigo-bg);
     color: var(--primary-color);
   }
 }
@@ -3193,11 +3193,11 @@ onUnmounted(() => {
   overflow-y: auto;
   padding: 22px 24px;
   border-radius: 16px !important;
-  border: 1px solid rgba(226, 232, 240, 0.9) !important;
+  border: 1px solid var(--nav-hover-border) !important;
   box-shadow:
-    0 1px 2px rgba(15, 23, 42, 0.03),
-    0 8px 24px rgba(15, 23, 42, 0.04) !important;
-  background: linear-gradient(180deg, rgba(255, 255, 255, 0.96), rgba(255, 255, 255, 0.9)) !important;
+    0 1px 2px color-mix(in srgb, var(--text-primary) 3%, transparent),
+    0 8px 24px var(--grid-line) !important;
+  background: linear-gradient(180deg, color-mix(in srgb, var(--surface-1) 96%, transparent), color-mix(in srgb, var(--surface-1) 90%, transparent)) !important;
   backdrop-filter: blur(10px);
 }
 
@@ -3222,7 +3222,7 @@ onUnmounted(() => {
     width: 72px;
     height: 72px;
     border-radius: 20px;
-    background: linear-gradient(135deg, #e6f4ff, #f0f5ff);
+    background: linear-gradient(135deg, var(--info-bg), var(--info-bg));
     color: var(--primary-color);
     display: flex;
     align-items: center;
@@ -3359,16 +3359,16 @@ onUnmounted(() => {
   }
 
   &.timing-chip-understand {
-    border-color: #93c5fd;
-    background: #eff6ff;
-    color: #1d4ed8;
+    border-color: var(--info-border);
+    background: var(--info-bg);
+    color: var(--info-text);
 
     b {
-      color: #1e40af;
+      color: var(--info-text);
     }
 
     .timing-running {
-      color: #2563eb;
+      color: var(--info-color);
       font-weight: 600;
       animation: pulse-soft 1.2s ease-in-out infinite;
     }
@@ -3386,7 +3386,7 @@ onUnmounted(() => {
 }
 
 .timing-panel {
-  background: linear-gradient(135deg, #f8fafc 0%, #eef6ff 100%);
+  background: linear-gradient(135deg, var(--surface-hover) 0%, var(--info-bg) 100%);
   border: 1px solid var(--border-color);
   border-radius: 12px;
   padding: 14px 16px;
@@ -3431,7 +3431,7 @@ onUnmounted(() => {
 
     .timing-bar-track {
       height: 8px;
-      background: #e5e7eb;
+      background: var(--border-color);
       border-radius: 999px;
       overflow: hidden;
     }
@@ -3442,19 +3442,19 @@ onUnmounted(() => {
       transition: width 0.35s ease;
 
       &.download {
-        background: linear-gradient(90deg, #60a5fa, #2563eb);
+        background: linear-gradient(90deg, var(--info-strong), var(--info-color));
       }
 
       &.transcribe {
-        background: #1f2937;
+        background: var(--primary-color);
       }
 
       &.understand {
-        background: linear-gradient(90deg, #38bdf8, #2563eb);
+        background: linear-gradient(90deg, var(--info-strong), var(--info-color));
       }
 
       &.summarize {
-        background: linear-gradient(90deg, #34d399, #059669);
+        background: linear-gradient(90deg, var(--success-strong), var(--success-color));
       }
     }
   }
@@ -3578,7 +3578,7 @@ onUnmounted(() => {
 .video-box {
   border-radius: 12px;
   overflow: hidden;
-  background: #0f172a;
+  background: var(--text-primary);
   aspect-ratio: 16 / 9;
   position: relative;
   display: flex;
@@ -3592,7 +3592,7 @@ onUnmounted(() => {
     inset: 0;
     width: 100%;
     height: 100%;
-    background: #000;
+    background: var(--stage-bg);
     object-fit: contain;
     z-index: 1;
     pointer-events: auto;
@@ -3605,8 +3605,8 @@ onUnmounted(() => {
     display: flex;
     align-items: center;
     justify-content: center;
-    background: rgba(15, 23, 42, 0.72);
-    color: #fff;
+    background: color-mix(in srgb, var(--text-primary) 72%, transparent);
+    color: var(--surface-1);
   }
 
   .video-play-btn {
@@ -3621,13 +3621,13 @@ onUnmounted(() => {
     font-size: 15px;
     font-weight: 600;
     cursor: pointer;
-    color: #fff;
-    background: rgba(22, 119, 255, 0.92);
-    box-shadow: 0 6px 20px rgba(0, 0, 0, 0.35);
+    color: var(--surface-1);
+    background: color-mix(in srgb, var(--info-color) 92%, transparent);
+    box-shadow: 0 6px 20px color-mix(in srgb, #000 35%, transparent);
     pointer-events: auto;
 
     &:hover {
-      background: rgba(22, 119, 255, 1);
+      background: var(--info-color);
     }
   }
 
@@ -3730,7 +3730,7 @@ onUnmounted(() => {
       transition: background 0.15s;
 
       &:hover {
-        background: #ebf5ff;
+        background: var(--info-bg);
       }
 
       .ts {
@@ -3765,8 +3765,8 @@ onUnmounted(() => {
   background: var(--surface-1);
 
   &:hover {
-    border-color: rgba(22, 119, 255, 0.35);
-    box-shadow: 0 4px 12px rgba(22, 119, 255, 0.08);
+    border-color: color-mix(in srgb, var(--info-color) 35%, transparent);
+    box-shadow: 0 4px 12px color-mix(in srgb, var(--info-color) 8%, transparent);
     transform: translateY(-1px);
   }
 
@@ -3774,7 +3774,7 @@ onUnmounted(() => {
     width: 28px;
     height: 28px;
     border-radius: 8px;
-    background: #ebf5ff;
+    background: var(--info-bg);
     color: var(--primary-color);
     display: flex;
     align-items: center;
@@ -3862,8 +3862,8 @@ onUnmounted(() => {
   }
 
   :deep(pre) {
-    background: #0f172a;
-    color: #e2e8f0;
+    background: var(--text-primary);
+    color: var(--border-soft);
     padding: 12px;
     border-radius: 8px;
     overflow: auto;
@@ -3872,8 +3872,8 @@ onUnmounted(() => {
 
 .script-box {
   white-space: pre-wrap;
-  background: linear-gradient(180deg, #fffbeb, #ffffff);
-  border: 1px solid #fde68a;
+  background: linear-gradient(180deg, var(--warning-bg), var(--surface-1));
+  border: 1px solid var(--warning-border);
   border-radius: 12px;
   padding: 18px 20px;
   line-height: 1.7;
@@ -3892,7 +3892,7 @@ onUnmounted(() => {
   display: flex;
   gap: 12px;
   padding: 10px 14px;
-  border-bottom: 1px solid #f3f4f6;
+  border-bottom: 1px solid var(--surface-3);
   cursor: pointer;
   transition: background 0.12s;
 
@@ -3902,7 +3902,7 @@ onUnmounted(() => {
 
   &:hover,
   &.active {
-    background: #ebf5ff;
+    background: var(--info-bg);
   }
 
   .seg-time {
@@ -3922,7 +3922,7 @@ onUnmounted(() => {
     color: var(--text-primary);
 
     :deep(mark) {
-      background: #fef08a;
+      background: var(--warning-border);
       padding: 0 2px;
       border-radius: 2px;
     }

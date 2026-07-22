@@ -1,7 +1,7 @@
-package com.dwcode.okxbot.video.mapper;
+package com.dwcode.okxbot.common.ai.mapper;
 
 import com.baomidou.mybatisplus.core.mapper.BaseMapper;
-import com.dwcode.okxbot.video.entity.AiModelConfigEntity;
+import com.dwcode.okxbot.common.ai.entity.AiModelConfigEntity;
 import org.apache.ibatis.annotations.Mapper;
 
 /**

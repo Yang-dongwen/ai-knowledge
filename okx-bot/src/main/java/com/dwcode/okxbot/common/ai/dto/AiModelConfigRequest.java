@@ -1,4 +1,4 @@
-package com.dwcode.okxbot.video.dto;
+package com.dwcode.okxbot.common.ai.dto;
 
 import jakarta.validation.constraints.NotBlank;
 import lombok.Data;

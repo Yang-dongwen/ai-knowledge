@@ -20,7 +20,7 @@ import com.dwcode.okxbot.chat.config.AiProperties.ProviderConfig;
 import com.dwcode.okxbot.common.exception.BusinessException;
 import com.dwcode.okxbot.imggen.util.AspectRatioMapper;
 import com.dwcode.okxbot.storage.ObjectKeyBuilder;
-import com.dwcode.okxbot.video.service.AiModelConfigService;
+import com.dwcode.okxbot.common.ai.AiModelConfigService;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
