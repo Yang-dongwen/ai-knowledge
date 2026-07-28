@@ -57,8 +57,9 @@ storage:
 
 video:
   work-dir: /app/data/video
-  yt-dlp-path: yt-dlp
-  ffmpeg-path: ffmpeg
+  # 容器内已装；可用 env 覆盖为绝对路径
+  yt-dlp-path: ${VIDEO_YT_DLP_PATH:yt-dlp}
+  ffmpeg-path: ${VIDEO_FFMPEG_PATH:ffmpeg}
   whisper:
     # compose 服务名；勿用 127.0.0.1（那是容器自己）
     base-url: http://whisper:8000
@@ -89,3 +90,22 @@ imggen:
 article:
   safety:
     allow-loopback: false
+
+# 文件日志 → 容器 /app/logs（compose 挂载到宿主机 /data/auto-exchange/logs）
+logging:
+  level:
+    root: INFO
+    com.dwcode.okxbot: INFO
+    # 生产少打 SQL；排查时可改 DEBUG
+    org.apache.ibatis: WARN
+  pattern:
+    console: "%d{yyyy-MM-dd HH:mm:ss.SSS} [%thread] %-5level %logger{36} - %msg%n"
+    file: "%d{yyyy-MM-dd HH:mm:ss.SSS} [%thread] %-5level %logger{36} - %msg%n"
+  file:
+    name: /app/logs/okx-bot.log
+  logback:
+    rollingpolicy:
+      file-name-pattern: /app/logs/okx-bot.%d{yyyy-MM-dd}.%i.gz
+      max-file-size: 50MB
+      max-history: 14
+      total-size-cap: 2GB

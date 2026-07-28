@@ -78,6 +78,19 @@ if ! docker info >/dev/null 2>&1; then
   exit 1
 fi
 
+# 宿主机数据目录（日志 + 业务 data）
+HOST_DATA_ROOT="${HOST_DATA_ROOT:-/data/auto-exchange}"
+echo "==> ensure host data dirs: $HOST_DATA_ROOT/{logs,data}"
+if [[ ! -d "$HOST_DATA_ROOT" ]]; then
+  sudo mkdir -p "$HOST_DATA_ROOT/logs" "$HOST_DATA_ROOT/data"
+  sudo chown -R "$(id -u):$(id -g)" "$HOST_DATA_ROOT" 2>/dev/null \
+    || sudo chmod -R a+rwX "$HOST_DATA_ROOT"
+else
+  sudo mkdir -p "$HOST_DATA_ROOT/logs" "$HOST_DATA_ROOT/data"
+  sudo chmod -R a+rwX "$HOST_DATA_ROOT/logs" "$HOST_DATA_ROOT/data" 2>/dev/null || true
+fi
+export HOST_DATA_ROOT
+
 echo "==> docker compose up -d --build ($COMPOSE_FILE)"
 docker compose -f "$COMPOSE_FILE" --env-file "$ENV_FILE" up -d --build
 

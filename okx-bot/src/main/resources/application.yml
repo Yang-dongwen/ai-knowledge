@@ -7,7 +7,8 @@ spring:
     # 本地默认；生产/Docker 用 SPRING_DATASOURCE_* 覆盖（见 deploy/app.env.example）
     url: ${SPRING_DATASOURCE_URL:jdbc:mysql://localhost:3306/okx_bot?useUnicode=true&characterEncoding=utf-8&serverTimezone=Asia/Shanghai&useSSL=false&allowPublicKeyRetrieval=true}
     username: ${SPRING_DATASOURCE_USERNAME:root}
-    password: ${SPRING_DATASOURCE_PASSWORD:}
+    # 本地默认 123456；生产务必用环境变量覆盖
+    password: ${SPRING_DATASOURCE_PASSWORD:123456}
   jackson:
     date-format: yyyy-MM-dd HH:mm:ss
     time-zone: Asia/Shanghai

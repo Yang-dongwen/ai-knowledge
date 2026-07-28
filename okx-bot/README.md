@@ -280,6 +280,22 @@ ai:
 
 ### 7.1 启动 okx-bot
 
+**推荐（本地）**：与服务器生产 `deploy/app.env` 分离，使用本机配置：
+
+```powershell
+# 首次：复制并改本地库密码 / 工具路径
+copy deploy\app.env.local.example deploy\app.env.local
+
+# 一键加载 env + profile=local
+powershell -ExecutionPolicy Bypass -File deploy/scripts/run-local.ps1
+```
+
+或 IDE：
+
+1. Active profiles: `local`（加载 `application-local.yml`）
+2. 可选：Environment variables 从 `deploy/app.env.local` 导入  
+3. **不要**把生产 `deploy/app.env`（RDS）配进 IDE，本机一般连不上 RDS
+
 ```powershell
 cd okx-bot
 
@@ -287,6 +303,8 @@ cd okx-bot
 $env:JAVA_HOME = "C:\Program Files\Java\jdk-17"
 $env:PATH = "$env:JAVA_HOME\bin;$env:PATH"
 
+# 仅用 application.yml 默认（localhost + root/123456）时：
+$env:SPRING_PROFILES_ACTIVE = "local"
 mvn spring-boot:run
 # 或 IDE 运行 com.dwcode.okxbot.OkxBotApplication
 ```

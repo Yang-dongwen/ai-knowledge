@@ -5,90 +5,90 @@
 
 ---
 
+## 你要的目标（推荐分工）
+
+| 改什么 | 怎么做 | 状态 |
+|--------|--------|------|
+| **代码**（前后端） | `git push origin main` → GitHub Actions 自动部署 | **已完成** |
+| **隐私配置**（`app.env`） | 本机改 `deploy/app.env` → 跑同步脚本 | **用下面脚本** |
+
+```text
+代码变更  ──git push──►  GitHub Actions ──SSH──►  git pull + docker 重建前后端
+                                                     ▲
+隐私/密钥 ──sync-env-local.ps1──scp app.env──────────┘（仅同步配置并重启）
+```
+
+**原则：** 密钥永不进 Git；代码走 CI；配置单独一键同步。
+
+---
+
 ## 方案对比
 
 | 方案 | 怎么触发 | 服务器是否要 git | 推荐场景 |
 |------|----------|------------------|----------|
-| **A. 本机一键** | 运行 PowerShell | 不需要 | 日常开发，立刻发布 |
-| **B. GitHub Actions** | push / 网页 Run | 需要 | 远程/协作/标准 CI |
-| **C. 仅 SSH 一条命令** | SSH 后 `deploy` | 需要（pull） | 已在服务器上时 |
+| **代码：GitHub Actions** | `git push` / 网页 Run | 需要（已配好） | **日常发布代码（主路径）** |
+| **配置：sync-env** | 本机 `sync-env-local.ps1` | 不需要 | **改 RDS/JWT/API Key** |
+| **兜底：deploy-local.ps1** | 本机打包 scp 代码 | 不需要 | CI 挂了或紧急发布 |
+| **SSH 一条命令** | 服务器上 `deploy` | 需要 | 人已在机器上 |
 
-三条都 **不把业务密钥写进 Git**。
-
----
-
-## 方案 A：本机一键（现在就能用）
-
-在仓库根目录（Windows）：
-
-```powershell
-pwsh deploy/scripts/deploy-local.ps1
-```
-
-可选参数：
-
-```powershell
-pwsh deploy/scripts/deploy-local.ps1 `
-  -HostName 13.201.82.24 `
-  -PemPath "C:\Users\你\Downloads\aws_common\dw-yindu.pem"
-```
-
-流程：
-
-1. 打包 `okx-bot` / 前端 / `deploy`（排除 `node_modules`、本机 `app.env`）  
-2. scp 到 EC2  
-3. **保留服务器上的 `app.env`**  
-4. `SKIP_GIT=1` 执行 `server-deploy.sh` → `docker compose up -d --build`  
-
-只同步代码不重建：
-
-```powershell
-pwsh deploy/scripts/deploy-local.ps1 -SkipBuild
-```
+全部 **不把业务密钥写进 Git**。
 
 ---
 
-## 方案 B：GitHub 一键
+## 日常 1：发代码（GitHub 自动，无需你再操作）
 
-### B1. 一次性准备
-
-1. **本机**把部署相关代码 push 到 `main`（含 `.github/workflows`、`deploy/`）  
-2. **EC2** 转成 git 仓库（保留密钥）：
-
-```bash
-# 先保证服务器上有最新 scripts（可用方案 A 同步一次）
-cd ~/auto-exchange
-bash deploy/scripts/bootstrap-git.sh
-# 按提示把公钥加到 GitHub Deploy keys 后，再执行一次直到成功
-```
-
-3. 配置 GitHub Secrets：见 [setup-github-secrets.md](./scripts/setup-github-secrets.md)
-
-### B2. 日常
-
-```bash
+```powershell
 git add .
 git commit -m "your message"
 git push origin main
 ```
 
-或：GitHub → **Actions → Deploy EC2 → Run workflow**
+之后 **不用** SSH、不用本机脚本。Actions 会：
 
-Actions 只做：SSH → `git pull` → `docker compose up -d --build`。
+1. SSH 登录 EC2  
+2. `git pull` 最新代码  
+3. `docker compose up -d --build`（**前端 + 后端** 镜像重建并重启）  
+4. 密钥仍读服务器上的 `deploy/app.env`（**不会**用仓库里的密钥）
+
+手动触发：GitHub → **Actions → Deploy EC2 → Run workflow**
 
 ---
 
-## 方案 C：服务器上一条命令
+## 日常 2：同步隐私配置（本机一键脚本）
 
-```bash
-ssh -i dw-yindu.pem ubuntu@13.201.82.24
-cd ~/auto-exchange
-bash deploy/scripts/server-deploy.sh
-# 或（PATH 已加 ~/bin 时）
-deploy
+只改密钥 / RDS / API Key 时：
+
+1. 编辑本机 `deploy/app.env`（勿 commit）  
+2. 执行：
+
+```powershell
+cd D:\gitprojects\auto-exchange
+powershell -ExecutionPolicy Bypass -File deploy/scripts/sync-env-local.ps1
 ```
 
-`SKIP_GIT=1` 时只重建不 pull。
+会：
+
+1. `scp` 本机 `app.env` → 服务器 `~/auto-exchange/deploy/app.env`  
+2. 同步为 `.env`  
+3. `docker compose up -d` **重启容器**使新环境变量生效（默认不重新 build 镜像）
+
+只上传不重启：
+
+```powershell
+powershell -ExecutionPolicy Bypass -File deploy/scripts/sync-env-local.ps1 -NoRestart
+```
+
+---
+
+## 兜底：本机整包同步代码
+
+CI 挂了或要紧急覆盖服务器代码时：
+
+```powershell
+powershell -ExecutionPolicy Bypass -File deploy/scripts/deploy-local.ps1
+```
+
+注意：此脚本 **不会** 用本机 app.env 覆盖服务器密钥。
 
 ---
 
@@ -96,23 +96,18 @@ deploy
 
 | 文件 | 位置 | Git |
 |------|------|-----|
-| `deploy/app.env` | 服务器 / 本机私有 | ❌ 禁止提交 |
+| `deploy/app.env` | 本机 + 服务器私有 | ❌ 禁止提交 |
 | `deploy/app.env.example` | 仓库模板 | ✅ |
-| `DEPLOY_SSH_KEY` | GitHub Secrets | 仅部署 SSH |
-
-本机改密钥 → scp 到服务器：
-
-```powershell
-scp -i $pem deploy\app.env ubuntu@13.201.82.24:~/auto-exchange/deploy/app.env
-```
+| `DEPLOY_SSH_KEY` 等 | GitHub Secrets | 仅部署 SSH，无业务密钥 |
 
 ---
 
-## 推荐节奏
+## 推荐节奏（已落地）
 
-1. **现在**：用 **方案 A** 发布（不依赖 GitHub Deploy Key）  
-2. **本周**：push 代码 + `bootstrap-git.sh` + Secrets → 启用 **方案 B**  
-3. 改 env 只动服务器 `app.env`，再跑 A 或 B 重建容器  
+1. **改代码** → `git push` → 等 Actions 绿 → 刷新网站  
+2. **改密钥** → 改本机 `app.env` → `sync-env-local.ps1`  
+3. 一般 **不要** 把 `app.env` 提交进 Git  
+
 
 ---
 

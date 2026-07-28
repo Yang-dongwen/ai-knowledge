@@ -25,11 +25,18 @@ WORKDIR /app
 COPY --from=build /src/app.jar /app/app.jar
 COPY deploy/config/application-docker.yml /app/config/application-docker.yml
 
-RUN mkdir -p /app/data/video /app/data/aigen /app/data/imggen /app/data/_scratch /app/data/_objects
+RUN mkdir -p \
+      /app/data/video \
+      /app/data/aigen \
+      /app/data/imggen \
+      /app/data/_scratch \
+      /app/data/_objects \
+      /app/logs
 
 ENV SPRING_PROFILES_ACTIVE=docker \
     SPRING_CONFIG_ADDITIONAL_LOCATION=optional:file:/app/config/ \
     JAVA_OPTS="-Xms512m -Xmx1536m"
+
 
 EXPOSE 8080
 # 无 actuator 时：进程监听 8080 即视为存活（401/404 也算起来了）
