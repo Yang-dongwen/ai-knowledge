@@ -42,8 +42,12 @@ cat "${KEY_FILE}.pub"
 echo "=========================================="
 echo
 
-# 测试 github
-if ! ssh -o StrictHostKeyChecking=accept-new -o BatchMode=yes -T git@github.com 2>&1 | grep -qi 'successfully authenticated\|Hi '; then
+# 测试 github（ssh -T 成功时仍返回 exit 1，不能依赖管道 exit code）
+set +e
+gh_out=$(ssh -o StrictHostKeyChecking=accept-new -o BatchMode=yes -T git@github.com 2>&1)
+set -e
+echo "github_ssh: $gh_out"
+if ! echo "$gh_out" | grep -qiE 'successfully authenticated|Hi '; then
   echo "WARN: 尚未能访问 GitHub。请先添加 Deploy Key 后重新执行本脚本。"
   echo "测试: ssh -T git@github.com"
   exit 2
