@@ -7,11 +7,11 @@
   适合日常开发后立刻发布。
 
 .EXAMPLE
-  # 默认主机与密钥路径
-  pwsh deploy/scripts/deploy-local.ps1
+  # 默认主机与密钥路径（Windows 自带 PowerShell 也可用）
+  powershell -ExecutionPolicy Bypass -File deploy/scripts/deploy-local.ps1
 
 .EXAMPLE
-  pwsh deploy/scripts/deploy-local.ps1 -HostName 13.201.82.24 -PemPath C:\path\dw-yindu.pem
+  powershell -ExecutionPolicy Bypass -File deploy/scripts/deploy-local.ps1 -HostName 13.201.82.24 -PemPath C:\path\dw-yindu.pem
 #>
 param(
   [string]$HostName = "13.201.82.24",

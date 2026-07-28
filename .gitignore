@@ -12,6 +12,19 @@ venv/
 .venv/
 ENV/
 env/
+
+# 部署密钥（切勿提交）
+deploy/.env
+deploy/app.env
+deploy/SECRETS_INVENTORY.env
+deploy/.admin-once.txt
+**/.env
+!**/.env.example
+!**/app.env.example
+# 临时打包目录
+_deploy_stage/
+_deploy_stage.tgz
+_*.sh
 *.egg-info/
 build/
 
