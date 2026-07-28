@@ -4,9 +4,10 @@ server:
 spring:
   datasource:
     driver-class-name: com.mysql.cj.jdbc.Driver
-    url: jdbc:mysql://localhost:3306/okx_bot?useUnicode=true&characterEncoding=utf-8&serverTimezone=Asia/Shanghai&useSSL=false&allowPublicKeyRetrieval=true
-    username: root
-    password: 123456
+    # 本地默认；生产/Docker 用 SPRING_DATASOURCE_* 覆盖（见 deploy/app.env.example）
+    url: ${SPRING_DATASOURCE_URL:jdbc:mysql://localhost:3306/okx_bot?useUnicode=true&characterEncoding=utf-8&serverTimezone=Asia/Shanghai&useSSL=false&allowPublicKeyRetrieval=true}
+    username: ${SPRING_DATASOURCE_USERNAME:root}
+    password: ${SPRING_DATASOURCE_PASSWORD:}
   jackson:
     date-format: yyyy-MM-dd HH:mm:ss
     time-zone: Asia/Shanghai
@@ -24,14 +25,14 @@ spring:
 # 认证 / JWT / 验证码 / 角色
 auth:
   jwt:
-    # 生产务必换成足够长的随机密钥（>=32 字节）
-    secret: okx-bot-jwt-secret-change-me-in-production-2026-secure-key
+    # 生产必须用环境变量 AUTH_JWT_SECRET（>=32 字节随机串）
+    secret: ${AUTH_JWT_SECRET:okx-bot-jwt-secret-change-me-in-production-2026-secure-key}
     expire-seconds: 7200
     issuer: okx-bot
   mail:
     # true=验证码打印到后端日志，不真实发信（本地开发）
-    console-mode: true
-    from: noreply@example.com
+    console-mode: ${AUTH_MAIL_CONSOLE_MODE:true}
+    from: ${AUTH_MAIL_FROM:noreply@example.com}
   code:
     length: 6
     expire-minutes: 10
@@ -40,15 +41,15 @@ auth:
     verify-fail-window-minutes: 15
   # 库中尚无 SUPER_ADMIN 时自动种子（首次启动）；上线后请改密或 seed-enabled: false
   admin:
-    seed-enabled: true
-    email: admin@okx-bot.local
-    password: Admin@123456
+    seed-enabled: ${AUTH_ADMIN_SEED_ENABLED:true}
+    email: ${AUTH_ADMIN_EMAIL:admin@okx-bot.local}
+    password: ${AUTH_ADMIN_PASSWORD:Admin@123456}
     nickname: 超级管理员
 
 # 会员支付（Phase 0：Mock；真通道待商户资质）
 pay:
   enabled: true
-  public-base-url: http://127.0.0.1:8080
+  public-base-url: ${PAY_PUBLIC_BASE_URL:http://127.0.0.1:8080}
   order-expire-minutes: 30
   max-open-orders-per-user: 3
   reconcile-cron: "0 */1 * * * ?"
@@ -112,27 +113,26 @@ ai:
     openai:
       name: OpenAI
       base-url: https://api.openai.com/v1
-      api-key: ""
+      api-key: ${AI_OPENAI_API_KEY:}
       # 模型改存库表 ai_model_config；此处 models 仅给聊天模块兜底，可为空
       models: []
     deepseek:
       name: DeepSeek
       base-url: https://api.deepseek.com/v1
-      api-key: ""
+      api-key: ${AI_DEEPSEEK_API_KEY:}
       models: []
-    # 供应商鉴权仍在此配置；模型列表改由数据库 ai_model_config 管理（前端「模型管理」）
+    # 供应商鉴权走环境变量；模型列表由数据库 ai_model_config 管理
     nvidia:
       name: NVIDIA NIM
       base-url: https://integrate.api.nvidia.com/v1
-      api-key: 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
+      api-key: ${AI_NVIDIA_API_KEY:}
       models: []
-    # openai / deepseek 的 models 也可清空，聊天模块若仍读 yml 可保留少量
 
 # 统一对象存储（PR1：local；PR2 接 Cloudflare R2）
 # 业务模块尚未全部切换；新代码应注入 ObjectStoragePort / ScratchWorkspace / ObjectKeyBuilder
 storage:
-  provider: r2          # local | r2（r2 需配置下方凭证；PR2 已实现）
-  env-prefix: dev          # 单桶分环境：dev / prod → key 前缀
+  provider: ${STORAGE_PROVIDER:local}   # local | r2；密钥见 R2_* 环境变量
+  env-prefix: ${STORAGE_ENV_PREFIX:dev} # 单桶分环境：dev / prod → key 前缀
   # proxy=经应用转发；presign=R2 预签名直链（PR5，大文件不经 JVM）；hybrid=优先 presign 失败回退 proxy
   serve-mode: presign
   local:
@@ -145,16 +145,16 @@ storage:
     scratch-on-failure: true
     r2-on-failure: true
   r2:
-    account-id: de23e01745a69ed8802046185306343a
-    bucket: dwcode
-    access-key-id: debf3c19601c8a84d37d26fdbcd6e2a6
-    secret-access-key: 085ef3449a13ca35d5ad95f058f153e62aa55a0e1c1fed37aa18ed9a39d639a7
+    account-id: ${R2_ACCOUNT_ID:}
+    bucket: ${R2_BUCKET:}
+    access-key-id: ${R2_ACCESS_KEY_ID:}
+    secret-access-key: ${R2_SECRET_ACCESS_KEY:}
     # endpoint 空则 https://{account-id}.r2.cloudflarestorage.com
-    endpoint: https://de23e01745a69ed8802046185306343a.r2.cloudflarestorage.com
+    endpoint: ${R2_ENDPOINT:}
     region: auto
     path-style: true
     presign-ttl-seconds: 900
-    public-base-url: ""
+    public-base-url: ${R2_PUBLIC_BASE_URL:}
     # 超过阈值走 Multipart（aigen 成片等）
     multipart-threshold-bytes: 104857600   # 100MB
     multipart-part-size-bytes: 8388608     # 8MB
@@ -163,9 +163,9 @@ storage:
 video:
   # 按 taskId 分目录：video/audio/transcription.json/summary.json
   work-dir: ./data/video
-  # IDE 启动的 Java 进程可能读不到 winget 更新后的 PATH，建议写绝对路径
-  yt-dlp-path: C:/Users/22809/AppData/Local/Microsoft/WinGet/Packages/yt-dlp.yt-dlp_Microsoft.Winget.Source_8wekyb3d8bbwe/yt-dlp.exe
-  ffmpeg-path: C:/Users/22809/AppData/Local/Microsoft/WinGet/Packages/Gyan.FFmpeg_Microsoft.Winget.Source_8wekyb3d8bbwe/ffmpeg-8.1.2-full_build/bin/ffmpeg.exe
+  # 本地可在环境变量 VIDEO_YT_DLP_PATH / VIDEO_FFMPEG_PATH 写绝对路径；空则用 PATH 中命令名
+  yt-dlp-path: ${VIDEO_YT_DLP_PATH:yt-dlp}
+  ffmpeg-path: ${VIDEO_FFMPEG_PATH:ffmpeg}
   # v2 默认保留媒体与转录文件，便于前端查看/下载；磁盘紧张时可改 true
   cleanup-media: false
   whisper:
@@ -218,7 +218,7 @@ video:
     # Windows Edge/Chrome 新版 Cookie 有 App-Bound 加密，--cookies-from-browser 常报：
     #   Could not copy Chrome cookie database / Failed to decrypt with DPAPI
     # 正确做法：浏览器开着 → DevTools 复制 Cookie 头 → 跑 scripts/import-cookie-header.ps1
-    cookies-file: D:/gitprojects/auto-exchange/okx-bot/data/douyin-cookies.txt
+    cookies-file: ${VIDEO_COOKIES_FILE:}
     # cookies-from-browser: edge   # 本机基本不可用，请保持注释
     # extra-args: ["--proxy", "http://127.0.0.1:7890"]
   # 多模态画面理解（默认 audio_only 兼容现网；go-live 可改 hybrid）

@@ -1,0 +1,61 @@
+# 2G 小机第一版：仅 web + okx-bot
+# MySQL 使用云端（AWS RDS 等），本机不跑 MySQL 容器
+# 不含 whisper / remotion
+#
+# 用法（仓库根目录）:
+#   1. cp deploy/app.env.example deploy/app.env 并填 RDS/密钥（勿提交）
+#   2. bash deploy/scripts/init-rds.sh
+#   3. docker compose -f deploy/docker-compose.lite.yml --env-file deploy/app.env up -d --build
+#   或一键：bash deploy/scripts/server-deploy.sh
+
+name: auto-exchange-lite
+
+services:
+  okx-bot:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile.okx-bot
+    restart: unless-stopped
+    # 密钥文件：优先 app.env（见 app.env.example）；compose 命令需 --env-file 注入 ${} 插值
+    env_file:
+      - app.env
+    environment:
+      SPRING_PROFILES_ACTIVE: docker
+      SPRING_CONFIG_ADDITIONAL_LOCATION: optional:file:/app/config/
+      # 必须在 app.env 中配置云端库
+      SPRING_DATASOURCE_URL: ${SPRING_DATASOURCE_URL:?set SPRING_DATASOURCE_URL in deploy/app.env}
+      SPRING_DATASOURCE_USERNAME: ${SPRING_DATASOURCE_USERNAME:?set SPRING_DATASOURCE_USERNAME}
+      SPRING_DATASOURCE_PASSWORD: ${SPRING_DATASOURCE_PASSWORD:?set SPRING_DATASOURCE_PASSWORD}
+      VIDEO_WHISPER_MANAGED_ENABLED: "false"
+      AIGEN_REMOTION_MANAGE_PROCESS: "false"
+      JAVA_OPTS: ${JAVA_OPTS:--Xmx640m}
+    volumes:
+      - app-data:/app/data
+    networks:
+      - appnet
+    expose:
+      - "8080"
+    deploy:
+      resources:
+        limits:
+          memory: 900M
+
+  web:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile.web
+    restart: unless-stopped
+    ports:
+      # 80/443 常被 xray 等占用；默认映射宿主机 8088
+      - "${WEB_HOST_PORT:-8088}:80"
+    depends_on:
+      - okx-bot
+    networks:
+      - appnet
+
+networks:
+  appnet:
+    driver: bridge
+
+volumes:
+  app-data:

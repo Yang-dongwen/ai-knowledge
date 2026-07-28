@@ -22,6 +22,9 @@
 ## 快速入口
 
 - **后端部署 / 外部工具 / 配置 / API / 排障** → 阅读 **[okx-bot/README.md](./okx-bot/README.md)**
+- **一键部署（本机 / GitHub）** → **[deploy/CI_CD.md](./deploy/CI_CD.md)** · [app.env.example](./deploy/app.env.example)
+  - 本机：`pwsh deploy/scripts/deploy-local.ps1`
+  - GitHub：push `main` 或 Actions → Deploy EC2
 - **视频提取运行流程 / 工具串联 / Mermaid 一页纸** → [okx-bot/doc/VideoCoreExtractor_视频提取运行流程教程.md](./okx-bot/doc/VideoCoreExtractor_视频提取运行流程教程.md)
 - **AI 成片渲染联调** → [aigen-remotion/README.md](./aigen-remotion/README.md) + okx-bot 中 `aigen.remotion` 配置
 - **模块级深度文档**（提取、生成、文生图、Auth、LangChain4j 等）→ [okx-bot/doc/](./okx-bot/doc/)

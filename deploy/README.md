@@ -16,9 +16,9 @@
                          Cloudflare R2（对象，可选）
 ```
 
-- **MySQL 不在 Docker 里**，用你已有的 / 将创建的 **RDS**。
-- **暂无域名**：用 EC2 **公网 IP** 访问 `http://x.x.x.x/`。
-- 第一版 **带上** Whisper + Remotion；机器内存建议 **≥ 8GB**。
+- **MySQL 只用云端（AWS RDS）**，本机 **不** 起 MySQL 容器（见 `docker-compose.lite.yml`）。
+- **暂无域名**：用 EC2 **公网 IP** 访问 `http://x.x.x.x:8088/`（80 常被其它服务占用时）。
+- 2G 小机用 **lite**（仅 web + okx-bot）；全量 Whisper + Remotion 建议 **≥ 8GB**。
 
 ---
 

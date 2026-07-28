@@ -10,20 +10,22 @@
     "lint": "eslint . --ext .vue,.js,.jsx,.cjs,.mjs,.ts,.tsx,.cts,.mts --fix"
   },
   "dependencies": {
+    "@ant-design/icons-vue": "7.0.1",
     "ant-design-vue": "4.1.2",
     "axios": "1.7.2",
     "dayjs": "1.11.11",
     "echarts": "5.5.0",
+    "highlight.js": "^11.11.1",
+    "markdown-it": "^14.3.0",
     "pinia": "2.1.7",
     "vue": "3.4.27",
-    "vue-router": "4.3.2",
-    "@ant-design/icons-vue": "7.0.1"
+    "vue-router": "4.3.2"
   },
   "devDependencies": {
     "@vitejs/plugin-vue": "5.0.4",
+    "sass": "1.77.2",
     "typescript": "5.4.5",
     "vite": "5.2.11",
-    "vue-tsc": "2.0.19",
-    "sass": "1.77.2"
+    "vue-tsc": "2.0.19"
   }
 }
