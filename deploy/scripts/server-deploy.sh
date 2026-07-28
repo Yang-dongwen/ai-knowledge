@@ -52,10 +52,22 @@ if [[ "$SKIP_GIT" != "1" ]]; then
     echo "  - 仅重建已上传代码: SKIP_GIT=1 bash deploy/scripts/server-deploy.sh" >&2
     exit 1
   fi
-  echo "==> git fetch/pull ($REF)"
+  echo "==> git fetch/reset ($REF) — 强制与 origin 一致（保留 deploy/app.env）"
+  # 备份密钥（git clean 不删 ignored 文件，再保险一次）
+  ENV_BAK=$(mktemp)
+  if [[ -f deploy/app.env ]]; then cp -a deploy/app.env "$ENV_BAK"; fi
   git fetch --prune origin
-  git checkout "$REF"
-  git pull --ff-only origin "$REF"
+  # 丢弃 scp 残留的未提交改动，避免 pull 冲突
+  git checkout -f "$REF" 2>/dev/null || git checkout -f -B "$REF" "origin/$REF"
+  git reset --hard "origin/$REF"
+  git clean -fd -e deploy/app.env -e deploy/.env
+  if [[ -s "$ENV_BAK" ]]; then
+    mkdir -p deploy
+    cp -a "$ENV_BAK" deploy/app.env
+    cp -a "$ENV_BAK" deploy/.env
+    chmod 600 deploy/app.env deploy/.env
+  fi
+  rm -f "$ENV_BAK"
   echo "commit=$(git rev-parse --short HEAD)"
 else
   echo "==> SKIP_GIT=1，跳过 git pull"
