@@ -280,34 +280,27 @@ ai:
 
 ### 7.1 启动 okx-bot
 
-**推荐（本地）**：与服务器生产 `deploy/app.env` 分离，使用本机配置：
+**配置分工（按你的要求）：**
+
+| 文件 | profile | 内容 | Git |
+|------|---------|------|-----|
+| `application-local.yml` | `local` | **真实**密钥/本机库/Windows 路径 | ❌ **不提交** |
+| `application-ec2.yml` | `ec2` | **变量** `${...}`，密钥在服务器 `app.env` | ✅ **要提交** |
+
+两者都用 **R2**，`env-prefix`: `local` / `ec2` 区分路径。
 
 ```powershell
-# 首次：复制并改本地库密码 / 工具路径
-copy deploy\app.env.local.example deploy\app.env.local
+# 生成本地 yml（可从 app.env 填 R2/AI）
+python deploy/scripts/gen_profile_yml.py
 
-# 一键加载 env + profile=local
+# 本地启动
 powershell -ExecutionPolicy Bypass -File deploy/scripts/run-local.ps1
+
+# 只同步服务器密钥 app.env（不是 yml）
+powershell -ExecutionPolicy Bypass -File deploy/scripts/sync-env-local.ps1
 ```
 
-或 IDE：
-
-1. Active profiles: `local`（加载 `application-local.yml`）
-2. 可选：Environment variables 从 `deploy/app.env.local` 导入  
-3. **不要**把生产 `deploy/app.env`（RDS）配进 IDE，本机一般连不上 RDS
-
-```powershell
-cd okx-bot
-
-# 确保 JAVA_HOME 指向 JDK 17
-$env:JAVA_HOME = "C:\Program Files\Java\jdk-17"
-$env:PATH = "$env:JAVA_HOME\bin;$env:PATH"
-
-# 仅用 application.yml 默认（localhost + root/123456）时：
-$env:SPRING_PROFILES_ACTIVE = "local"
-mvn spring-boot:run
-# 或 IDE 运行 com.dwcode.okxbot.OkxBotApplication
-```
+IDE：Active profiles = `local`。
 
 ### 7.2 Whisper（二选一）
 

@@ -23,8 +23,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 WORKDIR /app
 COPY --from=build /src/app.jar /app/app.jar
-COPY deploy/config/application-docker.yml /app/config/application-docker.yml
-
+# application-ec2.yml 已打进 jar（变量占位）；真实密钥由容器环境变量（app.env）注入
 RUN mkdir -p \
       /app/data/video \
       /app/data/aigen \
@@ -33,8 +32,7 @@ RUN mkdir -p \
       /app/data/_objects \
       /app/logs
 
-ENV SPRING_PROFILES_ACTIVE=docker \
-    SPRING_CONFIG_ADDITIONAL_LOCATION=optional:file:/app/config/ \
+ENV SPRING_PROFILES_ACTIVE=ec2 \
     JAVA_OPTS="-Xms512m -Xmx1536m"
 
 

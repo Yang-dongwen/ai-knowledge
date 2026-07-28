@@ -1,0 +1,107 @@
+# EC2 / Docker 生产配置 — 提交到 Git
+# 密钥不写死，由服务器 deploy/app.env 注入环境变量
+# profile: ec2
+# R2 路径前缀 env-prefix=ec2（本地用 local）
+
+server:
+  port: 8080
+  forward-headers-strategy: framework
+
+spring:
+  datasource:
+    url: ${SPRING_DATASOURCE_URL}
+    username: ${SPRING_DATASOURCE_USERNAME}
+    password: ${SPRING_DATASOURCE_PASSWORD}
+
+auth:
+  jwt:
+    secret: ${AUTH_JWT_SECRET}
+  mail:
+    console-mode: ${AUTH_MAIL_CONSOLE_MODE:true}
+    from: ${AUTH_MAIL_FROM:noreply@example.com}
+  admin:
+    seed-enabled: ${AUTH_ADMIN_SEED_ENABLED:true}
+    email: ${AUTH_ADMIN_EMAIL:admin@okx-bot.local}
+    password: ${AUTH_ADMIN_PASSWORD}
+
+pay:
+  public-base-url: ${PAY_PUBLIC_BASE_URL}
+  trust-x-forwarded-for: true
+  mock-enabled: ${PAY_MOCK_ENABLED:true}
+
+ai:
+  default-provider: ${AI_DEFAULT_PROVIDER:nvidia}
+  providers:
+    openai:
+      api-key: ${AI_OPENAI_API_KEY:}
+    deepseek:
+      api-key: ${AI_DEEPSEEK_API_KEY:}
+    nvidia:
+      api-key: ${AI_NVIDIA_API_KEY:}
+
+storage:
+  provider: r2
+  env-prefix: ec2
+  serve-mode: presign
+  local:
+    root: /app/data/_objects
+  scratch:
+    root: /app/data/_scratch
+  r2:
+    account-id: ${R2_ACCOUNT_ID}
+    bucket: ${R2_BUCKET}
+    access-key-id: ${R2_ACCESS_KEY_ID}
+    secret-access-key: ${R2_SECRET_ACCESS_KEY}
+    endpoint: ${R2_ENDPOINT:}
+    public-base-url: ${R2_PUBLIC_BASE_URL:}
+    region: auto
+    path-style: true
+
+video:
+  work-dir: /app/data/video
+  yt-dlp-path: yt-dlp
+  ffmpeg-path: ffmpeg
+  whisper:
+    base-url: http://whisper:8000
+    model: ${WHISPER_MODEL:small}
+    managed:
+      enabled: false
+  download:
+    cookies-file: ${VIDEO_COOKIES_FILE:}
+
+aigen:
+  work-dir: /app/data/aigen
+  visual:
+    bgm-dir: /app/data/aigen/_bgm
+  remotion:
+    base-url: http://remotion:3100
+    manage-process: false
+    auto-start-on-boot: false
+  tts:
+    provider: edge
+    edge-command: edge-tts
+    fail-open-to-mock: true
+
+imggen:
+  work-dir: /app/data/imggen
+
+article:
+  safety:
+    allow-loopback: false
+
+logging:
+  level:
+    root: INFO
+    com.dwcode.okxbot: INFO
+    org.apache.ibatis: WARN
+  pattern:
+    console: "%d{yyyy-MM-dd HH:mm:ss.SSS} [%thread] %-5level %logger{36} - %msg%n"
+    file: "%d{yyyy-MM-dd HH:mm:ss.SSS} [%thread] %-5level %logger{36} - %msg%n"
+  file:
+    name: /app/logs/okx-bot.log
+  logback:
+    rollingpolicy:
+      file-name-pattern: /app/logs/okx-bot.%d{yyyy-MM-dd}.%i.gz
+      max-file-size: 50MB
+      max-history: 14
+      total-size-cap: 2GB

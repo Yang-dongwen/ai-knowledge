@@ -1,56 +1,41 @@
+# 公共业务配置（可提交）。环境相关 / 隐私项见：
+#   application-local.yml  — 本地真实值（不提交）
+#   application-ec2.yml    — 远程变量占位（提交）+ 服务器 app.env 注入
+
 server:
   port: 8080
 
 spring:
   datasource:
     driver-class-name: com.mysql.cj.jdbc.Driver
-    # 本地默认；生产/Docker 用 SPRING_DATASOURCE_* 覆盖（见 deploy/app.env.example）
-    url: ${SPRING_DATASOURCE_URL:jdbc:mysql://localhost:3306/okx_bot?useUnicode=true&characterEncoding=utf-8&serverTimezone=Asia/Shanghai&useSSL=false&allowPublicKeyRetrieval=true}
-    username: ${SPRING_DATASOURCE_USERNAME:root}
-    # 本地默认 123456；生产务必用环境变量覆盖
-    password: ${SPRING_DATASOURCE_PASSWORD:123456}
+    # url / username / password → local 或 ec2 profile
   jackson:
     date-format: yyyy-MM-dd HH:mm:ss
     time-zone: Asia/Shanghai
     default-property-inclusion: non_null
-  # 真实发信时取消注释并配置 SMTP；默认 console 模式见 auth.mail
-  # mail:
-  #   host: smtp.example.com
-  #   port: 465
-  #   username: your@email.com
-  #   password: your-smtp-password
-  #   properties:
-  #     mail.smtp.auth: true
-  #     mail.smtp.ssl.enable: true
-
-# 认证 / JWT / 验证码 / 角色
+  profiles:
+    active: local
+# 认证：密钥与管理员账号在 local / ec2
 auth:
   jwt:
-    # 生产必须用环境变量 AUTH_JWT_SECRET（>=32 字节随机串）
-    secret: ${AUTH_JWT_SECRET:okx-bot-jwt-secret-change-me-in-production-2026-secure-key}
     expire-seconds: 7200
     issuer: okx-bot
   mail:
-    # true=验证码打印到后端日志，不真实发信（本地开发）
-    console-mode: ${AUTH_MAIL_CONSOLE_MODE:true}
-    from: ${AUTH_MAIL_FROM:noreply@example.com}
+    console-mode: true
+    from: noreply@example.com
   code:
     length: 6
     expire-minutes: 10
     send-interval-seconds: 60
     max-verify-fails: 10
     verify-fail-window-minutes: 15
-  # 库中尚无 SUPER_ADMIN 时自动种子（首次启动）；上线后请改密或 seed-enabled: false
   admin:
-    seed-enabled: ${AUTH_ADMIN_SEED_ENABLED:true}
-    email: ${AUTH_ADMIN_EMAIL:admin@okx-bot.local}
-    password: ${AUTH_ADMIN_PASSWORD:Admin@123456}
+    seed-enabled: true
     nickname: 超级管理员
 
-# 会员支付（Phase 0：Mock；真通道待商户资质）
+# 会员支付
 pay:
   enabled: true
-  public-base-url: ${PAY_PUBLIC_BASE_URL:http://127.0.0.1:8080}
   order-expire-minutes: 30
   max-open-orders-per-user: 3
   reconcile-cron: "0 */1 * * * ?"
@@ -60,21 +45,12 @@ pay:
   member-expire-cron: "0 5 * * * ?"
   mock-enabled: true
   trust-x-forwarded-for: false
-  # ---------- 支付宝直连（默认关闭；无资质/无密钥时请保持 enabled=false）----------
-  # 进件完成后：enabled=true，并用环境变量注入密钥，public-base-url 改为公网 HTTPS
   alipay:
     enabled: false
-    app-id: ${ALIPAY_APP_ID:}
-    # PKCS8 应用私钥（一行或去头尾 PEM）；勿提交真实密钥到仓库
-    private-key: ${ALIPAY_PRIVATE_KEY:}
-    # 支付宝公钥（开放平台「支付宝公钥」，非应用公钥）
-    alipay-public-key: ${ALIPAY_PUBLIC_KEY:}
     sign-type: RSA2
     charset: UTF-8
     format: json
-    # 正式：https://openapi.alipay.com/gateway.do
-    # 沙箱：https://openapi-sandbox.dl.alipaydev.com/gateway.do
-    server-url: ${ALIPAY_SERVER_URL:https://openapi.alipay.com/gateway.do}
+    server-url: https://openapi.alipay.com/gateway.do
     notify-path: /api/pay/notify/alipay
     return-path: /api/pay/return/alipay
     subject-prefix: 会员充值-
@@ -92,145 +68,83 @@ mybatis-plus:
       logic-delete-value: 1
       logic-not-delete-value: 0
 
-# AI 聊天配置（多供应商）
+# AI：api-key 在 local / ec2
 ai:
   default-provider: nvidia
   max-context-messages: 20
-  # 聊天流式空闲超时（秒）：连续无 token 输出才中断；有输出可持续超过该时长
   response-timeout-seconds: 20
-  # Chat 出站引擎：langchain4j（默认，Phase A）| okhttp（回滚手写客户端）
-  # 影响：视频提取总结、aigen 分镜、imggen 润色、/video/models/test
   chat-engine: langchain4j
-  # AI 对话 Agent
   agent:
     enabled: true
     decision-max-tokens: 512
     summary-max-tokens: 1200
     decision-temperature: 0.2
     confirm-ttl-seconds: 900
-    # 单轮最多工具调用次数（防死循环）
     max-tool-rounds: 2
   providers:
     openai:
       name: OpenAI
       base-url: https://api.openai.com/v1
-      api-key: ${AI_OPENAI_API_KEY:}
-      # 模型改存库表 ai_model_config；此处 models 仅给聊天模块兜底，可为空
       models: []
     deepseek:
       name: DeepSeek
       base-url: https://api.deepseek.com/v1
-      api-key: ${AI_DEEPSEEK_API_KEY:}
       models: []
-    # 供应商鉴权走环境变量；模型列表由数据库 ai_model_config 管理
     nvidia:
       name: NVIDIA NIM
       base-url: https://integrate.api.nvidia.com/v1
-      api-key: ${AI_NVIDIA_API_KEY:}
       models: []
 
-# 统一对象存储（PR1：local；PR2 接 Cloudflare R2）
-# 业务模块尚未全部切换；新代码应注入 ObjectStoragePort / ScratchWorkspace / ObjectKeyBuilder
+# 存储：provider/r2 凭证/env-prefix 在 local / ec2
 storage:
-  provider: ${STORAGE_PROVIDER:local}   # local | r2；密钥见 R2_* 环境变量
-  env-prefix: ${STORAGE_ENV_PREFIX:dev} # 单桶分环境：dev / prod → key 前缀
-  # proxy=经应用转发；presign=R2 预签名直链（PR5，大文件不经 JVM）；hybrid=优先 presign 失败回退 proxy
   serve-mode: presign
-  local:
-    root: ./data/_objects  # LocalObjectStorage：{root}/{objectKey}
-  scratch:
-    root: ./data/_scratch  # 流水线临时目录 {root}/{module}/{taskId}/
-    ttl-hours: 24
   cleanup:
     scratch-on-success: true
     scratch-on-failure: true
     r2-on-failure: true
   r2:
-    account-id: ${R2_ACCOUNT_ID:}
-    bucket: ${R2_BUCKET:}
-    access-key-id: ${R2_ACCESS_KEY_ID:}
-    secret-access-key: ${R2_SECRET_ACCESS_KEY:}
-    # endpoint 空则 https://{account-id}.r2.cloudflarestorage.com
-    endpoint: ${R2_ENDPOINT:}
     region: auto
     path-style: true
     presign-ttl-seconds: 900
-    public-base-url: ${R2_PUBLIC_BASE_URL:}
-    # 超过阈值走 Multipart（aigen 成片等）
-    multipart-threshold-bytes: 104857600   # 100MB
-    multipart-part-size-bytes: 8388608     # 8MB
+    multipart-threshold-bytes: 104857600
+    multipart-part-size-bytes: 8388608
 
-# 视频核心内容提取（VideoCoreExtractor v2 持久化）
+# 视频提取（路径、cookie、whisper 启停在 local / ec2）
 video:
-  # 按 taskId 分目录：video/audio/transcription.json/summary.json
-  work-dir: ./data/video
-  # 本地可在环境变量 VIDEO_YT_DLP_PATH / VIDEO_FFMPEG_PATH 写绝对路径；空则用 PATH 中命令名
-  yt-dlp-path: ${VIDEO_YT_DLP_PATH:yt-dlp}
-  ffmpeg-path: ${VIDEO_FFMPEG_PATH:ffmpeg}
-  # v2 默认保留媒体与转录文件，便于前端查看/下载；磁盘紧张时可改 true
   cleanup-media: false
   whisper:
-    base-url: http://127.0.0.1:8000
-    # CPU 无独显：small 比 medium 快数倍；要更高精度可改 medium（更慢）
     model: small
     timeout-seconds: 600
     language: zh
-    # Spring Boot 托管启动/停止本地 whisper-service（main.py）
     managed:
-      enabled: true
-      # 相对运行目录（IDE 一般是 okx-bot 根目录）
-      working-dir: ./whisper-service
-      # 空则自动用 .venv/Scripts/python.exe（Windows）或 .venv/bin/python
-      python-path: ""
       host: 0.0.0.0
-      # 空则从 base-url 取端口
-      # port: 8000
       device: cpu
       compute: int8
       preload: true
-      # 首次下载模型可能较慢
       startup-timeout-seconds: 300
       stop-timeout-seconds: 15
-      # true= Whisper 起不来则整个应用启动失败
       fail-if-unavailable: false
   llm:
-    # 复用上方 ai.providers；为空则用 ai.default-provider
     provider: nvidia
     model:
     temperature: 0.3
-    # hybrid 总结字段多，过小易截断 chapters/导图/二创；SummarizationService 也会至少抬到 8192
     max-tokens: 8192
-    # NVIDIA 免费档常 503 All workers are busy，自动退避重试
     max-retries: 5
     retry-backoff-ms: 3000
     retry-max-backoff-ms: 60000
-    # 模型连通性测试超时（秒），超时直接判不可用
     test-timeout-seconds: 10
   download:
     max-duration-seconds: 7200
     audio-format: mp3
     timeout-seconds: 600
-    # --- 下载加速（转录不需要 4K）---
-    max-height: 720              # 最高 720p；改 480 更快，0=原画最慢
-    concurrent-fragments: 8      # HLS/DASH 分片并发，可试 4~16
-    prefer-merged: true          # 优先单文件流，减少双轨下载+合并
-    # format: "best[height<=480]"  # 可选：完全自定义 yt-dlp -f，非空则覆盖上面规则
-    # --- 抖音 Cookie（强烈推荐 cookies-file，不要用 from-browser）---
-    # Windows Edge/Chrome 新版 Cookie 有 App-Bound 加密，--cookies-from-browser 常报：
-    #   Could not copy Chrome cookie database / Failed to decrypt with DPAPI
-    # 正确做法：浏览器开着 → DevTools 复制 Cookie 头 → 跑 scripts/import-cookie-header.ps1
-    cookies-file: ${VIDEO_COOKIES_FILE:}
-    # cookies-from-browser: edge   # 本机基本不可用，请保持注释
-    # extra-args: ["--proxy", "http://127.0.0.1:7890"]
-  # 多模态画面理解（默认 audio_only 兼容现网；go-live 可改 hybrid）
+    max-height: 720
+    concurrent-fragments: 8
+    prefer-merged: true
   understanding:
     mode: audio_only
-    # true=不调云端 Omni，走 Mock 画面结果（联调用）
     mock: false
-    # 任务用模型 ID 由前端选择（库表 capability=video_omni），以下 provider/model 仅作遗留兼容，运行时不再默认写入任务
     provider: nvidia
     model: ""
-    # auto | nvidia-omni-chat | frame-vlm | mock — 模型未配 protocol 时的回退
     protocol: auto
     timeout-seconds: 600
     write-timeout-seconds: 120
@@ -255,49 +169,33 @@ video:
     on-omni-too-long: reject
     strip-audio-on-visual-chunks: true
 
-# AI 视频生成 Phase 1
-# mock-pipeline=true 时三步全 mock；false 时按 steps 切换
+# AI 视频生成
 aigen:
-  work-dir: ./data/aigen
   max-concurrent-tasks: 1
   mock-pipeline: false
   mock-step-delay-ms: 800
   cleanup-on-delete: true
   min-duration-sec: 5
   max-duration-sec: 90
-  # visual=画面优先 Timeline；template=口播模板
   default-pipeline-mode: visual
   visual:
     min-shots: 4
     max-shots: 12
-    # 并发出图；过高易触发 NVIDIA 5xx，建议 1～2
     image-concurrency: 1
-    # true=单镜出图失败即整单失败，避免「成功但假图」
     fail-on-shot-error: true
-    # fail-on-shot-error=false 时：占位镜占比达到该阈值仍失败
     max-placeholder-ratio: 0.5
-    # bgm_only / tts_bgm 找不到 BGM 文件时失败
     require-bgm-when-requested: true
     default-audio-mode: bgm_only
     default-style-preset: cinematic-dark
-    # auto=按镜序自动挑选富有变化的运镜（非固定 ken_burns 模板感）
     motion-default: auto
     composition-id: VisualTimeline
-    bgm-dir: ./data/aigen/_bgm
-    # FLUX.1-dev 建议 20～28；库表 default_steps 优先
     image-steps: 28
     image-provider-key: nvidia
-    # 默认高质量生图（需 ai_model_config 有对应 capability=image 行；没有则回退库表首选）
     default-image-model: black-forest-labs/flux.1-dev
-    # 默认润色出图 prompt，提升电影感
     default-enhance-image-prompt: true
-    # 出图语言：auto=跟随用户提示词语言（推荐）| zh | en（仅用户明确要求英文出图时用）
     image-prompt-language: auto
-    # 规划后校验镜头是否扣题；失败会 repair
     enforce-topic-keywords: true
-    # 静图→动效视频。template 不受影响
     kinetic-clips: true
-    # kinetic=本地FFmpeg | nvidia-svd=云端SVD | auto=先SVD后kinetic | off=仅静图
     i2v-mode: kinetic
     i2v-fail-open-to-kinetic: true
     svd-invoke-url: https://ai.api.nvidia.com/v1/genai/stabilityai/stable-video-diffusion
@@ -308,53 +206,41 @@ aigen:
     kinetic-preset: veryfast
     kinetic-crf: 20
   steps:
-    plan: real          # real=调 LLM；mock=本地模板分镜/mock 导演
-    asset: real         # real=出图或 TTS；mock=占位图/mock 音频
-    render: real        # 需 aigen-remotion
+    plan: real
+    asset: real
+    render: real
   llm:
     provider: nvidia
     model:
-    # 导演创意温度：略高以鼓励自由想象
     temperature: 0.72
     max-tokens: 8192
     max-retries: 3
     timeout-seconds: 120
-    # Phase B：auto/json=response_format=json_object；off=关闭（仅文本）
     structured-mode: auto
     max-repair-attempts: 1
     log-prompts: false
   tts:
-    # auto=优先 edge-tts CLI，否则 Windows SAPI；也可 edge / windows / mock
     provider: auto
     default-voice: zh-CN-XiaoxiaoNeural
     timeout-seconds: 120
-    # 走系统 PATH 即可（已修复脏 PATH / WindowsApps 假 python 导致的解析失败）
-    # 需 PATH 含：Python\Scripts（edge-tts）与 Python 安装目录
     edge-command: edge-tts
-    edge-mode: auto          # auto | cli | python（auto 优先 CLI）
-    python-path: python      # 仅 edge-mode=python 时用；auto 优先 edge-tts 命令
+    edge-mode: auto
+    python-path: python
     fail-open-to-mock: false
     tail-padding-frames: 6
-    # ffprobe-path: 空则尝试从 video.ffmpeg-path 推导
   remotion:
-    base-url: http://127.0.0.1:3100
     timeout-seconds: 600
     codec: h264
     crf: 18
     render-token: ""
-    # Java 托管 Node 渲染进程：随应用启停；端口已有健康服务则不重复启动
-    manage-process: true
-    auto-start-on-boot: true          # false=首次渲染时再启动
-    project-dir: ../aigen-remotion    # 相对 okx-bot 运行目录；可改绝对路径
-    node-path: node                   # 或 node.exe 绝对路径
-    startup-timeout-seconds: 180      # 首次 bundle 可能较慢
+    node-path: node
+    startup-timeout-seconds: 180
 
-# 文章/新闻提取（PR-1 骨架；业务流水线见后续 PR）
+# 文章/新闻提取
 article:
   enabled: true
   max-concurrent-tasks: 2
   max-concurrent-tasks-per-user: 2
-  # true=假数据流水线（本地无抓取/LLM 也可验收调度与 SSE）
   mock-pipeline: false
   mock-step-delay-ms: 200
   cleanup-on-delete: true
@@ -368,7 +254,6 @@ article:
     max-bytes: 2000000
     max-redirects: 5
     user-agent: "okx-bot-article-bot/1.0 (+internal; research)"
-    # toutiao=RENDER_DATA 图文自动提取（失败可粘贴降级）
     enabled-adapters: generic,toutiao
   extract:
     max-main-text-chars: 80000
@@ -387,32 +272,27 @@ article:
   safety:
     block-private-ip: true
     block-metadata-ip: true
-    # 生产必须 false；仅单测可开 allow-loopback
     allow-loopback: false
     allowed-schemes: http,https
     host-allowlist: []
 
-# AI 文生图（NVIDIA FLUX）
-# mock-pipeline=true 时全 mock；false 时按 steps 切换
+# AI 文生图
 imggen:
   enabled: true
-  work-dir: ./data/imggen
   max-concurrent-tasks: 2
   mock-pipeline: false
   mock-step-delay-ms: 400
   cleanup-on-delete: true
   max-n: 4
   steps:
-    enhance: real     # off | real | mock — 独立润色 API / 任务内润色；real=LlmChatClient
-    generate: real    # real=NVIDIA FLUX；mock=本地渐变假图
+    enhance: real
+    generate: real
   prompt-enhance:
     fallback-on-error: true
-    provider:         # 空则 ai.default-provider
+    provider:
     model: ""
   flux:
-    # 生图模型请在 DB 表 ai_model_config（capability=image）维护；此处仅 Adapter 兜底
     provider-key: nvidia
-    # 默认高质量 FLUX.1-dev（比 schnell 慢、更清晰）；快速预览可改回 flux.1-schnell + steps 4
     invoke-url: https://ai.api.nvidia.com/v1/genai/black-forest-labs/flux.1-dev
     model-path: black-forest-labs/flux.1-dev
     default-model: black-forest-labs/flux.1-dev
@@ -422,6 +302,6 @@ imggen:
 logging:
   level:
     root: INFO
-    com.dwcode.okxbot: DEBUG
+    com.dwcode.okxbot: INFO
   pattern:
     console: "%d{yyyy-MM-dd HH:mm:ss.SSS} [%thread] %-5level %logger{36} - %msg%n"
