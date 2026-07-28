@@ -1,0 +1,91 @@
+# Docker / EC2 生产覆盖配置（SPRING_PROFILES_ACTIVE=docker）
+# 敏感项一律走环境变量，见 deploy/.env.example
+
+server:
+  port: 8080
+  # 无域名时用 IP 访问；后面有域名再上反代 HTTPS
+  forward-headers-strategy: framework
+
+spring:
+  datasource:
+    url: ${SPRING_DATASOURCE_URL}
+    username: ${SPRING_DATASOURCE_USERNAME}
+    password: ${SPRING_DATASOURCE_PASSWORD}
+    # RDS 建议 SSL；若本实例强制 TLS 可改为 require
+    # driver 已在主配置
+
+auth:
+  jwt:
+    secret: ${AUTH_JWT_SECRET}
+  mail:
+    console-mode: ${AUTH_MAIL_CONSOLE_MODE:true}
+  admin:
+    # 首次部署可 true 自动种子管理员；上线验收后改 false 并改密
+    seed-enabled: ${AUTH_ADMIN_SEED_ENABLED:true}
+    email: ${AUTH_ADMIN_EMAIL:admin@okx-bot.local}
+    password: ${AUTH_ADMIN_PASSWORD:Admin@123456}
+
+pay:
+  # 无域名时填 http://<EC2公网IP>
+  public-base-url: ${PAY_PUBLIC_BASE_URL:http://127.0.0.1}
+  trust-x-forwarded-for: true
+
+ai:
+  default-provider: ${AI_DEFAULT_PROVIDER:nvidia}
+  providers:
+    nvidia:
+      api-key: ${AI_NVIDIA_API_KEY:}
+    openai:
+      api-key: ${AI_OPENAI_API_KEY:}
+    deepseek:
+      api-key: ${AI_DEEPSEEK_API_KEY:}
+
+storage:
+  provider: ${STORAGE_PROVIDER:r2}
+  env-prefix: ${STORAGE_ENV_PREFIX:prod}
+  local:
+    root: /app/data/_objects
+  scratch:
+    root: /app/data/_scratch
+  r2:
+    account-id: ${R2_ACCOUNT_ID:}
+    bucket: ${R2_BUCKET:}
+    access-key-id: ${R2_ACCESS_KEY_ID:}
+    secret-access-key: ${R2_SECRET_ACCESS_KEY:}
+    endpoint: ${R2_ENDPOINT:}
+    public-base-url: ${R2_PUBLIC_BASE_URL:}
+
+video:
+  work-dir: /app/data/video
+  yt-dlp-path: yt-dlp
+  ffmpeg-path: ffmpeg
+  whisper:
+    # compose 服务名；勿用 127.0.0.1（那是容器自己）
+    base-url: http://whisper:8000
+    model: ${WHISPER_MODEL:small}
+    managed:
+      enabled: false
+  download:
+    # 可选：挂载 cookie 后填容器内路径，例如 /app/secrets/douyin-cookies.txt
+    cookies-file: ${VIDEO_COOKIES_FILE:}
+
+aigen:
+  work-dir: /app/data/aigen
+  visual:
+    bgm-dir: /app/data/aigen/_bgm
+  remotion:
+    base-url: http://remotion:3100
+    manage-process: false
+    auto-start-on-boot: false
+    render-token: ${AIGEN_RENDER_TOKEN:}
+  tts:
+    provider: edge
+    edge-command: edge-tts
+    fail-open-to-mock: true
+
+imggen:
+  work-dir: /app/data/imggen
+
+article:
+  safety:
+    allow-loopback: false

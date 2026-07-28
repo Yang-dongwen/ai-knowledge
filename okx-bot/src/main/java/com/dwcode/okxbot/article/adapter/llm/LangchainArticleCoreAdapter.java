@@ -13,7 +13,6 @@ import com.dwcode.okxbot.common.ai.LlmContentHelper;
 import com.dwcode.okxbot.common.exception.BusinessException;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -45,7 +44,6 @@ public class LangchainArticleCoreAdapter implements ArticleCoreLlmPort {
         }
         String main = doc.getMainText();
         boolean truncatedInput = doc.isTruncated();
-        int mapCalls = 0;
 
         int single = Math.max(1000, properties.getLlm().getDigestSingleWindowChars());
         int window = Math.max(1500, properties.getLlm().getDigestWindowChars());
@@ -58,7 +56,6 @@ public class LangchainArticleCoreAdapter implements ArticleCoreLlmPort {
             StringBuilder reduced = new StringBuilder();
             for (int i = 0; i < parts.size(); i++) {
                 String partial = mapWindow(parts.get(i), cmd, i + 1, parts.size());
-                mapCalls++;
                 reduced.append("【段").append(i + 1).append("】\n").append(partial).append("\n\n");
             }
             material = reduced.toString();
@@ -121,7 +118,6 @@ public class LangchainArticleCoreAdapter implements ArticleCoreLlmPort {
                 .title(text(root, "title"))
                 .summary(text(root, "summary"))
                 .truncatedInput(truncatedInput)
-                .mapLlmCalls(mapCalls)
                 .build();
     }
 

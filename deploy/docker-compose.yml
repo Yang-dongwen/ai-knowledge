@@ -1,0 +1,94 @@
+# auto-exchange 第一版 EC2 部署（MySQL 用 AWS RDS，不在本 compose 内）
+#
+# 用法（在仓库根目录）:
+#   cp deploy/.env.example deploy/.env   # 填 RDS / JWT / API Key
+#   docker compose -f deploy/docker-compose.yml --env-file deploy/.env up -d --build
+#
+# 访问: http://<EC2公网IP>/
+# 机型建议: 全量（含 whisper+remotion）≥ t3.large / 8GB；仅 bot+web 可用 t3.small
+
+name: auto-exchange
+
+services:
+  okx-bot:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile.okx-bot
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      SPRING_PROFILES_ACTIVE: docker
+      SPRING_CONFIG_ADDITIONAL_LOCATION: optional:file:/app/config/
+      # 覆盖主配置里的 Windows 路径；docker profile 也会写一遍
+      VIDEO_WHISPER_MANAGED_ENABLED: "false"
+      AIGEN_REMOTION_MANAGE_PROCESS: "false"
+      JAVA_OPTS: ${JAVA_OPTS:--Xms512m -Xmx1536m}
+    volumes:
+      # 与 remotion 必须同路径挂载：Java 会把绝对 workDir 传给渲染服务
+      - app-data:/app/data
+    depends_on:
+      whisper:
+        condition: service_started
+      remotion:
+        condition: service_started
+    networks:
+      - appnet
+    # 不映射 8080 到公网；只经 nginx
+    expose:
+      - "8080"
+
+  whisper:
+    build:
+      context: ../okx-bot/whisper-service
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    environment:
+      # CPU 首版用 small，省内存；要精度可改 medium
+      WHISPER_MODEL: ${WHISPER_MODEL:-small}
+      WHISPER_DEVICE: cpu
+      WHISPER_COMPUTE: int8
+    volumes:
+      - whisper-cache:/root/.cache
+    networks:
+      - appnet
+    expose:
+      - "8000"
+
+  remotion:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile.remotion
+    restart: unless-stopped
+    environment:
+      HOST: "0.0.0.0"
+      PORT: "3100"
+      ALLOWED_WORK_ROOT: /app/data
+      AIGEN_RENDER_TOKEN: ${AIGEN_RENDER_TOKEN:-}
+      MAX_CONCURRENT_RENDERS: "1"
+    volumes:
+      - app-data:/app/data
+    networks:
+      - appnet
+    expose:
+      - "3100"
+
+  web:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile.web
+    restart: unless-stopped
+    ports:
+      - "80:80"
+    depends_on:
+      - okx-bot
+    networks:
+      - appnet
+
+networks:
+  appnet:
+    driver: bridge
+
+volumes:
+  app-data:
+  whisper-cache:

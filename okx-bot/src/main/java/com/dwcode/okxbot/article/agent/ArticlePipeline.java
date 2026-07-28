@@ -182,7 +182,7 @@ public class ArticlePipeline {
     }
 
     /**
-     * 真实路径：RESOLVE →（可选 FETCH）→ EXTRACT → stub CORE/REWRITE。
+     * 真实路径：RESOLVE →（可选 FETCH）→ EXTRACT → CORE/REWRITE（LangChain4j）。
      * 优先级矩阵见设计 §7.7。
      */
     private void runReal(ArticleTaskEntity task, Path workDir, long pipelineStart)
@@ -259,15 +259,9 @@ public class ArticlePipeline {
             updateStatus(task, ArticleTaskStatus.FETCHING, "抓取页面…", 25);
             long fetchStart = System.currentTimeMillis();
             ArticleFetchCommand cmd = ArticleFetchCommand.builder()
-                    .taskId(String.valueOf(taskId))
                     .url(task.getSourceUrl())
                     .platform(task.getPlatform())
                     .supportLevel(task.getSupportLevel())
-                    .language(task.getLanguage())
-                    .connectTimeoutMs(properties.getFetch().getConnectTimeoutMs())
-                    .readTimeoutMs(properties.getFetch().getReadTimeoutMs())
-                    .maxBytes(properties.getFetch().getMaxBytes())
-                    .workDir(workDir)
                     .build();
             ArticleFetchResult fr = articleFetchPort.fetch(cmd);
             task.setFetchDurationMs(System.currentTimeMillis() - fetchStart);
@@ -382,10 +376,10 @@ public class ArticlePipeline {
      */
     private void runLlmAndFinish(ArticleTaskEntity task, Path workDir, long pipelineStart, Long taskId,
                                  MainTextDocument extractedDoc) throws InterruptedException {
-        // 使用完整正文（非 DB 截断副本）
-        String fullMain = storageService.readMainTextFromPath(task);
+        // 优先抽取结果全文，其次 scratch/对象存储，最后 DB 截断副本
+        String fullMain = extractedDoc != null ? extractedDoc.getMainText() : null;
         if (!hasText(fullMain)) {
-            fullMain = extractedDoc != null ? extractedDoc.getMainText() : task.getMainText();
+            fullMain = storageService.readMainTextFromPath(task);
         }
         MainTextDocument doc = MainTextDocument.builder()
                 .title(task.getTitle())
@@ -413,10 +407,8 @@ public class ArticlePipeline {
                     .platform(task.getPlatform())
                     .build());
         } catch (BusinessException be) {
-            String msg = be.getMessage() != null ? be.getMessage() : "CORE 失败";
-            String code = msg.startsWith(ArticleErrorCode.LLM_CORE_FAILED)
-                    ? ArticleErrorCode.LLM_CORE_FAILED : ArticleErrorCode.LLM_CORE_FAILED;
-            fail(task, code, msg, pipelineStart);
+            fail(task, ArticleErrorCode.LLM_CORE_FAILED,
+                    be.getMessage() != null ? be.getMessage() : "CORE 失败", pipelineStart);
             return;
         } catch (Exception e) {
             fail(task, ArticleErrorCode.LLM_CORE_FAILED, e.getMessage(), pipelineStart);
@@ -662,10 +654,7 @@ public class ArticlePipeline {
         try {
             ObjectNode root = objectMapper.createObjectNode();
             ArrayNode variants = root.putArray("variants");
-            List<String> ids = parseVariants(task.getRewriteVariants());
-            if (ids.isEmpty()) {
-                ids = properties.getRewrite().getDefaultVariants();
-            }
+            List<String> ids = parseVariantsList(task.getRewriteVariants());
             String snippet = main.length() > 300 ? main.substring(0, 300) + "…" : main;
             for (String id : ids) {
                 ObjectNode v = variants.addObject();
@@ -678,18 +667,6 @@ public class ArticlePipeline {
             return objectMapper.writeValueAsString(root);
         } catch (Exception e) {
             return "{\"variants\":[]}";
-        }
-    }
-
-    private List<String> parseVariants(String raw) {
-        if (raw == null || raw.isBlank()) {
-            return List.of();
-        }
-        try {
-            return objectMapper.readValue(raw,
-                    objectMapper.getTypeFactory().constructCollectionType(List.class, String.class));
-        } catch (Exception e) {
-            return List.of(raw.split(","));
         }
     }
 

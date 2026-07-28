@@ -3,20 +3,14 @@ package com.dwcode.okxbot.article.port;
 import lombok.Builder;
 import lombok.Data;
 
-import java.nio.file.Path;
-import java.util.Map;
-
+/**
+ * 抓取命令：仅保留 Adapter 实际使用的字段。
+ * 超时/体积上限由 {@code article.fetch.*} 配置统一控制。
+ */
 @Data
 @Builder
 public class ArticleFetchCommand {
-    private String taskId;
     private String url;
     private String platform;
     private String supportLevel;
-    private String language;
-    private int connectTimeoutMs;
-    private int readTimeoutMs;
-    private int maxBytes;
-    private Map<String, String> headers;
-    private Path workDir;
 }

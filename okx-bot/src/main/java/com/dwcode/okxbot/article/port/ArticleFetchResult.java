@@ -1,9 +1,5 @@
 package com.dwcode.okxbot.article.port;
 
-import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
 import lombok.Builder;
 import lombok.Data;
 
@@ -21,8 +17,6 @@ public class ArticleFetchResult {
     private String authorHint;
     private int httpStatus;
     private long latencyMs;
-    private List<String> imageUrls;
-    private List<Map<String, Object>> images;
 
     public static ArticleFetchResult fail(String code, String message) {
         return ArticleFetchResult.builder()

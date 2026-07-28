@@ -4,24 +4,19 @@ import com.dwcode.okxbot.article.enums.ArticleErrorCode;
 import com.dwcode.okxbot.article.port.ArticleFetchCommand;
 import com.dwcode.okxbot.article.port.ArticleFetchPort;
 import com.dwcode.okxbot.article.port.ArticleFetchResult;
+import com.dwcode.okxbot.article.security.ArticleSafetyException;
 import com.dwcode.okxbot.article.security.PinnedHttpFetcher;
 import com.dwcode.okxbot.article.security.UrlSafetyGuard;
-import com.dwcode.okxbot.article.security.ArticleSafetyException;
-
+import com.dwcode.okxbot.article.util.ArticleUrlNormalizer;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
-
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 
 import java.net.URLDecoder;
 import java.nio.charset.StandardCharsets;
-import java.util.ArrayList;
-import java.util.List;
-import java.util.HashMap;
 import java.util.Locale;
-import java.util.Map;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -30,8 +25,7 @@ import java.util.regex.Pattern;
  * <p>
  * 策略：请求移动端文章页 {@code https://m.toutiao.com/article/{id}/}，
  * 解析内嵌 {@code RENDER_DATA}（URL 编码 JSON）中的 {@code articleInfo.content} 全文 HTML。
- * <p>
- * 非全量逆向签名方案；公开页可用，失败时 pipeline 仍可 NEEDS_PASTE / 粘贴降级。
+ * 失败时 pipeline 可 NEEDS_PASTE / 粘贴降级。
  */
 @Slf4j
 @Component
@@ -41,11 +35,17 @@ public class ToutiaoFetchAdapter implements ArticleFetchPort {
     private static final Pattern RENDER_DATA = Pattern.compile(
             "(?is)id\\s*=\\s*[\"']RENDER_DATA[\"'][^>]*>\\s*([^<]+)\\s*<");
 
-    private static final Pattern IMG_SRC = Pattern.compile(
-            "(?i)<img[^>]+src\\s*=\\s*[\"']([^\"']+)[\"']");
+    private static final Pattern TITLE_TAG = Pattern.compile(
+            "(?is)<title[^>]*>(.*?)</title>");
 
-    private static final Pattern OG_IMAGE = Pattern.compile(
-            "(?i)<meta[^>]+(property|name)\\s*=\\s*[\"']og:image[\"'][^>]*content\\s*=\\s*[\"']([^\"']+)[\"']");
+    private static final Pattern MAIN_OR_ARTICLE = Pattern.compile(
+            "(?is)<(main|article)[^>]*>(.*?)</\\1>");
+
+    private static final Pattern P_TAG = Pattern.compile(
+            "(?is)<p[^>]*>(.*?)</p>");
+
+    private static final Pattern META_AUTHOR = Pattern.compile(
+            "(?is)<meta[^>]+(author|byline)[^>]*content\\s*=\\s*[\"']([^\"']+)[\"'][^>]*>");
 
     private static final String MOBILE_UA =
             "Mozilla/5.0 (iPhone; CPU iPhone OS 16_0 like Mac OS X) "
@@ -76,7 +76,6 @@ public class ToutiaoFetchAdapter implements ArticleFetchPort {
                     "无法从头条链接解析文章 ID: " + rawUrl);
         }
 
-        // 优先移动端页（RENDER_DATA 更完整）
         String[] candidates = {
                 "https://m.toutiao.com/article/" + itemId + "/",
                 "https://www.toutiao.com/article/" + itemId + "/",
@@ -117,13 +116,9 @@ public class ToutiaoFetchAdapter implements ArticleFetchPort {
 
             Matcher m = RENDER_DATA.matcher(html);
             if (!m.find()) {
-                // 结构变化或页面为壳：尝试全局提取 title + content
                 String title = extractTitleFromPage(html);
                 String content = extractContentFromPage(html);
                 if (title != null || content != null) {
-                    List<String> imageUrls = extractImageUrls(html);
-                    List<Map<String, Object>> images = extractImages(html);
-
                     return ArticleFetchResult.builder()
                             .success(true)
                             .finalUrl(pageUrl)
@@ -131,8 +126,8 @@ public class ToutiaoFetchAdapter implements ArticleFetchPort {
                             .rawHtml(content != null ? content : "<html><body>" + title + "</body></html>")
                             .titleHint(title)
                             .authorHint(extractAuthorFromPage(html))
-                            .imageUrls(imageUrls)
-                            .images(images)
+                            .httpStatus(raw.getStatusCode())
+                            .latencyMs(System.currentTimeMillis() - t0)
                             .build();
                 }
                 return ArticleFetchResult.fail(ArticleErrorCode.EMPTY_MAIN_TEXT,
@@ -143,7 +138,6 @@ public class ToutiaoFetchAdapter implements ArticleFetchPort {
             JsonNode root = objectMapper.readTree(json);
             JsonNode info = root.path("articleInfo");
             if (info.isMissingNode() || info.isNull()) {
-                // 偶发结构变化：全局搜 content 字段
                 info = findArticleInfo(root);
             }
             if (info == null || info.isMissingNode()) {
@@ -154,7 +148,6 @@ public class ToutiaoFetchAdapter implements ArticleFetchPort {
             String title = text(info, "title");
             String contentHtml = text(info, "content");
             if (contentHtml == null || contentHtml.isBlank()) {
-                // 有的字段在 content 外层
                 contentHtml = text(info, "rich_content");
             }
             if (contentHtml == null || contentHtml.isBlank()) {
@@ -171,21 +164,16 @@ public class ToutiaoFetchAdapter implements ArticleFetchPort {
                     "https://www.toutiao.com/article/" + itemId + "/"
             );
 
-            // 包装成完整 HTML 便于 GenericHtmlExtract 抽取
             String wrapped = "<!DOCTYPE html><html><head><meta charset=\"utf-8\"><title>"
                     + escapeHtml(title != null ? title : "")
                     + "</title></head><body><article>"
                     + contentHtml
                     + "</article></body></html>";
 
-            List<String> imageUrls = extractImageUrls(html);
-            List<Map<String, Object>> images = extractImages(html);
-
-            log.info("头条文章提取成功: itemId={} titleLen={} contentLen={} images={}",
+            log.info("头条文章提取成功: itemId={} titleLen={} contentLen={}",
                     itemId,
                     title != null ? title.length() : 0,
-                    contentHtml.length(),
-                    images.size());
+                    contentHtml.length());
 
             return ArticleFetchResult.builder()
                     .success(true)
@@ -196,8 +184,6 @@ public class ToutiaoFetchAdapter implements ArticleFetchPort {
                     .authorHint(author)
                     .httpStatus(raw.getStatusCode())
                     .latencyMs(System.currentTimeMillis() - t0)
-                    .imageUrls(imageUrls)
-                    .images(images)
                     .build();
         } catch (ArticleSafetyException e) {
             return ArticleFetchResult.builder()
@@ -216,10 +202,8 @@ public class ToutiaoFetchAdapter implements ArticleFetchPort {
         }
     }
 
-    // 辅助提取方法（fallback 用）
     private static String extractTitleFromPage(String html) {
-        // 简单标题提取
-        Matcher m = Pattern.compile("(?is)<title[^>]*>(.*?)</title>").matcher(html);
+        Matcher m = TITLE_TAG.matcher(html);
         if (m.find()) {
             return m.group(1).replaceAll("\\s+", " ").trim();
         }
@@ -227,10 +211,7 @@ public class ToutiaoFetchAdapter implements ArticleFetchPort {
     }
 
     private static String extractContentFromPage(String html) {
-        // 简单内容提取：文章正文或第一个 p
-        String body = html;
-        // 优先 main 或 article
-        Matcher m = Pattern.compile("(?is)<(main|article)[^>]*>(.*?)</\\1>").matcher(body);
+        Matcher m = MAIN_OR_ARTICLE.matcher(html);
         if (m.find()) {
             String content = m.group(2);
             content = content.replaceAll("(?is)<script[^>]*>.*?</script>", "");
@@ -242,79 +223,19 @@ public class ToutiaoFetchAdapter implements ArticleFetchPort {
             content = content.replaceAll("(?is)<iframe[^>]*>.*?</iframe>", "");
             return content;
         }
-        // 回退：所有 p
-        m = Pattern.compile("(?is)<p[^>]*>(.*?)</p>").matcher(body);
+        m = P_TAG.matcher(html);
         if (m.find()) {
             return m.group(1).replaceAll("\\s+", " ").trim();
-        }
-        return body;
-    }
-
-    private static String extractAuthorFromPage(String html) {
-        Matcher m = Pattern.compile("(?is)<meta[^>]+(author|byline)[^>]*content\\s*=\\s*[\"']([^\"']+)[\"'][^>]*>").matcher(html);
-        if (m.find()) {
-            return m.group(2).trim();
         }
         return null;
     }
 
-    private List<String> extractImageUrls(String html) {
-        if (html == null || html.isBlank()) {
-            return List.of();
+    private static String extractAuthorFromPage(String html) {
+        Matcher m = META_AUTHOR.matcher(html);
+        if (m.find()) {
+            return m.group(2).trim();
         }
-        Matcher m = IMG_SRC.matcher(html);
-        List<String> urls = new ArrayList<>();
-        while (m.find()) {
-            String url = m.group(1);
-            if (!url.isBlank()) {
-                urls.add(url);
-            }
-        }
-        return urls;
-    }
-
-    private List<Map<String, Object>> extractImages(String html) {
-        if (html == null || html.isBlank()) {
-            return List.of();
-        }
-
-        List<Map<String, Object>> images = new ArrayList<>();
-        Matcher m = IMG_SRC.matcher(html);
-
-        while (m.find()) {
-            Map<String, Object> img = new HashMap<>();
-            img.put("src", m.group(1));
-            img.put("alt", "");
-
-            // Extract alt attribute
-            Matcher altM = Pattern.compile("(?i)alt\\s*=\\s*[\"']([^\"']+)[\"']").matcher(html);
-            if (altM.find()) {
-                img.put("alt", altM.group(1));
-            }
-
-            // Extract width and height
-            Matcher sizeM = Pattern.compile("(?i)(?:width|height)\\s*=\\s*[\"'](\\d+)[\"']").matcher(html);
-            if (sizeM.find()) {
-                img.put("width", sizeM.group(1));
-            }
-            if (sizeM.find() && sizeM.start() > m.start()) {
-                img.put("height", sizeM.group(1));
-            }
-
-            images.add(img);
-        }
-
-        // Also extract og:image meta tags
-        Matcher ogM = OG_IMAGE.matcher(html);
-        while (ogM.find()) {
-            Map<String, Object> img = new HashMap<>();
-            img.put("src", ogM.group(2));
-            img.put("alt", "");
-            img.put("type", "og_image");
-            images.add(img);
-        }
-
-        return images;
+        return null;
     }
 
     private static String decodeBody(PinnedHttpFetcher.FetchResult raw) {
@@ -384,28 +305,6 @@ public class ToutiaoFetchAdapter implements ArticleFetchPort {
      * 从各类头条 URL 中解析文章数字 ID。
      */
     public static String extractItemId(String url) {
-        if (url == null || url.isBlank()) {
-            return null;
-        }
-        String lower = url.toLowerCase(Locale.ROOT);
-        if (!lower.contains("toutiao.com") && !lower.contains("ixigua.com")) {
-            return null;
-        }
-        Matcher m = Pattern.compile("(?i)/(?:article|group|item|a|i|w)/?(\\d{10,})").matcher(url);
-        if (m.find()) {
-            return m.group(1);
-        }
-        m = Pattern.compile("(?i)article/(\\d{10,})").matcher(url);
-        if (m.find()) {
-            return m.group(1);
-        }
-        m = Pattern.compile("(?i)(?:group_id|item_id|article_id)=(\\d{10,})").matcher(url);
-        if (m.find()) {
-            return m.group(1);
-        }
-        if (url.matches("\\d{10,}")) {
-            return url;
-        }
-        return null;
+        return ArticleUrlNormalizer.extractToutiaoId(url);
     }
 }

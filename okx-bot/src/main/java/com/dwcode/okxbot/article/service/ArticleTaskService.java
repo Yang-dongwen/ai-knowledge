@@ -565,18 +565,19 @@ public class ArticleTaskService {
     }
 
     private List<String> sanitizeVariants(List<String> raw) {
-        List<String> allowed = properties.getRewrite().getDefaultVariants();
-        Set<String> allow = Set.copyOf(allowed != null ? allowed : List.of());
         List<String> out = new ArrayList<>();
-        for (String v : raw) {
-            if (v == null || v.isBlank()) {
-                continue;
+        if (raw != null) {
+            for (String v : raw) {
+                if (v != null && !v.isBlank()) {
+                    out.add(v.trim());
+                }
             }
-            String id = v.trim();
-            // 允许默认列表之外的 id（前端自定义），仅过滤空
-            out.add(id);
         }
-        return out.isEmpty() ? new ArrayList<>(allow) : out;
+        if (!out.isEmpty()) {
+            return out;
+        }
+        List<String> defaults = properties.getRewrite().getDefaultVariants();
+        return defaults != null ? new ArrayList<>(defaults) : new ArrayList<>();
     }
 
     private List<String> parseVariants(String raw) {

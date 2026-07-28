@@ -1,12 +1,10 @@
 package com.dwcode.okxbot.article.service;
 
-import com.dwcode.okxbot.article.config.ArticleProperties;
 import com.dwcode.okxbot.article.entity.ArticleTaskEntity;
 import com.dwcode.okxbot.common.exception.BusinessException;
 import com.dwcode.okxbot.storage.ObjectKeyBuilder;
 import com.dwcode.okxbot.storage.ObjectStoragePort;
 import com.dwcode.okxbot.storage.ScratchWorkspace;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -26,18 +24,12 @@ public class ArticleStorageService {
 
     public static final String MODULE = "article";
 
-    private final ArticleProperties properties;
     private final ObjectStoragePort objectStorage;
     private final ObjectKeyBuilder keyBuilder;
     private final ScratchWorkspace scratchWorkspace;
-    private final ObjectMapper objectMapper;
 
     public Path ensureTaskDir(String taskId) {
         return scratchWorkspace.openTaskScratch(MODULE, taskId);
-    }
-
-    public Path resolveTaskDir(String taskId) {
-        return scratchWorkspace.resolveTaskScratch(MODULE, taskId);
     }
 
     public void writeText(Path workDir, String relative, String content) {
@@ -55,14 +47,6 @@ public class ArticleStorageService {
         }
     }
 
-    public void writeJson(Path workDir, String relative, Object value) {
-        try {
-            writeText(workDir, relative, objectMapper.writeValueAsString(value));
-        } catch (Exception e) {
-            log.warn("写 JSON 失败 {}: {}", relative, e.getMessage());
-        }
-    }
-
     /**
      * 成功后将 main.txt / core.json / rewrite.json / result.json 上传对象存储。
      */
@@ -73,17 +57,17 @@ public class ArticleStorageService {
         long userId = task.getUserId();
         String taskId = String.valueOf(task.getId());
         try {
-            publishFile(workDir, "main.txt", userId, taskId, task, "mainTextPath");
-            publishFile(workDir, "core.json", userId, taskId, null, null);
-            publishFile(workDir, "rewrite.json", userId, taskId, null, null);
-            publishFile(workDir, "result.json", userId, taskId, null, null);
+            publishFile(workDir, "main.txt", userId, taskId, task, true);
+            publishFile(workDir, "core.json", userId, taskId, null, false);
+            publishFile(workDir, "rewrite.json", userId, taskId, null, false);
+            publishFile(workDir, "result.json", userId, taskId, null, false);
         } catch (Exception e) {
             log.warn("persist article outputs 失败: {}", e.getMessage());
         }
     }
 
     private void publishFile(Path workDir, String name, long userId, String taskId,
-                             ArticleTaskEntity task, String pathField) {
+                             ArticleTaskEntity task, boolean setMainTextPath) {
         Path file = workDir.resolve(name);
         if (!Files.isRegularFile(file)) {
             return;
@@ -92,7 +76,7 @@ public class ArticleStorageService {
             byte[] bytes = Files.readAllBytes(file);
             String key = keyBuilder.build(MODULE, userId, taskId, name);
             objectStorage.putBytes(key, bytes, contentType(name));
-            if (task != null && "mainTextPath".equals(pathField)) {
+            if (setMainTextPath && task != null) {
                 task.setMainTextPath(key);
             }
             log.debug("已上传 article 对象: {}", key);
@@ -122,27 +106,49 @@ public class ArticleStorageService {
         }
     }
 
+    /**
+     * 优先读全文（scratch main.txt / 对象存储），再回落 DB 截断副本。
+     */
     public String readMainTextFromPath(ArticleTaskEntity task) {
         if (task == null) {
             return null;
         }
-        if (task.getMainText() != null && !task.getMainText().isBlank()) {
-            return task.getMainText();
+        // 1) 流水线 scratch
+        if (task.getWorkDir() != null && !task.getWorkDir().isBlank()) {
+            try {
+                Path local = Path.of(task.getWorkDir()).resolve("main.txt");
+                if (Files.isRegularFile(local)) {
+                    String text = Files.readString(local, StandardCharsets.UTF_8);
+                    if (text != null && !text.isBlank()) {
+                        return text;
+                    }
+                }
+            } catch (Exception e) {
+                log.debug("读 scratch main.txt 失败: {}", e.getMessage());
+            }
         }
+        // 2) 对象存储 / 本地绝对路径
         String pathOrKey = task.getMainTextPath();
-        if (pathOrKey == null || pathOrKey.isBlank()) {
-            return null;
-        }
-        try {
-            if (ObjectKeyBuilder.looksLikeLocalAbsolutePath(pathOrKey)) {
-                return Files.readString(Path.of(pathOrKey), StandardCharsets.UTF_8);
+        if (pathOrKey != null && !pathOrKey.isBlank()) {
+            try {
+                if (ObjectKeyBuilder.looksLikeLocalAbsolutePath(pathOrKey)) {
+                    String text = Files.readString(Path.of(pathOrKey), StandardCharsets.UTF_8);
+                    if (text != null && !text.isBlank()) {
+                        return text;
+                    }
+                } else {
+                    try (InputStream in = objectStorage.openStream(pathOrKey)) {
+                        String text = new String(in.readAllBytes(), StandardCharsets.UTF_8);
+                        if (text != null && !text.isBlank()) {
+                            return text;
+                        }
+                    }
+                }
+            } catch (Exception e) {
+                log.warn("读取 main text 存储失败: {}", e.getMessage());
             }
-            try (InputStream in = objectStorage.openStream(pathOrKey)) {
-                return new String(in.readAllBytes(), StandardCharsets.UTF_8);
-            }
-        } catch (Exception e) {
-            log.warn("读取 main text 失败: {}", e.getMessage());
-            return null;
         }
+        // 3) DB 截断副本
+        return task.getMainText();
     }
 }

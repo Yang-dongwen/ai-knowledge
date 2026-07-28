@@ -351,15 +351,12 @@ aigen:
 # 文章/新闻提取（PR-1 骨架；业务流水线见后续 PR）
 article:
   enabled: true
-  work-dir: ./data/article
   max-concurrent-tasks: 2
   max-concurrent-tasks-per-user: 2
   # true=假数据流水线（本地无抓取/LLM 也可验收调度与 SSE）
   mock-pipeline: false
   mock-step-delay-ms: 200
   cleanup-on-delete: true
-  # 默认不强制 robots；依赖产品文案「仅提交有权访问的内容」
-  respect-robots: false
   async:
     core-pool-size: 2
     max-pool-size: 4
@@ -371,8 +368,7 @@ article:
     max-redirects: 5
     user-agent: "okx-bot-article-bot/1.0 (+internal; research)"
     # toutiao=RENDER_DATA 图文自动提取（失败可粘贴降级）
-    enabled-adapters: generic,paste,toutiao
-    allow-user-cookie: false
+    enabled-adapters: generic,toutiao
   extract:
     max-main-text-chars: 80000
     min-quality-score: 0.35
@@ -394,10 +390,6 @@ article:
     allow-loopback: false
     allowed-schemes: http,https
     host-allowlist: []
-  degrade:
-    needs-paste-on-fetch-fail: true
-  platform:
-    reject-unsupported-on-create: false
 
 # AI 文生图（NVIDIA FLUX）
 # mock-pipeline=true 时全 mock；false 时按 steps 切换

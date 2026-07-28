@@ -64,10 +64,6 @@ class ToutiaoFetchAdapterTest {
         assertEquals("测试号", r.getAuthorHint());
         assertNotNull(r.getRawHtml());
         assertTrue(r.getRawHtml().contains("第一段正文"));
-        assertNotNull(r.getImageUrls());
-        assertTrue(r.getImageUrls().isEmpty());
-        assertNotNull(r.getImages());
-        assertTrue(r.getImages().isEmpty());
     }
 
     @Test

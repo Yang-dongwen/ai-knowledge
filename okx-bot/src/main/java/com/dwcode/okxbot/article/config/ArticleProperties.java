@@ -16,7 +16,6 @@ import java.util.List;
 public class ArticleProperties {
 
     private boolean enabled = true;
-    private String workDir = "./data/article";
     /** 全局调度槽，对齐 imggen */
     private int maxConcurrentTasks = 2;
     /** 每用户并发上限；超限 429 */
@@ -24,7 +23,6 @@ public class ArticleProperties {
     private boolean mockPipeline = false;
     /** mock 流水线每步延迟（毫秒） */
     private long mockStepDelayMs = 200;
-    private boolean respectRobots = false;
     private boolean cleanupOnDelete = true;
 
     private Async async = new Async();
@@ -33,8 +31,6 @@ public class ArticleProperties {
     private Llm llm = new Llm();
     private Rewrite rewrite = new Rewrite();
     private Safety safety = new Safety();
-    private Degrade degrade = new Degrade();
-    private Platform platform = new Platform();
 
     @Data
     public static class Async {
@@ -50,8 +46,8 @@ public class ArticleProperties {
         private int maxBytes = 2_000_000;
         private int maxRedirects = 5;
         private String userAgent = "okx-bot-article-bot/1.0 (+internal; research)";
-        private List<String> enabledAdapters = new ArrayList<>(List.of("generic", "paste", "toutiao"));
-        private boolean allowUserCookie = false;
+        /** 启用的专用 Adapter 名；含 generic 才允许通用回落 */
+        private List<String> enabledAdapters = new ArrayList<>(List.of("generic", "toutiao"));
         private List<String> acceptContentTypes = new ArrayList<>(
                 List.of("text/html", "application/xhtml+xml", "text/plain"));
     }
@@ -92,18 +88,5 @@ public class ArticleProperties {
          * <strong>生产必须保持 false</strong>，否则 SSRF 防护被架空。
          */
         private boolean allowLoopback = false;
-    }
-
-    @Data
-    public static class Degrade {
-        private boolean needsPasteOnFetchFail = true;
-    }
-
-    @Data
-    public static class Platform {
-        /**
-         * 默认 false：UNSUPPORTED 无 paste → NEEDS_PASTE（不 400）。
-         */
-        private boolean rejectUnsupportedOnCreate = false;
     }
 }

@@ -4,7 +4,6 @@ import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
-import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class ArticleUrlNormalizerTest {
 
@@ -27,11 +26,17 @@ class ArticleUrlNormalizerTest {
     }
 
     @Test
-    void stripUtm() {
-        String n = ArticleUrlNormalizer.stripTrackingParams(
-                "https://example.com/a?utm_source=x&id=1");
-        assertTrue(n.contains("id=1"));
-        assertTrue(!n.contains("utm_source"));
+    void normalizeToutiaoArticleUrl() {
+        assertEquals("https://www.toutiao.com/article/7664593441992524297/",
+                ArticleUrlNormalizer.normalize(
+                        "https://m.toutiao.com/i7664593441992524297/"));
+    }
+
+    @Test
+    void extractToutiaoId() {
+        assertEquals("7664593441992524297",
+                ArticleUrlNormalizer.extractToutiaoId(
+                        "https://www.toutiao.com/group/7664593441992524297/"));
     }
 
     @Test
