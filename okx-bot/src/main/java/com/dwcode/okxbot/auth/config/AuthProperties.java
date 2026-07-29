@@ -27,11 +27,42 @@ public class AuthProperties {
     @Data
     public static class Mail {
         /**
+         * 发件提供方：console | agentmail | smtp。
+         * <ul>
+         *   <li>console — 验证码打印到日志（本地默认）</li>
+         *   <li>agentmail — AgentMail HTTP API（推荐生产）</li>
+         *   <li>smtp — spring.mail（如 QQ 邮箱 SMTP）</li>
+         * </ul>
+         * 若 {@link #consoleMode} 为 true，则强制 console（兼容旧配置）。
+         */
+        private String provider = "console";
+        /**
          * true：不真实发信，验证码打印到日志（本地开发）。
-         * false：使用 spring.mail 发送真实邮件。
+         * false：按 {@link #provider} 真实发信。
          */
         private boolean consoleMode = true;
         private String from = "noreply@example.com";
+        /** AgentMail 配置（provider=agentmail 时必填） */
+        private AgentMail agentmail = new AgentMail();
+
+        @Data
+        public static class AgentMail {
+            /** API Key，环境变量 AGENTMAIL_API_KEY */
+            private String apiKey = "";
+            /** 发件 inbox_id，环境变量 AGENTMAIL_INBOX_ID */
+            private String inboxId = "";
+            /** API 根地址，默认 https://api.agentmail.to */
+            private String baseUrl = "https://api.agentmail.to";
+            /**
+             * 可选 HTTP/SOCKS 代理（本机 Clash/VPN 常见 127.0.0.1:7890/7897）。
+             * Java/OkHttp 不会自动走系统 VPN，需显式配置。
+             */
+            private String proxyHost = "";
+            /** 代理端口，0 表示不使用 */
+            private int proxyPort = 0;
+            /** HTTP 或 SOCKS（Clash 混合端口一般用 HTTP） */
+            private String proxyType = "HTTP";
+        }
     }
 
     @Data

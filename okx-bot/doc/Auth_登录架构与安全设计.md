@@ -83,7 +83,8 @@
 
 - 生产环境强制 HTTPS  
 - JWT 密钥 `auth.jwt.secret` **足够长随机串**，不入库不进前端  
-- SMTP 配置放 yml / 环境变量，开发模式可 **console 输出验证码**  
+- 邮件提供方 `auth.mail.provider`：`console`（开发日志）/ `agentmail`（AgentMail HTTP API，推荐）/ `smtp`（spring.mail）  
+- 密钥放环境变量：`AGENTMAIL_API_KEY`、`AGENTMAIL_INBOX_ID`；开发模式可 **console 输出验证码**  
 
 ---
 

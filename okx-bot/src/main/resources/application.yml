@@ -21,8 +21,17 @@ auth:
     expire-seconds: 7200
     issuer: okx-bot
   mail:
+    # console | agentmail | smtp；console-mode=true 时强制 console
+    provider: console
     console-mode: true
     from: noreply@example.com
+    agentmail:
+      api-key: ""
+      inbox-id: ""
+      base-url: https://api.agentmail.to
+      proxy-host: ""
+      proxy-port: 0
+      proxy-type: HTTP
   code:
     length: 6
     expire-minutes: 10

@@ -197,6 +197,7 @@ auth:
     secret: 请换成足够长的随机密钥   # 生产必须改
     expire-seconds: 7200
   mail:
+    provider: console               # console | agentmail | smtp
     console-mode: true              # true=验证码打日志，不真发邮件
   admin:
     seed-enabled: true              # 库中无 SUPER_ADMIN 时首次启动自动建号
@@ -405,7 +406,8 @@ Authorization: Bearer <token>
 - `POST /api/auth/password/send-code`
 - `POST /api/auth/password/reset`
 
-开发环境 `auth.mail.console-mode=true` 时，验证码打印在 **后端控制台日志**。
+开发环境 `auth.mail.console-mode=true` 时，验证码打印在 **后端控制台日志**。  
+生产发信推荐 **AgentMail**：`console-mode=false`、`provider=agentmail`，并配置 `AGENTMAIL_API_KEY` + `AGENTMAIL_INBOX_ID`（注册与找回密码共用 `MailService`）。
 
 ### 8.2 角色
 
@@ -627,7 +629,7 @@ Invoke-RestMethod -Uri "http://127.0.0.1:8080/api/v1/video/tasks?page=0&size=1" 
 ## 13. 生产部署注意
 
 1. **密钥**：更换 `auth.jwt.secret`；所有 `api-key` 用环境变量或密钥管理，勿提交仓库。  
-2. **邮件**：关闭 `console-mode`，配置 `spring.mail`。  
+2. **邮件**：关闭 `console-mode`；推荐 `provider=agentmail` + AgentMail API Key/Inbox，或 `provider=smtp` + `spring.mail`。  
 3. **超管**：改默认密码，`auth.admin.seed-enabled: false`。  
 4. **HTTPS**：公网必须 TLS；CORS 收紧 `allowedOriginPatterns`。  
 5. **交易**：实盘前确认 `simulated`、`live-enabled`、系统 STOPPED 默认策略。  
