@@ -40,28 +40,16 @@ Spring 业务配置**不在**本目录：
 
 ---
 
-## 公网 HTTPS 入口
+## 公网入口
 
-**完整步骤与排障 → [docs/worker-proxy.md](./docs/worker-proxy.md)**（Worker 反代，推荐参阅）
+| 方案 | 地址 | 国内直连 | 文档 |
+|------|------|----------|------|
+| **A. 自有域名（推荐国内）** | **http://dwcode.cloud:8088** | ✅ | [docs/domain-dwcode-cloud.md](./docs/domain-dwcode-cloud.md) |
+| B. 公网 IP | http://13.201.82.24:8088 | ✅ | — |
+| C. Worker 反代 | https://auto-exchange-proxy.dwcode.workers.dev | ❌ 常需代理 | [docs/worker-proxy.md](./docs/worker-proxy.md) |
+| D. Quick Tunnel | `*.trycloudflare.com` | ❌ | `scripts/quick-tunnel.sh` |
 
-| 方案 | 固定 URL | 文档 |
-|------|----------|------|
-| **A. Worker 反代**（当前） | `https://auto-exchange-proxy.dwcode.workers.dev` | [docs/worker-proxy.md](./docs/worker-proxy.md) |
-| B. 仅 Quick Tunnel | 否（URL 会变） | `scripts/quick-tunnel.sh` |
-| C. Named Tunnel | 需自有域名 | `scripts/named-tunnel.sh` |
-
-快速命令：
-
-```bash
-# EC2：保证业务 + tunnel
-bash deploy/scripts/quick-tunnel.sh start
-bash deploy/scripts/quick-tunnel.sh url   # 填进 wrangler.toml 的 ORIGIN_BASE
-
-# 本机：部署 Worker
-cd deploy/worker-proxy
-npx wrangler login    # 首次
-npx wrangler deploy
-```
+域名 DNS（DNSPod）已指向 EC2；业务端口 **8088**（80/443 被宿主机 xray 占用）。
 
 ---
 

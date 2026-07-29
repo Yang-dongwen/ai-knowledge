@@ -4,7 +4,20 @@
 
 ---
 
-## 1. 当前固定地址
+## 0. 与自有域名的关系
+
+国内主入口已改为：
+
+```text
+http://dwcode.cloud:8088
+```
+
+见 [domain-dwcode-cloud.md](./domain-dwcode-cloud.md)。  
+Worker 地址仍可用（海外/备用），**不会**因买了域名而失效。
+
+---
+
+## 1. Worker 固定地址（海外/备用）
 
 ```text
 https://auto-exchange-proxy.dwcode.workers.dev
