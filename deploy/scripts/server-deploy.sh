@@ -90,16 +90,16 @@ echo "==> ensure $HOST_DATA_ROOT"
 sudo mkdir -p "$HOST_DATA_ROOT/logs" "$HOST_DATA_ROOT/data"
 sudo chmod -R a+rwX "$HOST_DATA_ROOT" 2>/dev/null || true
 
+# compose 在 deploy/stack/ 下：文件内 env_file 用 ../env/app.env（相对 compose 目录）
+# CLI --env-file 用仓库根相对路径 deploy/env/app.env（变量插值）
 echo "==> docker compose -f $COMPOSE_FILE --env-file $ENV_REL up -d --build"
-# --project-directory = 仓库根，与 compose 内 context/env_file 路径一致
 docker compose \
-  --project-directory "$APP_DIR" \
   -f "$COMPOSE_FILE" \
   --env-file "$ENV_FILE" \
   up -d --build
 
 echo "==> status"
-docker compose --project-directory "$APP_DIR" -f "$COMPOSE_FILE" --env-file "$ENV_FILE" ps
+docker compose -f "$COMPOSE_FILE" --env-file "$ENV_FILE" ps
 for i in 1 2 3 4 5 6 7 8 9 10; do
   code=$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:8088/api/ 2>/dev/null || echo 000)
   if [[ "$code" == "401" || "$code" == "200" || "$code" == "403" ]]; then

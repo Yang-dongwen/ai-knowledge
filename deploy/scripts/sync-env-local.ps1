@@ -60,7 +60,7 @@ if [ ! -f $ComposeRel ]; then
   echo "ERROR: 服务器缺少 $ComposeRel ，请先 git pull / 部署新目录结构" >&2
   exit 1
 fi
-docker compose --project-directory '$RemoteAppDir' -f $ComposeRel --env-file $EnvRel up -d
+docker compose -f $ComposeRel --env-file $EnvRel up -d
 curl -s -o /dev/null -w 'api:%{http_code}\n' http://127.0.0.1:8088/api/ || true
 "@
 }

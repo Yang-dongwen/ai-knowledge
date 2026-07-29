@@ -1,25 +1,24 @@
 # 生产默认（2G 小机）：web + okx-bot
-# 密钥：deploy/env/app.env
-# profile：ec2（jar 内 application-ec2.yml）
+# 本文件位于 deploy/stack/，下列相对路径均相对「本文件所在目录」
+#   ../env/app.env          → deploy/env/app.env
+#   context: ../..          → 仓库根
+#   dockerfile 相对 context
 #
-# 必须在仓库根目录执行，或显式指定 --project-directory <仓库根>：
-#   docker compose --project-directory . \
-#     -f deploy/stack/compose.lite.yml \
-#     --env-file deploy/env/app.env \
-#     up -d --build
+# 在仓库根执行:
+#   docker compose -f deploy/stack/compose.lite.yml --env-file deploy/env/app.env up -d --build
 #
-# 本文件内所有相对路径均相对于「仓库根」。
+# 注意: --env-file 只做 compose 变量插值；注入容器靠下方 env_file
 
 name: auto-exchange-lite
 
 services:
   okx-bot:
     build:
-      context: .
+      context: ../..
       dockerfile: deploy/stack/Dockerfile.okx-bot
     restart: unless-stopped
     env_file:
-      - deploy/env/app.env
+      - ../env/app.env
     environment:
       SPRING_PROFILES_ACTIVE: ec2
       JAVA_OPTS: ${JAVA_OPTS:--Xmx640m}
@@ -37,7 +36,7 @@ services:
 
   web:
     build:
-      context: .
+      context: ../..
       dockerfile: deploy/stack/Dockerfile.web
     restart: unless-stopped
     ports:

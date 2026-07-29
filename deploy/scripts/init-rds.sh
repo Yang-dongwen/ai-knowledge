@@ -52,4 +52,4 @@ mysql -h "$RDS_HOST" -P "$RDS_PORT" -u "$DB_USER" -p"$DB_PASSWORD" "$RDS_DATABAS
 
 echo "DONE."
 echo "启动: bash deploy/scripts/server-deploy.sh"
-echo "  或: docker compose --project-directory . -f deploy/stack/compose.lite.yml --env-file deploy/env/app.env up -d --build"
+echo "  或: docker compose -f deploy/stack/compose.lite.yml --env-file deploy/env/app.env up -d --build"

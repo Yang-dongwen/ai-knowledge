@@ -30,11 +30,10 @@ if [[ ! -f "$COMPOSE_REL" ]]; then
 fi
 
 docker compose \
-  --project-directory "$ROOT" \
   -f "$COMPOSE_REL" \
   --env-file "$ENV_REL" \
   up -d --build "$@"
 
 echo ""
 echo "已启动。浏览器: http://$(curl -s --connect-timeout 2 ifconfig.me 2>/dev/null || echo '<EC2公网IP>'):8088/"
-echo "日志: docker compose --project-directory $ROOT -f $COMPOSE_REL --env-file $ENV_REL logs -f okx-bot"
+echo "日志: docker compose -f $COMPOSE_REL --env-file $ENV_REL logs -f okx-bot"

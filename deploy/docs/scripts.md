@@ -62,11 +62,12 @@ bash deploy/scripts/init-rds.sh
 
 所有脚本统一路径：
 
-| 项 | 路径（相对仓库根） |
-|----|-------------------|
-| 密钥 | `deploy/env/app.env` |
+| 项 | 路径 |
+|----|------|
+| 密钥（脚本/CLI） | 仓库根下 `deploy/env/app.env` |
+| 密钥（compose 内） | `../env/app.env`（相对 `deploy/stack/`，勿写成 `deploy/env/...`） |
 | 生产 compose | `deploy/stack/compose.lite.yml` |
-| Docker | `docker compose --project-directory <仓库根> -f deploy/stack/... --env-file deploy/env/app.env` |
+| Docker | `docker compose -f deploy/stack/compose.lite.yml --env-file deploy/env/app.env` |
 
 ---
 
