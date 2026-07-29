@@ -1,0 +1,81 @@
+/**
+ * Cloudflare Worker：HTTPS 固定入口 → 反代 EC2 web (nginx:8088)
+ *
+ * 域名: https://shrill-dew-d53a.dwcode.workers.dev
+ * 源站: http://ORIGIN_HOST:ORIGIN_PORT （默认 EC2 公网 IP:8088）
+ *
+ * 支持: REST / 静态资源 / SSE 流式（透传 body）
+ */
+export default {
+  async fetch(request, env) {
+    const originHost = env.ORIGIN_HOST || "13.201.82.24";
+    const originPort = env.ORIGIN_PORT || "8088";
+
+    const inbound = new URL(request.url);
+    const target = new URL(request.url);
+    target.protocol = "http:";
+    target.hostname = originHost;
+    target.port = String(originPort);
+
+    // 复制请求头，去掉 hop-by-hop / 压缩协商问题
+    const headers = new Headers(request.headers);
+    headers.delete("host");
+    headers.set("Host", `${originHost}:${originPort}`);
+    // 让 Spring 识别 HTTPS 公网入口
+    headers.set("X-Forwarded-Proto", "https");
+    headers.set("X-Forwarded-Host", inbound.host);
+    headers.set("X-Forwarded-For", request.headers.get("CF-Connecting-IP") || "");
+    headers.set("X-Real-IP", request.headers.get("CF-Connecting-IP") || "");
+
+    // 某些客户端带 br/zstd，源站 nginx 可能不匹配；交给源站自己协商
+    // headers.delete("accept-encoding");
+
+    const init = {
+      method: request.method,
+      headers,
+      redirect: "manual",
+      // Workers 透传 body（含 POST / SSE 上行）
+      body: ["GET", "HEAD"].includes(request.method) ? undefined : request.body,
+    };
+
+    let resp;
+    try {
+      resp = await fetch(target.toString(), init);
+    } catch (err) {
+      return new Response(
+        JSON.stringify({
+          error: "origin_unreachable",
+          message: String(err && err.message ? err.message : err),
+          target: target.origin,
+        }),
+        {
+          status: 502,
+          headers: { "content-type": "application/json; charset=utf-8" },
+        }
+      );
+    }
+
+    // 透传响应；修正可能错误的绝对跳转（若有 Location 指到内网 IP）
+    const outHeaders = new Headers(resp.headers);
+    const loc = outHeaders.get("Location");
+    if (loc) {
+      try {
+        const u = new URL(loc, target);
+        if (u.hostname === originHost || u.hostname === "127.0.0.1") {
+          u.protocol = "https:";
+          u.hostname = inbound.hostname;
+          u.port = "";
+          outHeaders.set("Location", u.toString());
+        }
+      } catch {
+        /* ignore */
+      }
+    }
+
+    return new Response(resp.body, {
+      status: resp.status,
+      statusText: resp.statusText,
+      headers: outHeaders,
+    });
+  },
+};

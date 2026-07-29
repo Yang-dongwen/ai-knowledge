@@ -1,0 +1,18 @@
+# Cloudflare Worker 反代
+# 固定入口: https://auto-exchange-proxy.dwcode.workers.dev
+# 源站默认: Quick Tunnel（Worker 直连裸 IP 在本账号下异常，改走 tunnel HTTPS）
+#
+# 部署: cd deploy/worker-proxy && npx wrangler deploy
+# 更新 ORIGIN_BASE 后重新 deploy
+
+name = "auto-exchange-proxy"
+main = "src/index.js"
+compatibility_date = "2024-11-01"
+workers_dev = true
+preview_urls = false
+
+[vars]
+# 若 Quick Tunnel 重建导致 URL 变化，改这里再 deploy
+ORIGIN_BASE = "https://knew-procedure-proxy-disciplines.trycloudflare.com"
+ORIGIN_HOST = "13.201.82.24"
+ORIGIN_PORT = "8088"

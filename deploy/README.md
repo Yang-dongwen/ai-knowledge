@@ -38,33 +38,40 @@ Spring 业务配置**不在**本目录：
 
 ---
 
-## Cloudflare Tunnel（公网 HTTPS）
+## 公网 HTTPS 入口
 
-### A. 固定域名（Named Tunnel，推荐有 Cloudflare 域名时）
+### A. Worker 反代（固定 `*.workers.dev`，无自有域名）— **当前推荐**
 
-```bash
-# 1) 浏览器授权（选中你的域名）
-bash deploy/scripts/named-tunnel.sh login
+固定地址：
 
-# 2) 绑定固定域名（自动建隧道 + DNS CNAME + 启动）
-bash deploy/scripts/named-tunnel.sh setup app.yourdomain.com
-
-# 3) 查看
-bash deploy/scripts/named-tunnel.sh url
-bash deploy/scripts/named-tunnel.sh status
+```text
+https://auto-exchange-proxy.dwcode.workers.dev
 ```
 
-凭据在 `deploy/env/cloudflared/`（gitignore）。  
-建议 `PAY_PUBLIC_BASE_URL=https://app.yourdomain.com` 后 `sync-env-local.ps1`。
+- 代码：`deploy/worker-proxy/`
+- 部署：`cd deploy/worker-proxy && npx wrangler deploy`（需 `npx wrangler login`）
+- 源站：默认走 EC2 上的 **Quick Tunnel**（`ORIGIN_BASE`），因 Worker 直连裸 IP 在本账号下异常
+- 因此 **tunnel 容器需保持运行**：`bash deploy/scripts/quick-tunnel.sh start`
+- 若 Quick Tunnel URL 变了：改 `deploy/worker-proxy/wrangler.toml` 的 `ORIGIN_BASE` 后重新 `wrangler deploy`
 
-### B. 临时域名（Quick Tunnel，无需自有域名）
+`PAY_PUBLIC_BASE_URL` 建议：
+
+```env
+PAY_PUBLIC_BASE_URL=https://auto-exchange-proxy.dwcode.workers.dev
+```
+
+### B. Quick Tunnel 临时地址
 
 ```bash
 bash deploy/scripts/quick-tunnel.sh start   # https://xxxx.trycloudflare.com
-bash deploy/scripts/quick-tunnel.sh url
 ```
 
-临时隧道容器重建后 URL 会变；有固定域名请用 A。
+### C. Named Tunnel（需自有域名接入 Cloudflare）
+
+```bash
+bash deploy/scripts/named-tunnel.sh login
+bash deploy/scripts/named-tunnel.sh setup app.yourdomain.com
+```
 
 ---
 
