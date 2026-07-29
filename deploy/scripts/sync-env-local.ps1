@@ -1,11 +1,6 @@
 <#
 .SYNOPSIS
   本机 → EC2 同步 deploy/env/app.env，并重启 compose.lite
-
-.NOTES
-  路径（相对仓库根）:
-    本机/服务器密钥  deploy/env/app.env
-    生产 compose     deploy/stack/compose.lite.yml
 #>
 param(
   [string]$HostName = "13.201.82.24",
@@ -18,12 +13,10 @@ param(
 $ErrorActionPreference = "Stop"
 $RepoRoot = (Resolve-Path (Join-Path $PSScriptRoot "../..")).Path
 
-# 标准路径
 $EnvRel = "deploy/env/app.env"
 $ComposeRel = "deploy/stack/compose.lite.yml"
 $LocalEnv = Join-Path $RepoRoot ($EnvRel -replace "/", "\")
 
-# 旧路径兼容：本机若还在 deploy/app.env，先迁到 env/
 $LegacyEnv = Join-Path $RepoRoot "deploy\app.env"
 if (-not (Test-Path $LocalEnv) -and (Test-Path $LegacyEnv)) {
   $envDir = Join-Path $RepoRoot "deploy\env"
@@ -45,6 +38,7 @@ Write-Host "==> scp $EnvRel -> ${remote}:${RemoteAppDir}/$EnvRel" -ForegroundCol
 & scp @ssh $LocalEnv "${remote}:${RemoteAppDir}/${EnvRel}"
 if ($LASTEXITCODE -ne 0) { throw "scp failed" }
 
+# 远端：优先用 server-deploy SKIP_GIT=1（含 override 逻辑）
 $remoteCmd = @"
 set -e
 cd '$RemoteAppDir'
@@ -56,14 +50,8 @@ echo env_ok path=$EnvRel
 if (-not $NoRestart) {
   $remoteCmd += @"
 
-if [ ! -f $ComposeRel ]; then
-  echo "ERROR: 服务器缺少 $ComposeRel ，请先 git pull / 部署新目录结构" >&2
-  exit 1
-fi
-export APP_ENV_FILE='$RemoteAppDir/$EnvRel'
-echo APP_ENV_FILE=`$APP_ENV_FILE
-docker compose -f $ComposeRel --env-file $EnvRel up -d
-curl -s -o /dev/null -w 'api:%{http_code}\n' http://127.0.0.1:8088/api/ || true
+export APP_DIR='$RemoteAppDir' COMPOSE_FILE=$ComposeRel SKIP_GIT=1
+bash deploy/scripts/server-deploy.sh
 "@
 }
 

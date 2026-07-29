@@ -1,13 +1,15 @@
 # 生产默认（2G 小机）：web + okx-bot
 #
-# env_file 必须用绝对路径（经 APP_ENV_FILE 注入），避免相对路径在
-# compose 目录 / project 目录 / cwd 之间解析不一致。
+# 密钥不在本文件写死路径。server-deploy / up.sh 会生成临时 override：
+#   services.okx-bot.env_file = <绝对路径>/deploy/env/app.env
 #
-# 在仓库根（由 server-deploy / up.sh 设置 APP_ENV_FILE）:
+# 手动:
 #   export APP_ENV_FILE=$PWD/deploy/env/app.env
-#   docker compose -f deploy/stack/compose.lite.yml --env-file deploy/env/app.env up -d --build
+#   printf 'services:\n  okx-bot:\n    env_file:\n      - %s\n' "$APP_ENV_FILE" > /tmp/ae-env.override.yml
+#   docker compose -f deploy/stack/compose.lite.yml -f /tmp/ae-env.override.yml \
+#     --env-file deploy/env/app.env up -d --build
 #
-# build.context 相对本文件所在目录 deploy/stack/ → 仓库根
+# build.context 相对本文件目录 deploy/stack/ → 仓库根
 
 name: auto-exchange-lite
 
@@ -17,8 +19,7 @@ services:
       context: ../..
       dockerfile: deploy/stack/Dockerfile.okx-bot
     restart: unless-stopped
-    env_file:
-      - ${APP_ENV_FILE:?set APP_ENV_FILE to absolute path of deploy/env/app.env}
+    # env_file 由 override 注入绝对路径（勿在此写相对路径）
     environment:
       SPRING_PROFILES_ACTIVE: ec2
       JAVA_OPTS: ${JAVA_OPTS:--Xmx640m}

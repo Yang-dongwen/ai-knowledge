@@ -1,5 +1,5 @@
 # 全量栈：web + okx-bot + whisper + remotion
-# env_file 使用绝对路径变量 APP_ENV_FILE（见 compose.lite.yml 说明）
+# okx-bot 的 env_file 由脚本生成的 override 注入（绝对路径）
 
 name: auto-exchange
 
@@ -9,8 +9,6 @@ services:
       context: ../..
       dockerfile: deploy/stack/Dockerfile.okx-bot
     restart: unless-stopped
-    env_file:
-      - ${APP_ENV_FILE:?set APP_ENV_FILE to absolute path of deploy/env/app.env}
     environment:
       SPRING_PROFILES_ACTIVE: ec2
       VIDEO_WHISPER_MANAGED_ENABLED: "false"

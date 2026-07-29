@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # 服务器部署：git pull → docker compose 重建
-# 路径约定（相对 APP_DIR / 仓库根）：
-#   密钥   deploy/env/app.env
+# 路径（相对 APP_DIR / 仓库根）：
+#   密钥    deploy/env/app.env
 #   compose deploy/stack/compose.lite.yml
 set -euo pipefail
 
@@ -12,6 +12,7 @@ REF="${REF:-main}"
 SKIP_GIT="${SKIP_GIT:-0}"
 
 cd "$APP_DIR"
+APP_DIR="$(pwd -P)"
 
 # ---------- 密钥：标准路径 + 旧路径一次性迁移 ----------
 mkdir -p deploy/env
@@ -33,7 +34,6 @@ else
   exit 1
 fi
 
-# 统一落盘到标准路径
 if [[ "$ENV_FILE" != "$APP_DIR/$ENV_REL" ]]; then
   cp -f "$ENV_FILE" "$APP_DIR/$ENV_REL"
 fi
@@ -90,16 +90,27 @@ echo "==> ensure $HOST_DATA_ROOT"
 sudo mkdir -p "$HOST_DATA_ROOT/logs" "$HOST_DATA_ROOT/data"
 sudo chmod -R a+rwX "$HOST_DATA_ROOT" 2>/dev/null || true
 
-# compose 内 env_file 使用绝对路径 APP_ENV_FILE（相对路径在 stack/ 下会解析错）
-export APP_ENV_FILE="$ENV_FILE"
-echo "==> docker compose -f $COMPOSE_FILE (APP_ENV_FILE=$APP_ENV_FILE)"
+# ---------- compose override：绝对路径 env_file（避免相对路径坑）----------
+OVERRIDE=$(mktemp /tmp/ae-env.override.XXXXXX.yml)
+trap 'rm -f "$OVERRIDE"' EXIT
+# YAML: 绝对路径必须原样写入
+cat > "$OVERRIDE" <<EOF
+services:
+  okx-bot:
+    env_file:
+      - ${ENV_FILE}
+EOF
+echo "==> override env_file=$ENV_FILE"
+
+echo "==> docker compose -f $COMPOSE_FILE -f $OVERRIDE up -d --build"
 docker compose \
   -f "$COMPOSE_FILE" \
+  -f "$OVERRIDE" \
   --env-file "$ENV_FILE" \
   up -d --build
 
 echo "==> status"
-docker compose -f "$COMPOSE_FILE" --env-file "$ENV_FILE" ps
+docker compose -f "$COMPOSE_FILE" -f "$OVERRIDE" --env-file "$ENV_FILE" ps
 for i in 1 2 3 4 5 6 7 8 9 10; do
   code=$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:8088/api/ 2>/dev/null || echo 000)
   if [[ "$code" == "401" || "$code" == "200" || "$code" == "403" ]]; then

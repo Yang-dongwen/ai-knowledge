@@ -5,6 +5,7 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 cd "$ROOT"
+ROOT="$(pwd -P)"
 
 ENV_REL="deploy/env/app.env"
 COMPOSE_REL="${COMPOSE_FILE:-deploy/stack/compose.lite.yml}"
@@ -29,14 +30,22 @@ if [[ ! -f "$COMPOSE_REL" ]]; then
   exit 1
 fi
 
-# 绝对路径注入 compose 的 env_file（见 stack/compose.*.yml）
-export APP_ENV_FILE="$ROOT/$ENV_REL"
+ENV_FILE="$ROOT/$ENV_REL"
+OVERRIDE=$(mktemp /tmp/ae-env.override.XXXXXX.yml)
+trap 'rm -f "$OVERRIDE"' EXIT
+cat > "$OVERRIDE" <<EOF
+services:
+  okx-bot:
+    env_file:
+      - ${ENV_FILE}
+EOF
 
 docker compose \
   -f "$COMPOSE_REL" \
+  -f "$OVERRIDE" \
   --env-file "$ENV_REL" \
   up -d --build "$@"
 
 echo ""
 echo "已启动。浏览器: http://$(curl -s --connect-timeout 2 ifconfig.me 2>/dev/null || echo '<EC2公网IP>'):8088/"
-echo "日志: APP_ENV_FILE=$APP_ENV_FILE docker compose -f $COMPOSE_REL --env-file $ENV_REL logs -f okx-bot"
+echo "日志: docker compose -f $COMPOSE_REL logs -f okx-bot"
