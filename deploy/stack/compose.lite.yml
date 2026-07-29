@@ -3,13 +3,9 @@
 # 密钥不在本文件写死路径。server-deploy / up.sh 会生成临时 override：
 #   services.okx-bot.env_file = <绝对路径>/deploy/env/app.env
 #
-# 手动:
-#   export APP_ENV_FILE=$PWD/deploy/env/app.env
-#   printf 'services:\n  okx-bot:\n    env_file:\n      - %s\n' "$APP_ENV_FILE" > /tmp/ae-env.override.yml
-#   docker compose -f deploy/stack/compose.lite.yml -f /tmp/ae-env.override.yml \
-#     --env-file deploy/env/app.env up -d --build
-#
-# build.context 相对本文件目录 deploy/stack/ → 仓库根
+# Cloudflare Tunnel（profile: tunnel）:
+#   固定域名: bash deploy/scripts/named-tunnel.sh setup <fqdn>
+#   临时域名: bash deploy/scripts/quick-tunnel.sh start
 
 name: auto-exchange-lite
 
@@ -19,7 +15,6 @@ services:
       context: ../..
       dockerfile: deploy/stack/Dockerfile.okx-bot
     restart: unless-stopped
-    # env_file 由 override 注入绝对路径（勿在此写相对路径）
     environment:
       SPRING_PROFILES_ACTIVE: ec2
       JAVA_OPTS: ${JAVA_OPTS:--Xmx640m}
@@ -47,15 +42,13 @@ services:
     networks:
       - appnet
 
-  # Cloudflare Quick Tunnel：免费 *.trycloudflare.com，无需域名
-  # 开启: QUICK_TUNNEL=1（默认开启，2G 额外约 30MB）
-  # 看地址: bash deploy/scripts/quick-tunnel-url.sh
-  # 注意: 每次容器重建 URL 会变（临时隧道特性）
+  # cloudflared 镜像无 shell；command 由 named/quick 脚本写的 tunnel.override.yml 决定
   tunnel:
     image: cloudflare/cloudflared:latest
     restart: unless-stopped
     profiles:
       - tunnel
+    # 默认 quick；named-tunnel.sh 会用 override 改成 config run
     command:
       - tunnel
       - --no-autoupdate
@@ -73,4 +66,3 @@ services:
 networks:
   appnet:
     driver: bridge
-

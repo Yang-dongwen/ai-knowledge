@@ -1,0 +1,15 @@
+# 复制到 deploy/env/cloudflared/config.yml（gitignore，勿提交）
+# 由 named-tunnel.sh 自动生成，一般无需手改
+#
+# tunnel: 隧道 UUID
+# credentials-file: 容器内路径
+# hostname: 你的固定域名
+
+tunnel: REPLACE_TUNNEL_ID
+credentials-file: /etc/cloudflared/REPLACE_TUNNEL_ID.json
+
+ingress:
+  - hostname: REPLACE_HOSTNAME
+    service: http://web:80
+  # 未匹配主机名返回 404
+  - service: http_status:404

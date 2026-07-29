@@ -8,19 +8,36 @@ __pycache__/
 *$py.class
 *.so
 .Python
+# Python 虚拟环境（勿用全局 env/，Windows 大小写不敏感会误伤 deploy/env）
 venv/
 .venv/
-ENV/
-env/
+**/venv/
+**/.venv/
 
-# 部署密钥（切勿提交）
-deploy/.env
+# 部署密钥（切勿提交）— 仅 env/ 下真实文件
+deploy/env/app.env
+deploy/env/app.env.local
+deploy/env/.env
+deploy/env/SECRETS_INVENTORY.env
+deploy/env/.admin-once.txt
+# Cloudflare Named Tunnel 凭据（切勿提交）
+deploy/env/cloudflared/
+deploy/env/quick-tunnel.url
+# 兼容旧路径（迁移期）
 deploy/app.env
+deploy/app.env.local
+deploy/.env
 deploy/SECRETS_INVENTORY.env
 deploy/.admin-once.txt
+
+# 仅本地真实隐私 yml 不提交；application-ec2.yml 要提交（里面是变量）
+**/application-local.yml
 **/.env
 !**/.env.example
 !**/app.env.example
+!**/app.env.local.example
+!**/application-local.yml.example
+
 # 临时打包目录
 _deploy_stage/
 _deploy_stage.tgz

@@ -17,8 +17,10 @@ ENV_REL="deploy/env/app.env"
 [[ -f "$ENV_REL" ]] || ENV_REL="deploy/.env"
 
 compose() {
+  # Quick：不挂 named 配置，避免误用固定隧道
   local args=(-f "$COMPOSE_REL" --profile tunnel)
   [[ -f "$ENV_REL" ]] && args+=(--env-file "$ENV_REL")
+  # 若存在 named override，临时不用它（quick 用 compose 默认 --url）
   docker compose "${args[@]}" "$@"
 }
 

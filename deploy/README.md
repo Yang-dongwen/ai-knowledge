@@ -38,21 +38,33 @@ Spring 业务配置**不在**本目录：
 
 ---
 
-## Cloudflare Quick Tunnel（免费公网 HTTPS，无需域名）
+## Cloudflare Tunnel（公网 HTTPS）
 
-把本机/EC2 的 web（8088）暴露为 `https://xxxx.trycloudflare.com`：
+### A. 固定域名（Named Tunnel，推荐有 Cloudflare 域名时）
 
 ```bash
-# 在 EC2 仓库根
-bash deploy/scripts/quick-tunnel.sh start   # 启动并打印 URL
-bash deploy/scripts/quick-tunnel.sh url     # 再看一次
-bash deploy/scripts/quick-tunnel.sh logs    # 日志
-bash deploy/scripts/quick-tunnel.sh stop    # 关闭
+# 1) 浏览器授权（选中你的域名）
+bash deploy/scripts/named-tunnel.sh login
+
+# 2) 绑定固定域名（自动建隧道 + DNS CNAME + 启动）
+bash deploy/scripts/named-tunnel.sh setup app.yourdomain.com
+
+# 3) 查看
+bash deploy/scripts/named-tunnel.sh url
+bash deploy/scripts/named-tunnel.sh status
 ```
 
-- 基于 compose profile `tunnel`（`cloudflare/cloudflared`）
-- **临时隧道**：容器重建后 URL 会变
-- 可选：把 URL 写入 `deploy/env/app.env` 的 `PAY_PUBLIC_BASE_URL` 后 `sync-env-local.ps1`
+凭据在 `deploy/env/cloudflared/`（gitignore）。  
+建议 `PAY_PUBLIC_BASE_URL=https://app.yourdomain.com` 后 `sync-env-local.ps1`。
+
+### B. 临时域名（Quick Tunnel，无需自有域名）
+
+```bash
+bash deploy/scripts/quick-tunnel.sh start   # https://xxxx.trycloudflare.com
+bash deploy/scripts/quick-tunnel.sh url
+```
+
+临时隧道容器重建后 URL 会变；有固定域名请用 A。
 
 ---
 
