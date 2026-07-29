@@ -38,6 +38,24 @@ Spring 业务配置**不在**本目录：
 
 ---
 
+## Cloudflare Quick Tunnel（免费公网 HTTPS，无需域名）
+
+把本机/EC2 的 web（8088）暴露为 `https://xxxx.trycloudflare.com`：
+
+```bash
+# 在 EC2 仓库根
+bash deploy/scripts/quick-tunnel.sh start   # 启动并打印 URL
+bash deploy/scripts/quick-tunnel.sh url     # 再看一次
+bash deploy/scripts/quick-tunnel.sh logs    # 日志
+bash deploy/scripts/quick-tunnel.sh stop    # 关闭
+```
+
+- 基于 compose profile `tunnel`（`cloudflare/cloudflared`）
+- **临时隧道**：容器重建后 URL 会变
+- 可选：把 URL 写入 `deploy/env/app.env` 的 `PAY_PUBLIC_BASE_URL` 后 `sync-env-local.ps1`
+
+---
+
 ## 日常三件事
 
 ### 1. 发代码（主路径）

@@ -47,6 +47,30 @@ services:
     networks:
       - appnet
 
+  # Cloudflare Quick Tunnel：免费 *.trycloudflare.com，无需域名
+  # 开启: QUICK_TUNNEL=1（默认开启，2G 额外约 30MB）
+  # 看地址: bash deploy/scripts/quick-tunnel-url.sh
+  # 注意: 每次容器重建 URL 会变（临时隧道特性）
+  tunnel:
+    image: cloudflare/cloudflared:latest
+    restart: unless-stopped
+    profiles:
+      - tunnel
+    command:
+      - tunnel
+      - --no-autoupdate
+      - --url
+      - http://web:80
+    depends_on:
+      - web
+    networks:
+      - appnet
+    deploy:
+      resources:
+        limits:
+          memory: 64M
+
 networks:
   appnet:
     driver: bridge
+

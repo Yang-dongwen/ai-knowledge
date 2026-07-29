@@ -42,6 +42,7 @@ powershell -ExecutionPolicy Bypass -File deploy/scripts/run-local.ps1
 | **`up.sh`** | 仅 compose up（不 pull） |
 | **`bootstrap-git.sh`** | 一次性：Deploy Key + clone，保留密钥 |
 | **`init-rds.sh`** | 一次性：RDS 建库 + schema |
+| **`quick-tunnel.sh`** | Cloudflare 快速隧道：免费 `*.trycloudflare.com` |
 
 ```bash
 bash deploy/scripts/server-deploy.sh
