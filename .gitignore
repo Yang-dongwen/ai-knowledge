@@ -81,3 +81,10 @@ okx-bot/data/
 # OS
 .DS_Store
 Thumbs.db
+
+# Cloudflare Worker build / local
+deploy/worker-proxy/.wrangler/
+deploy/worker-proxy/.dist/
+deploy/worker-proxy/node_modules/
+deploy/worker-proxy/body.txt
+deploy/worker-proxy/**/*.bak
