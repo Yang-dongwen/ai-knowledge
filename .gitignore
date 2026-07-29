@@ -68,15 +68,25 @@ aigen-remotion/node_modules/
 aigen-remotion/dist/
 okx-bot/data/
 
-# IDE
+# IDE / agent local (never commit)
 .idea/
 **/.idea/
 *.iml
+.vscode/
+**/.vscode/
 .claude/
+**/.claude/
 .kiro/
+**/.kiro/
+.cursor/
+**/.cursor/
 
-# Logs
+# Runtime state / bot logs (never commit)
+**/logs/
 *.log
+*.jsonl
+polymarket-ai-trader/data/
+polymarket-ai-trader/minute_trader/data/
 
 # OS
 .DS_Store
