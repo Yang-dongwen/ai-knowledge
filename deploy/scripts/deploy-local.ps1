@@ -3,22 +3,18 @@
   本机一键部署到 EC2：打包代码 → scp → 远端 docker compose 重建
 
 .DESCRIPTION
-  不依赖服务器 git；密钥不同步（保留服务器 deploy/app.env）。
-  适合日常开发后立刻发布。
+  不依赖服务器 git；密钥不同步（保留服务器 deploy/env/app.env）。
+  适合 CI 挂了或紧急发布。
 
 .EXAMPLE
-  # 默认主机与密钥路径（Windows 自带 PowerShell 也可用）
   powershell -ExecutionPolicy Bypass -File deploy/scripts/deploy-local.ps1
-
-.EXAMPLE
-  powershell -ExecutionPolicy Bypass -File deploy/scripts/deploy-local.ps1 -HostName 13.201.82.24 -PemPath C:\path\dw-yindu.pem
 #>
 param(
   [string]$HostName = "13.201.82.24",
   [string]$User = "ubuntu",
   [string]$PemPath = "$env:USERPROFILE\Downloads\aws_common\dw-yindu.pem",
   [string]$RemoteAppDir = "~/auto-exchange",
-  [string]$ComposeFile = "deploy/docker-compose.lite.yml",
+  [string]$ComposeFile = "deploy/stack/compose.lite.yml",
   [switch]$SkipBuild
 )
 
@@ -49,12 +45,11 @@ foreach ($d in $dirs) {
   } elseif ($d -eq "okx-trading-web" -or $d -eq "aigen-remotion") {
     robocopy $src $dst /E /XD node_modules dist .vite /NFL /NDL /NJH /NJS /nc /ns /np | Out-Null
   } else {
-    # deploy: 不要把本机 app.env 覆盖服务器密钥
-    robocopy $src $dst /E /XF app.env .env SECRETS_INVENTORY.env .admin-once.txt /NFL /NDL /NJH /NJS /nc /ns /np | Out-Null
+    # deploy: 不要把本机密钥覆盖服务器
+    robocopy $src $dst /E /XF app.env .env SECRETS_INVENTORY.env .admin-once.txt app.env.local /NFL /NDL /NJH /NJS /nc /ns /np | Out-Null
   }
 }
 
-# 可选：带上根 README
 foreach ($f in @("README.md", ".gitignore")) {
   $p = Join-Path $RepoRoot $f
   if (Test-Path $p) { Copy-Item $p $stage -Force }
@@ -74,24 +69,19 @@ $remoteScript = @"
 set -euo pipefail
 APP_DIR=$RemoteAppDir
 mkdir -p "`$APP_DIR"
-# 备份密钥
+# 备份密钥（新/旧路径）
 ENV_BAK=`$(mktemp)
-if [ -f "`$APP_DIR/deploy/app.env" ]; then cp -a "`$APP_DIR/deploy/app.env" "`$ENV_BAK"; fi
-if [ -f "`$APP_DIR/deploy/.env" ]; then cp -a "`$APP_DIR/deploy/.env" "`$ENV_BAK.env"; fi
-# 解压覆盖代码（不删整个目录，避免 docker 命名卷路径问题）
+if [ -f "`$APP_DIR/deploy/env/app.env" ]; then cp -a "`$APP_DIR/deploy/env/app.env" "`$ENV_BAK"
+elif [ -f "`$APP_DIR/deploy/app.env" ]; then cp -a "`$APP_DIR/deploy/app.env" "`$ENV_BAK"
+elif [ -f "`$APP_DIR/deploy/.env" ]; then cp -a "`$APP_DIR/deploy/.env" "`$ENV_BAK"
+fi
 tar -xzf /tmp/auto-exchange-deploy.tgz -C "`$APP_DIR"
-# 恢复密钥（禁止被空模板覆盖）
+mkdir -p "`$APP_DIR/deploy/env"
 if [ -s "`$ENV_BAK" ]; then
-  mkdir -p "`$APP_DIR/deploy"
-  cp -a "`$ENV_BAK" "`$APP_DIR/deploy/app.env"
-  cp -a "`$ENV_BAK" "`$APP_DIR/deploy/.env"
-  chmod 600 "`$APP_DIR/deploy/app.env" "`$APP_DIR/deploy/.env"
+  cp -a "`$ENV_BAK" "`$APP_DIR/deploy/env/app.env"
+  chmod 600 "`$APP_DIR/deploy/env/app.env"
 fi
-if [ -s "`$ENV_BAK.env" ] && [ ! -s "`$APP_DIR/deploy/app.env" ]; then
-  cp -a "`$ENV_BAK.env" "`$APP_DIR/deploy/app.env"
-  cp -a "`$ENV_BAK.env" "`$APP_DIR/deploy/.env"
-fi
-rm -f "`$ENV_BAK" "`$ENV_BAK.env" /tmp/auto-exchange-deploy.tgz
+rm -f "`$ENV_BAK" /tmp/auto-exchange-deploy.tgz
 chmod +x "`$APP_DIR/deploy/scripts/"*.sh 2>/dev/null || true
 mkdir -p "`$HOME/bin"
 ln -sfn "`$APP_DIR/deploy/scripts/server-deploy.sh" "`$HOME/bin/deploy"
@@ -118,4 +108,3 @@ if ($LASTEXITCODE -ne 0) { throw "remote deploy failed" }
 
 Write-Host ""
 Write-Host "OK. Open: http://${HostName}:8088/" -ForegroundColor Green
-Write-Host "Logs: ssh -i `"$PemPath`" $remote `"docker compose -f $RemoteAppDir/deploy/docker-compose.lite.yml --env-file $RemoteAppDir/deploy/app.env logs -f okx-bot`""

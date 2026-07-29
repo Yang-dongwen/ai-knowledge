@@ -1,6 +1,6 @@
 # 一键部署：push main 或手动 Run workflow
 # SSH → git pull → docker compose 重建
-# 业务密钥只在服务器 deploy/app.env；此处仅 SSH 私钥
+# 业务密钥只在服务器 deploy/env/app.env；此处仅 SSH 私钥
 
 name: Deploy EC2
 
@@ -12,8 +12,8 @@ on:
       - "docs/**"
       - "okx-bot/doc/**"
       - ".grok/**"
-      - "deploy/CI_CD.md"
-      - "deploy/scripts/setup-github-secrets.md"
+      - "deploy/docs/**"
+      - "deploy/README.md"
   workflow_dispatch:
     inputs:
       ref:
@@ -23,7 +23,7 @@ on:
       compose_file:
         description: "Compose file"
         required: false
-        default: "deploy/docker-compose.lite.yml"
+        default: "deploy/stack/compose.lite.yml"
       skip_git:
         description: "Skip git pull (1=only rebuild)"
         required: false
@@ -54,7 +54,7 @@ jobs:
             REF='${{ github.event.inputs.ref }}'
             if [ -z "$REF" ]; then REF="main"; fi
             COMPOSE='${{ github.event.inputs.compose_file }}'
-            if [ -z "$COMPOSE" ]; then COMPOSE="deploy/docker-compose.lite.yml"; fi
+            if [ -z "$COMPOSE" ]; then COMPOSE="deploy/stack/compose.lite.yml"; fi
             SKIP_GIT='${{ github.event.inputs.skip_git }}'
             if [ -z "$SKIP_GIT" ]; then SKIP_GIT="0"; fi
             echo "APP_DIR=$APP_DIR REF=$REF COMPOSE=$COMPOSE SKIP_GIT=$SKIP_GIT"
@@ -71,9 +71,13 @@ jobs:
               echo "或临时用本机: pwsh deploy/scripts/deploy-local.ps1"
               exit 1
             fi
-            export APP_DIR ENV_FILE="$APP_DIR/deploy/app.env" COMPOSE_FILE="$COMPOSE" REF SKIP_GIT
-            if [ ! -f "$ENV_FILE" ] && [ -f "$APP_DIR/deploy/.env" ]; then
-              export ENV_FILE="$APP_DIR/deploy/.env"
+            # 兼容旧密钥路径：优先 env/app.env
+            ENV_FILE="$APP_DIR/deploy/env/app.env"
+            if [ ! -f "$ENV_FILE" ] && [ -f "$APP_DIR/deploy/app.env" ]; then
+              ENV_FILE="$APP_DIR/deploy/app.env"
+            elif [ ! -f "$ENV_FILE" ] && [ -f "$APP_DIR/deploy/.env" ]; then
+              ENV_FILE="$APP_DIR/deploy/.env"
             fi
+            export APP_DIR ENV_FILE COMPOSE_FILE="$COMPOSE" REF SKIP_GIT
             chmod +x "$APP_DIR/deploy/scripts/"*.sh || true
             bash "$APP_DIR/deploy/scripts/server-deploy.sh"

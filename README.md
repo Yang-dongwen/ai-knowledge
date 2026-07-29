@@ -22,10 +22,11 @@
 ## 快速入口
 
 - **后端部署 / 外部工具 / 配置 / API / 排障** → 阅读 **[okx-bot/README.md](./okx-bot/README.md)**
-- **一键部署 / 配置** → **[deploy/CI_CD.md](./deploy/CI_CD.md)**
-  - **代码**：`git push` → Actions 自动部署（含已提交的 `application-ec2.yml`）
-  - **本地配置**：`application-local.yml`（真实密钥，**不提交**）
-  - **服务器密钥**：`deploy/app.env`（真实值，**不提交**）→ `sync-env-local.ps1`
+- **部署目录地图** → **[deploy/README.md](./deploy/README.md)**
+  - 日常 CI / 同步密钥 → [deploy/docs/cicd.md](./deploy/docs/cicd.md)
+  - 脚本说明 → [deploy/docs/scripts.md](./deploy/docs/scripts.md)
+  - **代码**：`git push` → Actions
+  - **密钥**：`deploy/env/app.env`（**不提交**）→ `sync-env-local.ps1`
   - R2：`env-prefix` = `local` / `ec2`
 - **视频提取运行流程 / 工具串联 / Mermaid 一页纸** → [okx-bot/doc/VideoCoreExtractor_视频提取运行流程教程.md](./okx-bot/doc/VideoCoreExtractor_视频提取运行流程教程.md)
 - **AI 成片渲染联调** → [aigen-remotion/README.md](./aigen-remotion/README.md) + okx-bot 中 `aigen.remotion` 配置

@@ -1,17 +1,21 @@
-# 2G 小机：web + okx-bot
-# 配置：jar 内 application-ec2.yml（已提交，用变量）+ 服务器 deploy/app.env（真实密钥，不提交）
-# 宿主机：/data/auto-exchange/{logs,data}
+# 生产默认（2G 小机）：web + okx-bot
+# 密钥：deploy/env/app.env（不进 Git）
+# profile：ec2（jar 内 application-ec2.yml）
+# 宿主机数据：/data/auto-exchange/{logs,data}
+#
+# 在仓库根目录:
+#   docker compose -f deploy/stack/compose.lite.yml --env-file deploy/env/app.env up -d --build
 
 name: auto-exchange-lite
 
 services:
   okx-bot:
     build:
-      context: ..
-      dockerfile: deploy/Dockerfile.okx-bot
+      context: ../..
+      dockerfile: deploy/stack/Dockerfile.okx-bot
     restart: unless-stopped
     env_file:
-      - app.env
+      - ../env/app.env
     environment:
       SPRING_PROFILES_ACTIVE: ec2
       JAVA_OPTS: ${JAVA_OPTS:--Xmx640m}
@@ -29,8 +33,8 @@ services:
 
   web:
     build:
-      context: ..
-      dockerfile: deploy/Dockerfile.web
+      context: ../..
+      dockerfile: deploy/stack/Dockerfile.web
     restart: unless-stopped
     ports:
       - "${WEB_HOST_PORT:-8088}:80"

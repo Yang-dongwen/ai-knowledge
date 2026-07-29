@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# 一次性：把当前 ~/auto-exchange（tar 部署）改成 git clone，并保留 deploy/app.env
+# 一次性：把当前 ~/auto-exchange（tar 部署）改成 git clone，并保留 deploy/env/app.env
 # 私有库需先把本机生成的 Deploy Key 加到 GitHub
 #
 # 用法:
@@ -53,16 +53,19 @@ if ! echo "$gh_out" | grep -qiE 'successfully authenticated|Hi '; then
   exit 2
 fi
 
-# 备份密钥
+# 备份密钥（新/旧路径）
 ENV_BAK=$(mktemp)
-if [[ -f "$APP_DIR/deploy/app.env" ]]; then
+if [[ -f "$APP_DIR/deploy/env/app.env" ]]; then
+  cp -a "$APP_DIR/deploy/env/app.env" "$ENV_BAK"
+  echo "backed up deploy/env/app.env -> $ENV_BAK"
+elif [[ -f "$APP_DIR/deploy/app.env" ]]; then
   cp -a "$APP_DIR/deploy/app.env" "$ENV_BAK"
-  echo "backed up app.env -> $ENV_BAK"
+  echo "backed up deploy/app.env -> $ENV_BAK"
 elif [[ -f "$APP_DIR/deploy/.env" ]]; then
   cp -a "$APP_DIR/deploy/.env" "$ENV_BAK"
-  echo "backed up .env -> $ENV_BAK"
+  echo "backed up deploy/.env -> $ENV_BAK"
 else
-  echo "ERROR: 未找到 $APP_DIR/deploy/app.env，中止以免丢密钥" >&2
+  echo "ERROR: 未找到 deploy/env/app.env，中止以免丢密钥" >&2
   exit 1
 fi
 
@@ -73,10 +76,9 @@ echo "==> git clone $REPO ($BRANCH)"
 git clone --branch "$BRANCH" --depth 1 "$REPO" "$NEW_DIR"
 
 echo "==> restore secrets"
-mkdir -p "$NEW_DIR/deploy"
-cp -a "$ENV_BAK" "$NEW_DIR/deploy/app.env"
-cp -a "$ENV_BAK" "$NEW_DIR/deploy/.env"
-chmod 600 "$NEW_DIR/deploy/app.env" "$NEW_DIR/deploy/.env"
+mkdir -p "$NEW_DIR/deploy/env"
+cp -a "$ENV_BAK" "$NEW_DIR/deploy/env/app.env"
+chmod 600 "$NEW_DIR/deploy/env/app.env"
 chmod +x "$NEW_DIR/deploy/scripts/"*.sh 2>/dev/null || true
 
 echo "==> swap directories"

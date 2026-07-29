@@ -1,5 +1,5 @@
 # EC2 / Docker 生产配置 — 提交到 Git
-# 密钥不写死，由服务器 deploy/app.env 注入环境变量
+# 密钥不写死，由服务器 deploy/env/app.env 注入环境变量
 # profile: ec2
 # R2 路径前缀 env-prefix=ec2（本地用 local）
 

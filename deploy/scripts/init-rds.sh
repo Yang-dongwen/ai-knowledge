@@ -1,8 +1,7 @@
 #!/usr/bin/env bash
 # 在 EC2 上执行：连通云端 MySQL（RDS）并导入 schema + 增量 SQL
 # 用法:
-#   # 可从 deploy/.env 读取（推荐）:
-#   set -a; source deploy/.env; set +a
+#   set -a; source deploy/env/app.env; set +a
 #   bash deploy/scripts/init-rds.sh
 #
 #   # 或手动 export:
@@ -17,7 +16,7 @@ ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 SCHEMA="${ROOT}/okx-bot/src/main/resources/db/schema.sql"
 SQL_DIR="${ROOT}/okx-bot/doc/sql"
 
-: "${RDS_HOST:?set RDS_HOST (or source deploy/.env)}"
+: "${RDS_HOST:?set RDS_HOST (or source deploy/env/app.env)}"
 : "${DB_USER:?set DB_USER}"
 : "${DB_PASSWORD:?set DB_PASSWORD}"
 RDS_PORT="${RDS_PORT:-3306}"
@@ -60,4 +59,4 @@ echo "==> tables:"
 mysql -h "$RDS_HOST" -P "$RDS_PORT" -u "$DB_USER" -p"$DB_PASSWORD" "$RDS_DATABASE" \
   -e "SHOW TABLES;"
 
-echo "DONE. 然后: docker compose -f deploy/docker-compose.lite.yml --env-file deploy/.env up -d"
+echo "DONE. 然后: docker compose -f deploy/stack/compose.lite.yml --env-file deploy/env/app.env up -d"

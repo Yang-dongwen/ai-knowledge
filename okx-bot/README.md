@@ -290,15 +290,17 @@ ai:
 两者都用 **R2**，`env-prefix`: `local` / `ec2` 区分路径。
 
 ```powershell
-# 生成本地 yml（可从 app.env 填 R2/AI）
+# 生成本地 yml（可从 deploy/env/app.env 填 R2/AI）
 python deploy/scripts/gen_profile_yml.py
 
 # 本地启动
 powershell -ExecutionPolicy Bypass -File deploy/scripts/run-local.ps1
 
-# 只同步服务器密钥 app.env（不是 yml）
+# 只同步服务器密钥（deploy/env/app.env）
 powershell -ExecutionPolicy Bypass -File deploy/scripts/sync-env-local.ps1
 ```
+
+部署目录地图见 [deploy/README.md](../deploy/README.md)；脚本说明见 [deploy/docs/scripts.md](../deploy/docs/scripts.md)。
 
 IDE：Active profiles = `local`。
 
