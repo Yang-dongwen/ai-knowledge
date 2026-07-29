@@ -42,7 +42,8 @@ powershell -ExecutionPolicy Bypass -File deploy/scripts/run-local.ps1
 | **`up.sh`** | 仅 compose up（不 pull） |
 | **`bootstrap-git.sh`** | 一次性：Deploy Key + clone，保留密钥 |
 | **`init-rds.sh`** | 一次性：RDS 建库 + schema |
-| **`quick-tunnel.sh`** | Cloudflare 快速隧道：免费 `*.trycloudflare.com` |
+| **`quick-tunnel.sh`** | Cloudflare 快速隧道：免费 `*.trycloudflare.com`（Worker 源站依赖它） |
+| **`deploy-worker-proxy.ps1`** | 部署固定 `*.workers.dev` Worker 反代（详见 [worker-proxy.md](./worker-proxy.md)） |
 
 ```bash
 bash deploy/scripts/server-deploy.sh

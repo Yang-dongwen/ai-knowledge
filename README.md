@@ -25,6 +25,7 @@
 - **部署目录地图** → **[deploy/README.md](./deploy/README.md)**
   - 日常 CI / 同步密钥 → [deploy/docs/cicd.md](./deploy/docs/cicd.md)
   - 脚本说明 → [deploy/docs/scripts.md](./deploy/docs/scripts.md)
+  - **固定公网 HTTPS（Worker 反代）** → [deploy/docs/worker-proxy.md](./deploy/docs/worker-proxy.md)
   - **代码**：`git push` → Actions
   - **密钥**：`deploy/env/app.env`（**不提交**）→ `sync-env-local.ps1`
   - R2：`env-prefix` = `local` / `ec2`

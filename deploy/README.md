@@ -28,6 +28,8 @@ deploy/
 | **`docs/cicd.md`** | 日常发代码 + 同步密钥 | ✅ |
 | **`docs/scripts.md`** | 每个脚本详细说明 | ✅ |
 | **`docs/setup.md`** | 从零建 EC2/RDS（可选深读） | ✅ |
+| **`docs/worker-proxy.md`** | **Worker 反代固定域名（完整步骤）** | ✅ |
+| **`worker-proxy/`** | Cloudflare Worker 源码与 wrangler 配置 | ✅ |
 
 Spring 业务配置**不在**本目录：
 
@@ -40,37 +42,25 @@ Spring 业务配置**不在**本目录：
 
 ## 公网 HTTPS 入口
 
-### A. Worker 反代（固定 `*.workers.dev`，无自有域名）— **当前推荐**
+**完整步骤与排障 → [docs/worker-proxy.md](./docs/worker-proxy.md)**（Worker 反代，推荐参阅）
 
-固定地址：
+| 方案 | 固定 URL | 文档 |
+|------|----------|------|
+| **A. Worker 反代**（当前） | `https://auto-exchange-proxy.dwcode.workers.dev` | [docs/worker-proxy.md](./docs/worker-proxy.md) |
+| B. 仅 Quick Tunnel | 否（URL 会变） | `scripts/quick-tunnel.sh` |
+| C. Named Tunnel | 需自有域名 | `scripts/named-tunnel.sh` |
 
-```text
-https://auto-exchange-proxy.dwcode.workers.dev
-```
-
-- 代码：`deploy/worker-proxy/`
-- 部署：`cd deploy/worker-proxy && npx wrangler deploy`（需 `npx wrangler login`）
-- 源站：默认走 EC2 上的 **Quick Tunnel**（`ORIGIN_BASE`），因 Worker 直连裸 IP 在本账号下异常
-- 因此 **tunnel 容器需保持运行**：`bash deploy/scripts/quick-tunnel.sh start`
-- 若 Quick Tunnel URL 变了：改 `deploy/worker-proxy/wrangler.toml` 的 `ORIGIN_BASE` 后重新 `wrangler deploy`
-
-`PAY_PUBLIC_BASE_URL` 建议：
-
-```env
-PAY_PUBLIC_BASE_URL=https://auto-exchange-proxy.dwcode.workers.dev
-```
-
-### B. Quick Tunnel 临时地址
+快速命令：
 
 ```bash
-bash deploy/scripts/quick-tunnel.sh start   # https://xxxx.trycloudflare.com
-```
+# EC2：保证业务 + tunnel
+bash deploy/scripts/quick-tunnel.sh start
+bash deploy/scripts/quick-tunnel.sh url   # 填进 wrangler.toml 的 ORIGIN_BASE
 
-### C. Named Tunnel（需自有域名接入 Cloudflare）
-
-```bash
-bash deploy/scripts/named-tunnel.sh login
-bash deploy/scripts/named-tunnel.sh setup app.yourdomain.com
+# 本机：部署 Worker
+cd deploy/worker-proxy
+npx wrangler login    # 首次
+npx wrangler deploy
 ```
 
 ---
