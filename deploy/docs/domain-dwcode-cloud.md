@@ -4,130 +4,130 @@
 
 | 项 | 值 |
 |----|-----|
-| 域名 | `dwcode.cloud` |
-| DNS 服务商 | **DNSPod**（NS: `director.dnspod.net` / `snowfall.dnspod.net`） |
-| A 记录 | `@` / `www` → **13.201.82.24** |
-| 业务入口 | **http://dwcode.cloud:8088** |
-| API | http://dwcode.cloud:8088/api/ （未登录 401） |
-| `PAY_PUBLIC_BASE_URL` | `http://dwcode.cloud:8088` |
-
-国内一般可**直连**（不经 Cloudflare workers.dev）。
-
----
-
-## 访问方式对比
-
-| 地址 | 国内直连 | HTTPS | 说明 |
-|------|----------|-------|------|
-| **http://dwcode.cloud:8088** | ✅ 较好 | ❌ | **推荐主入口** |
-| http://13.201.82.24:8088 | ✅ | ❌ | IP 直连 |
-| https://auto-exchange-proxy.dwcode.workers.dev | ❌ 常需代理 | ✅ | Worker 反代，海外/备用 |
-| http://dwcode.cloud （无端口） | ⚠️ | ❌ | 当前 80 被占用，见下 |
+| 域名 | `dwcode.cloud` / `www.dwcode.cloud` |
+| DNS | DNSPod → A → **13.201.82.24** |
+| **主入口** | **https://dwcode.cloud** |
+| HTTP | 自动跳转 HTTPS（Caddy） |
+| 证书 | Let's Encrypt（Caddy 自动续期） |
+| 备用 | http://dwcode.cloud:8088 （直连 web，无证书） |
+| `PAY_PUBLIC_BASE_URL` | `https://dwcode.cloud` |
 
 ---
 
-## 为何是 `:8088` 而不是 80/443？
+## 访问方式
 
-EC2 上 **80 / 443 已被 `xray` 进程占用**，业务 Docker 只映射了 **8088→容器 80**。
+| 地址 | 说明 |
+|------|------|
+| **https://dwcode.cloud** | **推荐主入口**（80/443 + HTTPS） |
+| https://www.dwcode.cloud | 同上 |
+| http://dwcode.cloud:8088 | 备用直连（不经 Caddy） |
+| http://13.201.82.24:8088 | IP 备用 |
+| https://auto-exchange-proxy.dwcode.workers.dev | Worker 反代（海外/备用，国内常需代理） |
 
-因此浏览器请带端口：
+---
+
+## 架构
 
 ```text
-http://dwcode.cloud:8088
+浏览器
+  │  :80 / :443
+  ▼
+Caddy（Docker）—— 自动 HTTPS
+  │  reverse_proxy
+  ▼
+web (nginx) :80
+  │
+  ▼
+okx-bot :8080
 ```
 
-### 若希望 `http://dwcode.cloud`（无端口）
+相关文件：
 
-需要任选其一：
-
-1. **停掉或改掉 xray 占用的 80**，再把 compose 里 web 改为 `"80:80"`，然后：
-
-   ```bash
-   # compose.lite.yml 中 web.ports 改为
-   - "80:80"
-   ```
-
-2. 或用 **Caddy/nginx 宿主机** 在空闲端口反代（仍要避开 xray）。
-
-### 若希望 `https://dwcode.cloud`（443 + 证书）
-
-1. 释放 443（或改 xray 端口）  
-2. 安装 Caddy/certbot 申请 Let's Encrypt  
-3. 反代到 `127.0.0.1:8088`  
-
-**不要**为了国内访问再把域名橙云接到 Cloudflare 代理（国内又可能打不开）。
+| 路径 | 作用 |
+|------|------|
+| `deploy/stack/Caddyfile` | 域名与反代规则 |
+| `deploy/stack/compose.lite.yml` | `caddy` 服务映射 80/443 |
+| `deploy/scripts/free-ports-for-web.sh` | 将原占用 80/443 的 xray 改端口 |
 
 ---
 
-## DNS 记录（DNSPod 控制台）
+## 80/443 与 xray
 
-已生效记录（若误删可按此恢复）：
+此前 80/443 被 **xray（Shadowsocks）** 占用。已调整为：
 
-| 主机记录 | 类型 | 记录值 | TTL |
-|----------|------|--------|-----|
-| `@` | A | `13.201.82.24` | 600 |
-| `www` | A | `13.201.82.24` | 600 |
+| 服务 | 端口 |
+|------|------|
+| 网站 Caddy | **80 / 443** |
+| xray SS（原 80） | **18080** |
+| xray SS（原 443） | **18443** |
+| 网站备用 | **8088** |
 
-可选子域：
-
-| 主机记录 | 类型 | 记录值 | 访问 |
-|----------|------|--------|------|
-| `app` | A | `13.201.82.24` | http://app.dwcode.cloud:8088 |
-
----
-
-## 与 Worker 反代的关系
-
-- **买域名后，Worker 地址仍然可用**，互不影响。  
-- **国内用户主入口**：`http://dwcode.cloud:8088`  
-- **海外/备用**：`https://auto-exchange-proxy.dwcode.workers.dev`  
-- 业务回调建议用主入口，当前已配：
-
-  ```env
-  PAY_PUBLIC_BASE_URL=http://dwcode.cloud:8088
-  ```
-
-Worker 文档见 [worker-proxy.md](./worker-proxy.md)。
+配置备份：`/usr/local/etc/xray/config.json.bak.*`  
+若你客户端仍连旧 80/443，请改成 **18080 / 18443**。
 
 ---
 
-## 验证命令
+## DNS 记录（DNSPod）
 
-```bash
-# DNS
-dig +short dwcode.cloud A
-# 期望: 13.201.82.24
+| 主机记录 | 类型 | 记录值 |
+|----------|------|--------|
+| `@` | A | `13.201.82.24` |
+| `www` | A | `13.201.82.24` |
 
-# 首页
-curl -s -o /dev/null -w "%{http_code}\n" http://dwcode.cloud:8088/
-# 期望: 200
-
-# API
-curl -s -o /dev/null -w "%{http_code}\n" http://dwcode.cloud:8088/api/
-# 期望: 401（未登录）
-```
+**不要**把域名开成 Cloudflare 橙云代理（国内可能再次打不开）。保持 DNSPod 直指 IP 即可。
 
 ---
 
-## 安全组
+## AWS 安全组
 
-AWS EC2 安全组需放行：
+需放行：
 
 | 端口 | 用途 |
 |------|------|
-| **8088** | 网站（当前） |
 | 22 | SSH |
-| 80/443 | 仅当以后业务占用且释放 xray 后 |
+| **80** | HTTP → HTTPS 跳转 / ACME |
+| **443** | HTTPS 网站 |
+| 8088 | 备用直连（可选） |
+| 18080 / 18443 | 仅当你仍要用 xray SS 时 |
+
+---
+
+## 验证
+
+```bash
+curl -s -o /dev/null -w "%{http_code}\n" https://dwcode.cloud/
+# 200
+
+curl -s -o /dev/null -w "%{http_code}\n" https://dwcode.cloud/api/
+# 401
+
+curl -sI http://dwcode.cloud/ | head -5
+# 期望 301/308 到 https
+```
+
+Caddy 日志：
+
+```bash
+docker logs auto-exchange-lite-caddy-1 --tail 50
+```
+
+---
+
+## 运维
+
+- **日常发版**：`git push` / `server-deploy` 会带上 caddy，证书在 volume `caddy_data` 中保留  
+- **改域名**：改 `deploy/stack/Caddyfile` 后重新 compose up  
+- **证书问题**：检查 80/443 是否被占用、DNS 是否指向本机  
 
 ---
 
 ## 检查清单
 
-- [x] A 记录指向 EC2  
-- [x] http://dwcode.cloud:8088 首页 200  
+- [x] 80/443 释放并给 Caddy  
+- [x] Let's Encrypt 证书（dwcode.cloud / www）  
+- [x] https://dwcode.cloud 200  
 - [x] /api/ 401  
-- [x] PAY_PUBLIC_BASE_URL 已更新  
-- [ ] （可选）释放 80/443，配置无端口 HTTP/HTTPS  
-- [ ] （可选）www / app 子域按需添加  
+- [x] PAY_PUBLIC_BASE_URL=https://dwcode.cloud  
+- [x] 8088 备用仍可用  
 
 相关：[deploy/README.md](../README.md) · [worker-proxy.md](./worker-proxy.md)

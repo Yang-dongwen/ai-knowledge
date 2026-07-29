@@ -1,0 +1,18 @@
+# 自动 HTTPS（Let's Encrypt）+ 反代到 web 容器
+# 域名: dwcode.cloud / www.dwcode.cloud
+
+dwcode.cloud, www.dwcode.cloud {
+	encode gzip
+
+	# SSE / 长连接
+	reverse_proxy web:80 {
+		flush_interval -1
+		transport http {
+			read_timeout 3600s
+			write_timeout 3600s
+		}
+		header_up X-Forwarded-Proto {scheme}
+		header_up X-Forwarded-Host {host}
+		header_up X-Real-IP {remote_host}
+	}
+}

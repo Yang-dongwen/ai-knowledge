@@ -1,11 +1,11 @@
-# 生产默认（2G 小机）：web + okx-bot
+# 生产默认（2G 小机）：web + okx-bot + caddy(80/443)
 #
-# 密钥不在本文件写死路径。server-deploy / up.sh 会生成临时 override：
-#   services.okx-bot.env_file = <绝对路径>/deploy/env/app.env
+# 密钥：server-deploy 生成 env override
+# 域名: https://dwcode.cloud （Caddy 自动证书）
+# 备用: http://公网IP:8088 （直连 web，无证书）
 #
 # Cloudflare Tunnel（profile: tunnel）:
-#   固定域名: bash deploy/scripts/named-tunnel.sh setup <fqdn>
-#   临时域名: bash deploy/scripts/quick-tunnel.sh start
+#   bash deploy/scripts/quick-tunnel.sh start
 
 name: auto-exchange-lite
 
@@ -35,20 +35,43 @@ services:
       context: ../..
       dockerfile: deploy/stack/Dockerfile.web
     restart: unless-stopped
+    # 仅内网给 caddy；另映射 8088 作备用/直连
     ports:
       - "${WEB_HOST_PORT:-8088}:80"
+    expose:
+      - "80"
     depends_on:
       - okx-bot
     networks:
       - appnet
 
-  # cloudflared 镜像无 shell；command 由 named/quick 脚本写的 tunnel.override.yml 决定
+  # 80/443：自动 HTTPS，反代 web
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - web
+    networks:
+      - appnet
+    deploy:
+      resources:
+        limits:
+          memory: 64M
+
+  # cloudflared；command 可由 quick/named 脚本 override
   tunnel:
     image: cloudflare/cloudflared:latest
     restart: unless-stopped
     profiles:
       - tunnel
-    # 默认 quick；named-tunnel.sh 会用 override 改成 config run
     command:
       - tunnel
       - --no-autoupdate
@@ -66,3 +89,7 @@ services:
 networks:
   appnet:
     driver: bridge
+
+volumes:
+  caddy_data:
+  caddy_config:

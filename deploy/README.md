@@ -44,12 +44,12 @@ Spring 业务配置**不在**本目录：
 
 | 方案 | 地址 | 国内直连 | 文档 |
 |------|------|----------|------|
-| **A. 自有域名（推荐国内）** | **http://dwcode.cloud:8088** | ✅ | [docs/domain-dwcode-cloud.md](./docs/domain-dwcode-cloud.md) |
-| B. 公网 IP | http://13.201.82.24:8088 | ✅ | — |
+| **A. 自有域名 HTTPS（推荐）** | **https://dwcode.cloud** | ✅ | [docs/domain-dwcode-cloud.md](./docs/domain-dwcode-cloud.md) |
+| B. 备用 :8088 | http://dwcode.cloud:8088 | ✅ | — |
 | C. Worker 反代 | https://auto-exchange-proxy.dwcode.workers.dev | ❌ 常需代理 | [docs/worker-proxy.md](./docs/worker-proxy.md) |
 | D. Quick Tunnel | `*.trycloudflare.com` | ❌ | `scripts/quick-tunnel.sh` |
 
-域名 DNS（DNSPod）已指向 EC2；业务端口 **8088**（80/443 被宿主机 xray 占用）。
+Caddy 占用 **80/443**（自动 HTTPS）；xray SS 已改到 **18080/18443**；**8088** 仍作备用。
 
 ---
 
