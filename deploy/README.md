@@ -97,7 +97,8 @@ powershell -ExecutionPolicy Bypass -File deploy/scripts/run-local.ps1
 ```bash
 cd ~/auto-exchange
 bash deploy/scripts/server-deploy.sh
-# 或
+# 或（必须 export 绝对路径，compose 内 env_file 依赖 APP_ENV_FILE）
+export APP_ENV_FILE=$PWD/deploy/env/app.env
 docker compose -f deploy/stack/compose.lite.yml --env-file deploy/env/app.env up -d --build
 ```
 
@@ -108,8 +109,8 @@ docker compose -f deploy/stack/compose.lite.yml --env-file deploy/env/app.env up
 | 常量 | 值 |
 |------|-----|
 | 仓库根 | `APP_DIR` / 本机 repo root |
-| 密钥（CLI / 脚本） | `deploy/env/app.env` |
-| 密钥（compose 内 env_file） | `../env/app.env`（相对 `deploy/stack/`） |
+| 密钥（文件） | `deploy/env/app.env` |
+| 密钥（compose env_file） | **绝对路径** `$APP_ENV_FILE`（脚本自动 export） |
 | 生产 compose | `deploy/stack/compose.lite.yml` |
 | 全量 compose | `deploy/stack/compose.full.yml` |
-| build context | `../..`（仓库根，相对 stack/） |
+| build context | `../..`（相对 stack/ → 仓库根） |

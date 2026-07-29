@@ -1,13 +1,13 @@
 # 生产默认（2G 小机）：web + okx-bot
-# 本文件位于 deploy/stack/，下列相对路径均相对「本文件所在目录」
-#   ../env/app.env          → deploy/env/app.env
-#   context: ../..          → 仓库根
-#   dockerfile 相对 context
 #
-# 在仓库根执行:
+# env_file 必须用绝对路径（经 APP_ENV_FILE 注入），避免相对路径在
+# compose 目录 / project 目录 / cwd 之间解析不一致。
+#
+# 在仓库根（由 server-deploy / up.sh 设置 APP_ENV_FILE）:
+#   export APP_ENV_FILE=$PWD/deploy/env/app.env
 #   docker compose -f deploy/stack/compose.lite.yml --env-file deploy/env/app.env up -d --build
 #
-# 注意: --env-file 只做 compose 变量插值；注入容器靠下方 env_file
+# build.context 相对本文件所在目录 deploy/stack/ → 仓库根
 
 name: auto-exchange-lite
 
@@ -18,7 +18,7 @@ services:
       dockerfile: deploy/stack/Dockerfile.okx-bot
     restart: unless-stopped
     env_file:
-      - ../env/app.env
+      - ${APP_ENV_FILE:?set APP_ENV_FILE to absolute path of deploy/env/app.env}
     environment:
       SPRING_PROFILES_ACTIVE: ec2
       JAVA_OPTS: ${JAVA_OPTS:--Xmx640m}

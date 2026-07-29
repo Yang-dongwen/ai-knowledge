@@ -64,10 +64,10 @@ bash deploy/scripts/init-rds.sh
 
 | 项 | 路径 |
 |----|------|
-| 密钥（脚本/CLI） | 仓库根下 `deploy/env/app.env` |
-| 密钥（compose 内） | `../env/app.env`（相对 `deploy/stack/`，勿写成 `deploy/env/...`） |
+| 密钥文件 | 仓库根下 `deploy/env/app.env` |
+| compose 注入 | `export APP_ENV_FILE=<绝对路径>`（`server-deploy` / `up` 已自动设置） |
 | 生产 compose | `deploy/stack/compose.lite.yml` |
-| Docker | `docker compose -f deploy/stack/compose.lite.yml --env-file deploy/env/app.env` |
+| Docker | `APP_ENV_FILE=... docker compose -f deploy/stack/compose.lite.yml --env-file deploy/env/app.env` |
 
 ---
 

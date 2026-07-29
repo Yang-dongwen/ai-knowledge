@@ -90,9 +90,9 @@ echo "==> ensure $HOST_DATA_ROOT"
 sudo mkdir -p "$HOST_DATA_ROOT/logs" "$HOST_DATA_ROOT/data"
 sudo chmod -R a+rwX "$HOST_DATA_ROOT" 2>/dev/null || true
 
-# compose 在 deploy/stack/ 下：文件内 env_file 用 ../env/app.env（相对 compose 目录）
-# CLI --env-file 用仓库根相对路径 deploy/env/app.env（变量插值）
-echo "==> docker compose -f $COMPOSE_FILE --env-file $ENV_REL up -d --build"
+# compose 内 env_file 使用绝对路径 APP_ENV_FILE（相对路径在 stack/ 下会解析错）
+export APP_ENV_FILE="$ENV_FILE"
+echo "==> docker compose -f $COMPOSE_FILE (APP_ENV_FILE=$APP_ENV_FILE)"
 docker compose \
   -f "$COMPOSE_FILE" \
   --env-file "$ENV_FILE" \

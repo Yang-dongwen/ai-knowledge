@@ -29,6 +29,9 @@ if [[ ! -f "$COMPOSE_REL" ]]; then
   exit 1
 fi
 
+# 绝对路径注入 compose 的 env_file（见 stack/compose.*.yml）
+export APP_ENV_FILE="$ROOT/$ENV_REL"
+
 docker compose \
   -f "$COMPOSE_REL" \
   --env-file "$ENV_REL" \
@@ -36,4 +39,4 @@ docker compose \
 
 echo ""
 echo "已启动。浏览器: http://$(curl -s --connect-timeout 2 ifconfig.me 2>/dev/null || echo '<EC2公网IP>'):8088/"
-echo "日志: docker compose -f $COMPOSE_REL --env-file $ENV_REL logs -f okx-bot"
+echo "日志: APP_ENV_FILE=$APP_ENV_FILE docker compose -f $COMPOSE_REL --env-file $ENV_REL logs -f okx-bot"

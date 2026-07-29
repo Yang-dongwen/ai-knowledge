@@ -1,7 +1,5 @@
-# 全量栈：web + okx-bot + whisper + remotion（建议 ≥ 8GB）
-# 路径均相对本文件所在目录 deploy/stack/
-#
-#   docker compose -f deploy/stack/compose.full.yml --env-file deploy/env/app.env up -d --build
+# 全量栈：web + okx-bot + whisper + remotion
+# env_file 使用绝对路径变量 APP_ENV_FILE（见 compose.lite.yml 说明）
 
 name: auto-exchange
 
@@ -12,7 +10,7 @@ services:
       dockerfile: deploy/stack/Dockerfile.okx-bot
     restart: unless-stopped
     env_file:
-      - ../env/app.env
+      - ${APP_ENV_FILE:?set APP_ENV_FILE to absolute path of deploy/env/app.env}
     environment:
       SPRING_PROFILES_ACTIVE: ec2
       VIDEO_WHISPER_MANAGED_ENABLED: "false"
