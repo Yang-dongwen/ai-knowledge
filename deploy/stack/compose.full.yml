@@ -1,19 +1,24 @@
-# 全量栈：web + okx-bot + whisper + remotion（建议 ≥ 8GB 内存）
+# 全量栈：web + okx-bot + whisper + remotion（建议 ≥ 8GB）
 # 2G 小机请用 compose.lite.yml
 #
-# 在仓库根目录:
-#   docker compose -f deploy/stack/compose.full.yml --env-file deploy/env/app.env up -d --build
+# 在仓库根：
+#   docker compose --project-directory . \
+#     -f deploy/stack/compose.full.yml \
+#     --env-file deploy/env/app.env \
+#     up -d --build
+#
+# 本文件内所有相对路径均相对于「仓库根」。
 
 name: auto-exchange
 
 services:
   okx-bot:
     build:
-      context: ../..
+      context: .
       dockerfile: deploy/stack/Dockerfile.okx-bot
     restart: unless-stopped
     env_file:
-      - ../env/app.env
+      - deploy/env/app.env
     environment:
       SPRING_PROFILES_ACTIVE: ec2
       VIDEO_WHISPER_MANAGED_ENABLED: "false"
@@ -33,7 +38,7 @@ services:
 
   whisper:
     build:
-      context: ../../okx-bot/whisper-service
+      context: ./okx-bot/whisper-service
       dockerfile: Dockerfile
     restart: unless-stopped
     environment:
@@ -49,7 +54,7 @@ services:
 
   remotion:
     build:
-      context: ../..
+      context: .
       dockerfile: deploy/stack/Dockerfile.remotion
     restart: unless-stopped
     environment:
@@ -67,7 +72,7 @@ services:
 
   web:
     build:
-      context: ../..
+      context: .
       dockerfile: deploy/stack/Dockerfile.web
     restart: unless-stopped
     ports:

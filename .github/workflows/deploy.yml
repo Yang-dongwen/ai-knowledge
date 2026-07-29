@@ -1,6 +1,6 @@
 # 一键部署：push main 或手动 Run workflow
 # SSH → git pull → docker compose 重建
-# 业务密钥只在服务器 deploy/env/app.env；此处仅 SSH 私钥
+# 业务密钥: 服务器 deploy/env/app.env
 
 name: Deploy EC2
 
@@ -21,7 +21,7 @@ on:
         required: false
         default: "main"
       compose_file:
-        description: "Compose file"
+        description: "Compose file (相对仓库根)"
         required: false
         default: "deploy/stack/compose.lite.yml"
       skip_git:
@@ -63,21 +63,14 @@ jobs:
               exit 1
             fi
             if [ ! -f "$APP_DIR/deploy/scripts/server-deploy.sh" ]; then
-              echo "ERROR: 缺少 server-deploy.sh。请先用本机 deploy-local.ps1 同步 deploy/ 目录"
+              echo "ERROR: 缺少 server-deploy.sh"
               exit 1
             fi
             if [ "$SKIP_GIT" != "1" ] && [ ! -d "$APP_DIR/.git" ]; then
-              echo "ERROR: 尚未 git 化。在 EC2 执行: bash $APP_DIR/deploy/scripts/bootstrap-git.sh"
-              echo "或临时用本机: pwsh deploy/scripts/deploy-local.ps1"
+              echo "ERROR: 尚未 git 化。执行: bash $APP_DIR/deploy/scripts/bootstrap-git.sh"
               exit 1
             fi
-            # 兼容旧密钥路径：优先 env/app.env
-            ENV_FILE="$APP_DIR/deploy/env/app.env"
-            if [ ! -f "$ENV_FILE" ] && [ -f "$APP_DIR/deploy/app.env" ]; then
-              ENV_FILE="$APP_DIR/deploy/app.env"
-            elif [ ! -f "$ENV_FILE" ] && [ -f "$APP_DIR/deploy/.env" ]; then
-              ENV_FILE="$APP_DIR/deploy/.env"
-            fi
-            export APP_DIR ENV_FILE COMPOSE_FILE="$COMPOSE" REF SKIP_GIT
+            export APP_DIR COMPOSE_FILE="$COMPOSE" REF SKIP_GIT
+            # server-deploy.sh 自己解析 deploy/env/app.env（含旧路径迁移）
             chmod +x "$APP_DIR/deploy/scripts/"*.sh || true
             bash "$APP_DIR/deploy/scripts/server-deploy.sh"

@@ -97,8 +97,21 @@ powershell -ExecutionPolicy Bypass -File deploy/scripts/run-local.ps1
 ```bash
 cd ~/auto-exchange
 bash deploy/scripts/server-deploy.sh
-# 或
-docker compose -f deploy/stack/compose.lite.yml --env-file deploy/env/app.env up -d --build
+# 或（注意 --project-directory 必须是仓库根，compose 内路径相对根目录）
+docker compose --project-directory . \
+  -f deploy/stack/compose.lite.yml \
+  --env-file deploy/env/app.env \
+  up -d --build
 ```
 
 访问：`http://<公网IP>:8088/`
+
+## 脚本内路径约定（统一）
+
+| 常量 | 值 |
+|------|-----|
+| 仓库根 | `APP_DIR` / 本机 repo root |
+| 密钥 | `deploy/env/app.env` |
+| 生产 compose | `deploy/stack/compose.lite.yml` |
+| 全量 compose | `deploy/stack/compose.full.yml` |
+| Docker 调用 | 始终 `--project-directory <仓库根>` |

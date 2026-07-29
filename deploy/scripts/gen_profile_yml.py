@@ -1,9 +1,12 @@
 #!/usr/bin/env python3
-"""只生成 application-local.yml（真实值、不提交）。ec2 配置在仓库 application-ec2.yml（变量）。"""
+"""从 deploy/env/app.env 生成 okx-bot/.../application-local.yml（gitignore，不提交）。"""
 from pathlib import Path
 import shutil
 
 ROOT = Path(__file__).resolve().parents[2]
+ENV_PATH = ROOT / "deploy" / "env" / "app.env"
+ENV_LEGACY = ROOT / "deploy" / "app.env"
+OUT_PATH = ROOT / "okx-bot" / "src" / "main" / "resources" / "application-local.yml"
 
 
 def load_env(p: Path) -> dict:
@@ -24,9 +27,14 @@ def g(m, k, d=""):
 
 
 def main():
-    m = load_env(ROOT / "deploy" / "env" / "app.env")
+    m = load_env(ENV_PATH)
     if not m:
-        m = load_env(ROOT / "deploy" / "app.env")  # 兼容旧路径
+        m = load_env(ENV_LEGACY)
+        if m:
+            print("warn: using legacy", ENV_LEGACY, "→ prefer", ENV_PATH)
+    if not m:
+        print("warn: no", ENV_PATH, "; AI/R2 fields will be empty")
+
     ytdlp = shutil.which("yt-dlp") or "yt-dlp"
     ffmpeg = shutil.which("ffmpeg") or "ffmpeg"
     if ytdlp != "yt-dlp":
@@ -37,6 +45,7 @@ def main():
     local = f"""# 本地开发 — 真实配置，不提交 Git（.gitignore）
 # IDE / 启动: spring.profiles.active=local
 # R2 前缀 local，与 ec2 区分
+# 生成: python deploy/scripts/gen_profile_yml.py
 
 server:
   port: 8080
@@ -139,10 +148,10 @@ logging:
     com.dwcode.okxbot: DEBUG
 """
 
-    path = ROOT / "okx-bot" / "src" / "main" / "resources" / "application-local.yml"
-    path.write_text(local, encoding="utf-8")
-    print("wrote", path, "(gitignored)")
-    print("ec2 config is committed: okx-bot/src/main/resources/application-ec2.yml (uses ${{ENV}})")
+    OUT_PATH.write_text(local, encoding="utf-8")
+    print("wrote", OUT_PATH, "(gitignored)")
+    print("env source:", ENV_PATH if ENV_PATH.exists() else ENV_LEGACY)
+    print("ec2 config: okx-bot/src/main/resources/application-ec2.yml")
 
 
 if __name__ == "__main__":

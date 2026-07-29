@@ -1,21 +1,25 @@
 # 生产默认（2G 小机）：web + okx-bot
-# 密钥：deploy/env/app.env（不进 Git）
+# 密钥：deploy/env/app.env
 # profile：ec2（jar 内 application-ec2.yml）
-# 宿主机数据：/data/auto-exchange/{logs,data}
 #
-# 在仓库根目录:
-#   docker compose -f deploy/stack/compose.lite.yml --env-file deploy/env/app.env up -d --build
+# 必须在仓库根目录执行，或显式指定 --project-directory <仓库根>：
+#   docker compose --project-directory . \
+#     -f deploy/stack/compose.lite.yml \
+#     --env-file deploy/env/app.env \
+#     up -d --build
+#
+# 本文件内所有相对路径均相对于「仓库根」。
 
 name: auto-exchange-lite
 
 services:
   okx-bot:
     build:
-      context: ../..
+      context: .
       dockerfile: deploy/stack/Dockerfile.okx-bot
     restart: unless-stopped
     env_file:
-      - ../env/app.env
+      - deploy/env/app.env
     environment:
       SPRING_PROFILES_ACTIVE: ec2
       JAVA_OPTS: ${JAVA_OPTS:--Xmx640m}
@@ -33,7 +37,7 @@ services:
 
   web:
     build:
-      context: ../..
+      context: .
       dockerfile: deploy/stack/Dockerfile.web
     restart: unless-stopped
     ports:

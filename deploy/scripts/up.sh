@@ -2,26 +2,39 @@
 # 仅重建/拉起容器（不 git pull）
 # 用法（仓库根）: bash deploy/scripts/up.sh
 set -euo pipefail
+
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 cd "$ROOT"
 
-ENV_FILE=deploy/env/app.env
-if [[ ! -f "$ENV_FILE" && -f deploy/app.env ]]; then
-  ENV_FILE=deploy/app.env
-elif [[ ! -f "$ENV_FILE" && -f deploy/.env ]]; then
-  ENV_FILE=deploy/.env
+ENV_REL="deploy/env/app.env"
+COMPOSE_REL="${COMPOSE_FILE:-deploy/stack/compose.lite.yml}"
+
+if [[ ! -f "$ENV_REL" ]]; then
+  if [[ -f deploy/app.env ]]; then
+    mkdir -p deploy/env
+    cp -a deploy/app.env "$ENV_REL"
+    echo "==> migrated deploy/app.env -> $ENV_REL"
+  elif [[ -f deploy/.env ]]; then
+    mkdir -p deploy/env
+    cp -a deploy/.env "$ENV_REL"
+    echo "==> migrated deploy/.env -> $ENV_REL"
+  else
+    echo "缺少 $ENV_REL ，请先: cp deploy/env/app.env.example deploy/env/app.env" >&2
+    exit 1
+  fi
 fi
-if [[ ! -f "$ENV_FILE" ]]; then
-  echo "缺少 $ENV_FILE ，请先: cp deploy/env/app.env.example deploy/env/app.env 并填写密钥" >&2
+
+if [[ ! -f "$COMPOSE_REL" ]]; then
+  echo "缺少 $COMPOSE_REL" >&2
   exit 1
 fi
 
-COMPOSE="${COMPOSE_FILE:-deploy/stack/compose.lite.yml}"
-if [[ ! -f "$COMPOSE" && -f deploy/docker-compose.lite.yml ]]; then
-  COMPOSE=deploy/docker-compose.lite.yml
-fi
+docker compose \
+  --project-directory "$ROOT" \
+  -f "$COMPOSE_REL" \
+  --env-file "$ENV_REL" \
+  up -d --build "$@"
 
-docker compose -f "$COMPOSE" --env-file "$ENV_FILE" up -d --build "$@"
 echo ""
 echo "已启动。浏览器: http://$(curl -s --connect-timeout 2 ifconfig.me 2>/dev/null || echo '<EC2公网IP>'):8088/"
-echo "日志: docker compose -f $COMPOSE --env-file $ENV_FILE logs -f okx-bot"
+echo "日志: docker compose --project-directory $ROOT -f $COMPOSE_REL --env-file $ENV_REL logs -f okx-bot"
