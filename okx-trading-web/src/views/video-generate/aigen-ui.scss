@@ -28,6 +28,31 @@
   }
 }
 
+@media (max-width: 768px) {
+  .aigen-page {
+    padding-bottom: 20px;
+  }
+
+  .submit-hero {
+    padding: 16px 14px 14px !important;
+    margin-bottom: 12px;
+  }
+
+  .page-title {
+    font-size: 18px !important;
+  }
+
+  .pipeline-row {
+    gap: 6px;
+  }
+
+  .task-panel,
+  .detail-panel {
+    min-height: 0;
+    padding: 12px !important;
+  }
+}
+
 .hero-title-row {
   display: flex;
   align-items: center;

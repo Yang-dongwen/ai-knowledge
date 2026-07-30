@@ -1128,6 +1128,11 @@ onUnmounted(() => {
   grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
   gap: 14px;
   padding: 4px 0 8px;
+
+  @media (max-width: 768px) {
+    grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+    gap: 10px;
+  }
 }
 
 .img-card {

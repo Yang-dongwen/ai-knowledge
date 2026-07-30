@@ -736,6 +736,21 @@ watch(selectedId, (id) => {
   .layout {
     grid-template-columns: 1fr;
   }
+
+  .left-panel {
+    position: static;
+    max-height: none;
+  }
+}
+
+@media (max-width: 768px) {
+  .article-page {
+    max-width: 100%;
+  }
+
+  .page-card {
+    padding: 14px !important;
+  }
 }
 
 .page-card {

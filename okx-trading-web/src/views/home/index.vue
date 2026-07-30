@@ -401,6 +401,43 @@ function go(key: string) {
   }
 }
 
+@media (max-width: 768px) {
+  .home-portal {
+    padding-bottom: 12px;
+  }
+
+  .hero {
+    padding: 20px 16px 18px;
+    margin-bottom: 14px;
+  }
+
+  .hero-title {
+    font-size: 22px;
+  }
+
+  .hero-sub {
+    font-size: 13.5px;
+  }
+
+  .hero-actions {
+    flex-direction: column;
+    align-items: stretch;
+    margin-top: 16px;
+
+    .ant-btn {
+      width: 100%;
+    }
+  }
+
+  .tool-grid {
+    gap: 10px;
+  }
+
+  .tool-card {
+    padding: 14px;
+  }
+}
+
 .tip-card {
   padding: 14px 16px;
   border-radius: 12px;

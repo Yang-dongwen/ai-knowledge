@@ -1,9 +1,11 @@
 .auth-page {
   min-height: 100vh;
+  min-height: 100dvh;
   display: flex;
   align-items: center;
   justify-content: center;
   padding: 28px;
+  padding: max(16px, env(safe-area-inset-top, 0px)) 16px max(16px, env(safe-area-inset-bottom, 0px));
   position: relative;
   overflow: hidden;
   background: var(--ambient-bg);
@@ -32,6 +34,11 @@
   border: 1px solid var(--border-color);
   box-shadow: var(--card-shadow);
   padding: 32px 28px 24px;
+
+  @media (max-width: 480px) {
+    padding: 24px 18px 18px;
+    border-radius: 14px;
+  }
 }
 
 .brand {

@@ -1,13 +1,20 @@
 <template>
   <div class="ai-chat-page">
-    <div class="chat-container">
+    <div class="chat-container" :class="{ 'sidebar-open': mobileSidebarOpen }">
+      <!-- 移动端侧栏遮罩 -->
+      <div
+        v-show="mobileSidebarOpen"
+        class="chat-sidebar-mask"
+        @click="mobileSidebarOpen = false"
+      />
+
       <!-- 左侧会话列表 -->
       <div class="chat-sidebar">
         <div class="sidebar-header">
           <span class="sidebar-title">会话列表</span>
           <a-button type="primary" size="small" @click="createConversation">
             <template #icon><PlusOutlined /></template>
-            新对话
+            <span class="btn-label">新对话</span>
           </a-button>
         </div>
         <div class="sidebar-search">
@@ -28,7 +35,7 @@
             :key="conv.id"
             class="conversation-item"
             :class="{ active: activeConversationId === conv.id }"
-            @click="switchConversation(conv.id)"
+            @click="onSelectConversation(conv.id)"
           >
             <div class="conv-info">
               <MessageOutlined class="conv-icon" />
@@ -80,6 +87,14 @@
       <div class="chat-main">
         <div class="chat-header">
           <div class="chat-header-left">
+            <button
+              type="button"
+              class="sidebar-toggle"
+              aria-label="会话列表"
+              @click="mobileSidebarOpen = !mobileSidebarOpen"
+            >
+              <MenuOutlined />
+            </button>
             <span class="chat-title">AI 对话</span>
             <a-select
               v-model:value="selectedModelKey"
@@ -109,7 +124,7 @@
             </div>
             <a-button
               size="small"
-              class="header-action-btn"
+              class="header-action-btn desktop-chat-action"
               :loading="testingModel"
               :disabled="!selectedModelKey || isLoading"
               @click="handleTestModel"
@@ -124,12 +139,12 @@
               @click="settingsOpen = true"
             >
               <template #icon><SlidersOutlined /></template>
-              参数
+              <span class="btn-label">参数</span>
             </a-button>
             <a-button
               v-if="auth.isSuperAdmin"
               size="small"
-              class="header-action-btn"
+              class="header-action-btn desktop-chat-action"
               @click="modelManageOpen = true"
             >
               <template #icon><SettingOutlined /></template>
@@ -138,10 +153,10 @@
           </div>
           <div class="chat-header-right">
             <a-tag v-if="testingModel" color="processing">测试中…</a-tag>
-            <a-tag v-else-if="modelTestStatus === 'ok'" color="success">
+            <a-tag v-else-if="modelTestStatus === 'ok'" color="success" class="desktop-chat-action">
               ✓ 可用{{ modelTestLatency != null ? ` · ${modelTestLatency}ms` : '' }}
             </a-tag>
-            <a-tag v-else-if="modelTestStatus === 'fail'" color="error" :title="modelTestError || undefined">
+            <a-tag v-else-if="modelTestStatus === 'fail'" color="error" class="desktop-chat-action" :title="modelTestError || undefined">
               不可用
             </a-tag>
             <span class="chat-hint">T={{ sessionTemperature.toFixed(1) }} · {{ sessionMaxTokens }} tokens</span>
@@ -635,7 +650,8 @@ import {
   ReloadOutlined,
   StopOutlined,
   SearchOutlined,
-  SlidersOutlined
+  SlidersOutlined,
+  MenuOutlined
 } from '@ant-design/icons-vue'
 import { message } from 'ant-design-vue'
 import { chatApi } from '@/api/chat.api'
@@ -708,6 +724,8 @@ let searchTimer: ReturnType<typeof setTimeout> | null = null
 /** 会话参数 */
 const settingsOpen = ref(false)
 const settingsSaving = ref(false)
+/** 小屏：会话列表抽屉开关（桌面始终展开，此状态无影响） */
+const mobileSidebarOpen = ref(false)
 const sessionTemperature = ref(0.7)
 const sessionMaxTokens = ref(2000)
 const sessionSystemPrompt = ref('')
@@ -1578,6 +1596,12 @@ async function switchConversation(id: string) {
     return
   }
   await loadMessages(id)
+}
+
+/** 选择会话：小屏选中后收起侧栏 */
+async function onSelectConversation(id: string) {
+  await switchConversation(id)
+  mobileSidebarOpen.value = false
 }
 
 function createConversation() {
@@ -3198,6 +3222,109 @@ onMounted(() => {
     justify-content: flex-end;
     gap: 8px;
     margin-top: 8px;
+  }
+}
+
+/* 桌面默认：侧栏开关与遮罩隐藏 */
+.sidebar-toggle {
+  display: none;
+}
+
+.chat-sidebar-mask {
+  display: none;
+}
+
+/* 小屏：会话列表改为抽屉，主区全宽；桌面布局不变 */
+@media (max-width: 768px) {
+  .chat-container {
+    border-radius: 12px;
+    position: relative;
+  }
+
+  .chat-sidebar-mask {
+    display: block;
+    position: absolute;
+    inset: 0;
+    z-index: 20;
+    background: var(--overlay-mask);
+  }
+
+  .chat-sidebar {
+    position: absolute;
+    top: 0;
+    left: 0;
+    bottom: 0;
+    width: min(280px, 86vw);
+    z-index: 30;
+    transform: translateX(-105%);
+    transition: transform 0.2s ease;
+    box-shadow: none;
+    border-right: 1px solid var(--border-color);
+  }
+
+  .chat-container.sidebar-open .chat-sidebar {
+    transform: translateX(0);
+    box-shadow: var(--shadow-md);
+  }
+
+  .sidebar-toggle {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 32px;
+    height: 32px;
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    background: var(--surface-1);
+    color: var(--text-secondary);
+    cursor: pointer;
+    flex-shrink: 0;
+    font-size: 15px;
+
+    &:active {
+      background: var(--surface-3);
+    }
+  }
+
+  .chat-header {
+    padding: 10px 12px;
+    flex-wrap: wrap;
+    align-items: flex-start;
+  }
+
+  .chat-header .chat-title {
+    display: none;
+  }
+
+  .chat-header .model-select {
+    min-width: 0;
+    max-width: none;
+    flex: 1 1 140px;
+  }
+
+  .chat-header .agent-switch {
+    height: 28px;
+  }
+
+  .chat-header .agent-switch-label {
+    display: none;
+  }
+
+  .chat-header .desktop-chat-action,
+  .chat-header .chat-hint {
+    display: none !important;
+  }
+
+  .chat-header .header-action-btn .btn-label {
+    display: none;
+  }
+
+  .chat-header .header-action-btn {
+    padding: 0 8px;
+  }
+
+  .chat-header-right {
+    display: none;
   }
 }
 

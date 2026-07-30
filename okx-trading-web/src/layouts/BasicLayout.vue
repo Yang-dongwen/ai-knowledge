@@ -56,7 +56,9 @@ onUnmounted(() => {
 
   &.is-immersive {
     height: 100vh;
+    height: 100dvh;
     max-height: 100vh;
+    max-height: 100dvh;
     overflow: hidden;
     display: flex;
     flex-direction: column;
@@ -159,13 +161,16 @@ onUnmounted(() => {
   padding: var(--content-padding);
   background: transparent;
   min-height: calc(100vh - 64px);
+  min-height: calc(100dvh - 64px);
   overflow-y: auto;
+  overflow-x: clip;
 }
 
 .layout-content-body {
   min-height: 0;
   position: relative;
   z-index: 1;
+  max-width: 100%;
 }
 
 .page-footer {
@@ -177,5 +182,24 @@ onUnmounted(() => {
   font-size: 12px;
   color: var(--text-muted);
   letter-spacing: 0.03em;
+}
+
+@media (max-width: 768px) {
+  .layout-content {
+    padding: 12px;
+    min-height: calc(100vh - 56px);
+    min-height: calc(100dvh - 56px);
+  }
+
+  .basic-layout.is-immersive .layout-content {
+    padding: 8px;
+    /* 底部安全区：避免被 iOS 手势条遮挡 */
+    padding-bottom: max(8px, env(safe-area-inset-bottom, 0px));
+  }
+
+  .page-footer {
+    margin-top: 16px;
+    padding: 10px 0 4px;
+  }
 }
 </style>

@@ -3943,4 +3943,19 @@ onUnmounted(() => {
   }
 }
 
+@media (max-width: 768px) {
+  .video-extract-page {
+    max-width: 100%;
+  }
+
+  .submit-hero {
+    padding: 16px 14px 14px;
+    margin-bottom: 12px;
+  }
+
+  .task-panel {
+    max-height: 240px;
+  }
+}
+
 </style>

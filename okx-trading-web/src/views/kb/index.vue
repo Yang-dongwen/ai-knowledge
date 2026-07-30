@@ -1,5 +1,8 @@
 <template>
-  <div class="kb-workspace">
+  <div
+    class="kb-workspace"
+    :class="{ 'mobile-detail': mobileDetailOpen }"
+  >
     <!-- 左：目录树（文件夹 + 文档） -->
     <aside class="kb-sidebar">
       <div class="side-head">
@@ -327,9 +330,13 @@
       <!-- 选中文件夹且未打开文档：夹内概览 -->
       <template v-if="!selectedId && !isCreating && !trashMode && !searchMode && !filterTagId && activeFolderId">
         <div class="folder-overview">
+          <button type="button" class="mobile-back-btn folder-back" @click="closeMobileDetail">
+            <ArrowLeftOutlined />
+            <span>目录</span>
+          </button>
           <div class="folder-ov-head">
             <FolderOpenOutlined class="folder-ov-icon" />
-            <div>
+            <div class="folder-ov-text">
               <h2>{{ activeFolderName || '文件夹' }}</h2>
               <p class="muted">{{ folderChildNotes.length }} 篇文档 · {{ folderChildFolders.length }} 个子文件夹</p>
             </div>
@@ -412,15 +419,21 @@
       <template v-else>
         <div class="editor-toolbar">
           <div class="toolbar-left">
+            <button type="button" class="mobile-back-btn" @click="closeMobileDetail">
+              <ArrowLeftOutlined />
+              <span>目录</span>
+            </button>
             <span class="doc-title-hint muted" :title="editTitle">{{ editTitle || '未命名笔记' }}</span>
             <a-tag :color="editFormat === 'markdown' ? 'blue' : 'green'" class="format-badge">
-              {{ editFormat === 'markdown' ? 'Markdown' : '富文本' }}
+              <span class="fmt-full">{{ editFormat === 'markdown' ? 'Markdown' : '富文本' }}</span>
+              <span class="fmt-short">{{ editFormat === 'markdown' ? 'MD' : '富' }}</span>
             </a-tag>
           </div>
           <div class="editor-actions">
             <a-tooltip :title="editPinned ? '取消置顶' : '置顶'">
               <a-button
                 type="text"
+                class="desktop-only-action"
                 :disabled="editDeleted"
                 @click="togglePin"
               >
@@ -444,21 +457,55 @@
             <template v-else>
               <a-button
                 v-if="selectedId && !isCreating"
+                class="desktop-only-action"
                 @click="shareOpen = true"
               >
                 分享
               </a-button>
-              <a-button @click="confirmConvertFormat">
+              <a-button class="desktop-only-action" @click="confirmConvertFormat">
                 转为{{ editFormat === 'html' ? 'Markdown' : '富文本' }}
               </a-button>
               <a-button type="primary" :loading="saving" @click="saveNote">保存</a-button>
               <a-button
                 v-if="selectedId"
                 danger
+                class="desktop-only-action"
                 @click="confirmDeleteNote({ id: selectedId, name: editTitle || '未命名笔记' })"
               >
                 删除
               </a-button>
+              <!-- 小屏：次要操作收进「更多」 -->
+              <span v-if="!editDeleted && !trashMode" class="mobile-more-actions">
+                <a-dropdown :trigger="['click']" placement="bottomRight">
+                  <a-button class="mobile-more-btn">
+                    更多
+                    <MoreOutlined />
+                  </a-button>
+                  <template #overlay>
+                    <a-menu @click="onMobileMoreMenu">
+                      <a-menu-item key="pin" :disabled="editDeleted">
+                        {{ editPinned ? '取消置顶' : '置顶' }}
+                      </a-menu-item>
+                      <a-menu-item
+                        v-if="selectedId && !isCreating"
+                        key="share"
+                      >
+                        分享
+                      </a-menu-item>
+                      <a-menu-item key="convert">
+                        转为{{ editFormat === 'html' ? 'Markdown' : '富文本' }}
+                      </a-menu-item>
+                      <a-menu-item
+                        v-if="selectedId"
+                        key="delete"
+                        danger
+                      >
+                        删除
+                      </a-menu-item>
+                    </a-menu>
+                  </template>
+                </a-dropdown>
+              </span>
             </template>
           </div>
         </div>
@@ -485,7 +532,7 @@
               v-model:open="tagPickerOpen"
               trigger="click"
               placement="bottomLeft"
-              :overlay-style="{ width: '260px' }"
+              :overlay-style="{ width: 'min(260px, 86vw)' }"
               destroy-tooltip-on-hide
             >
               <template #content>
@@ -542,7 +589,7 @@
             class="view-mode-group"
           >
             <a-radio-button value="edit">编辑</a-radio-button>
-            <a-radio-button value="split">分栏</a-radio-button>
+            <a-radio-button value="split" class="desktop-split-mode">分栏</a-radio-button>
             <a-radio-button value="preview">预览</a-radio-button>
           </a-radio-group>
         </div>
@@ -810,6 +857,7 @@ import {
 } from 'vue'
 import { message, Modal } from 'ant-design-vue'
 import {
+  ArrowLeftOutlined,
   BookOutlined,
   CaretDownOutlined,
   CaretRightOutlined,
@@ -968,6 +1016,60 @@ const isExplorerTreeMode = computed(
 
 const selectedId = ref<string | null>(null)
 const isCreating = ref(false)
+
+/**
+ * 小屏：列表 ↔ 详情全屏切换（桌面始终双栏，此 class 仅 CSS 消费）
+ * 打开文档 / 新建 / 夹内概览 时进入详情
+ */
+const mobileDetailOpen = computed(() => {
+  if (selectedId.value || isCreating.value) return true
+  if (
+    !trashMode.value &&
+    !searchMode.value &&
+    !filterTagId.value &&
+    activeFolderId.value
+  ) {
+    return true
+  }
+  return false
+})
+
+/** 小屏返回目录：收起详情，保留搜索/回收站/标签筛选态 */
+async function closeMobileDetail() {
+  if (dirty.value && !editDeleted.value && selectedId.value && !isCreating.value) {
+    try {
+      await saveNote(true)
+    } catch {
+      /* keep going */
+    }
+  } else if (isCreating.value || (!selectedId.value && dirty.value)) {
+    discardBlankDraftIfNeeded()
+  }
+  selectedId.value = null
+  isCreating.value = false
+  activeFolderId.value = null
+  richEditorActive.value = false
+  htmlShellVisible.value = false
+  filePanelActive.value = false
+}
+
+function onMobileMoreMenu({ key }: { key: string }) {
+  if (key === 'pin') {
+    void togglePin()
+    return
+  }
+  if (key === 'share') {
+    shareOpen.value = true
+    return
+  }
+  if (key === 'convert') {
+    confirmConvertFormat()
+    return
+  }
+  if (key === 'delete' && selectedId.value) {
+    confirmDeleteNote({ id: selectedId.value, name: editTitle.value || '未命名笔记' })
+  }
+}
 const editTitle = ref('')
 const editContent = ref('')
 /** Markdown 编辑区：标题与正文视觉分离（仍合并进 editContent 存库） */
@@ -2846,21 +2948,40 @@ async function submitTag() {
   }
 }
 
+/** 小屏禁 Markdown 分栏（窄屏两侧不可用） */
+let mobileMq: MediaQueryList | null = null
+function applyMobileViewMode() {
+  if (typeof window === 'undefined') return
+  if (window.matchMedia('(max-width: 768px)').matches && viewMode.value === 'split') {
+    viewMode.value = 'edit'
+  }
+}
+
 onMounted(async () => {
   await Promise.all([loadCategories(), loadTree(), loadTags(), reloadTrashCount()])
   bindTreeViewport()
+  applyMobileViewMode()
+  mobileMq = window.matchMedia('(max-width: 768px)')
+  mobileMq.addEventListener('change', applyMobileViewMode)
 })
 
 onBeforeUnmount(() => {
   unbindTreeViewport()
   dragGhostCleanup?.()
   cleanupDragGhost()
+  mobileMq?.removeEventListener('change', applyMobileViewMode)
+  mobileMq = null
 })
 
 // 树模式显示时绑定视口（从搜索/回收站切回）
 watch(isExplorerTreeMode, (showTree) => {
   if (showTree) bindTreeViewport()
   else unbindTreeViewport()
+})
+
+// 新建 Markdown 默认分栏 → 小屏改编辑
+watch(viewMode, (mode) => {
+  if (mode === 'split') applyMobileViewMode()
 })
 </script>
 
@@ -3775,6 +3896,10 @@ watch(isExplorerTreeMode, (showTree) => {
 .format-badge {
   margin-inline-end: 0;
   user-select: none;
+
+  .fmt-short {
+    display: none;
+  }
 }
 
 .empty-create-actions {
@@ -4461,16 +4586,318 @@ watch(isExplorerTreeMode, (showTree) => {
   }
 }
 
+/* —— 小屏：列表 / 详情 全屏切换，桌面双栏完全不变 —— */
+.mobile-back-btn {
+  display: none;
+}
+
+.mobile-more-actions {
+  display: none;
+}
+
 @media (max-width: 768px) {
   .kb-workspace {
-    grid-template-columns: 1fr;
-    grid-template-rows: minmax(240px, 40vh) 1fr;
-    overflow: auto;
+    display: flex;
+    flex-direction: column;
+    grid-template-columns: none;
+    gap: 0;
+    height: 100%;
+    min-height: 0;
+    overflow: hidden;
+    border-radius: 14px;
+    border: 1px solid var(--border-color);
+    background: var(--surface-1);
   }
 
   .kb-sidebar,
   .kb-editor-pane {
-    min-height: 220px;
+    flex: 1 1 auto;
+    min-height: 0;
+    border: none;
+    border-radius: 0;
+    background: transparent;
+  }
+
+  /* 默认只看目录列表 */
+  .kb-workspace:not(.mobile-detail) .kb-editor-pane {
+    display: none;
+  }
+
+  /* 打开文档 / 新建 / 夹内概览：只看详情 */
+  .kb-workspace.mobile-detail .kb-sidebar {
+    display: none;
+  }
+
+  .mobile-back-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    flex-shrink: 0;
+    height: 30px;
+    padding: 0 10px 0 8px;
+    border: 1px solid var(--border-color);
+    border-radius: 999px;
+    background: var(--surface-2);
+    color: var(--text-primary);
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+
+    &:active {
+      background: var(--surface-3);
+    }
+  }
+
+  .mobile-more-actions {
+    display: inline-flex;
+  }
+
+  .desktop-only-action {
+    display: none !important;
+  }
+
+  .desktop-split-mode {
+    display: none !important;
+  }
+
+  .side-head {
+    padding: 12px 14px 8px;
+  }
+
+  .side-title {
+    font-size: 13px;
+    letter-spacing: 0.02em;
+    text-transform: none;
+    color: var(--text-primary);
+    font-weight: 700;
+  }
+
+  .side-search {
+    padding: 0 12px 10px;
+  }
+
+  .tree-drop-root {
+    display: none;
+  }
+
+  .tree-meta {
+    display: none;
+  }
+
+  .tree-row {
+    font-size: 14px;
+  }
+
+  .tree-more {
+    opacity: 0.85;
+    width: 32px;
+    height: 32px;
+  }
+
+  .tag-list {
+    max-height: 88px;
+    padding: 4px 12px 10px;
+  }
+
+  .tags-head {
+    margin-top: 4px;
+  }
+
+  .trash-footer {
+    padding: 8px 10px calc(10px + env(safe-area-inset-bottom, 0px));
+  }
+
+  .trash-entry {
+    padding: 12px 14px;
+    border-radius: 12px;
+    background: var(--surface-2);
+  }
+
+  .result-list {
+    padding: 0 10px 12px;
+    gap: 8px;
+  }
+
+  .result-item {
+    padding: 12px 14px;
+    border-radius: 12px;
+  }
+
+  .result-item-title {
+    font-size: 14px;
+  }
+
+  .editor-toolbar {
+    flex-wrap: nowrap;
+    gap: 8px;
+    padding: 10px 12px;
+    align-items: center;
+  }
+
+  .toolbar-left {
+    gap: 8px;
+    min-width: 0;
+  }
+
+  .doc-title-hint {
+    max-width: none;
+    flex: 1;
+    font-size: 14px;
+    color: var(--text-primary) !important;
+  }
+
+  .format-badge {
+    flex-shrink: 0;
+
+    .fmt-full {
+      display: none;
+    }
+
+    .fmt-short {
+      display: inline;
+    }
+  }
+
+  .editor-actions {
+    gap: 6px;
+    flex-shrink: 0;
+  }
+
+  .mobile-more-btn {
+    padding-inline: 10px;
+  }
+
+  .editor-meta-row {
+    padding: 8px 12px;
+    gap: 8px;
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .doc-location {
+    max-width: none;
+    width: 100%;
+
+    .loc-hint {
+      display: none;
+    }
+  }
+
+  .doc-tags {
+    width: 100%;
+  }
+
+  .view-mode-group {
+    margin-left: 0;
+    align-self: flex-start;
+  }
+
+  .editor-body {
+    padding: 0 8px 6px;
+
+    &.mode-html {
+      min-height: 0;
+    }
+
+    /* 小屏强制单栏，避免残留 split 样式 */
+    &.mode-split {
+      grid-template-columns: 1fr;
+    }
+  }
+
+  .md-doc-title {
+    font-size: 1.35em;
+    padding: 14px 12px 10px;
+  }
+
+  .md-toolbar {
+    padding: 8px 12px;
+    gap: 8px;
+  }
+
+  .md-toolbar-tip {
+    display: none;
+  }
+
+  .md-input {
+    padding: 12px !important;
+    font-size: 14px;
+  }
+
+  .md-preview {
+    padding: 12px 14px;
+    border-left: none;
+  }
+
+  .html-fast-shell {
+    padding: 12px;
+    border-radius: 8px;
+  }
+
+  .folder-overview {
+    padding: 12px 14px 20px;
+  }
+
+  .folder-back {
+    margin-bottom: 12px;
+  }
+
+  .folder-ov-head {
+    flex-direction: column;
+    gap: 12px;
+    margin-bottom: 14px;
+
+    h2 {
+      font-size: 18px;
+    }
+  }
+
+  .folder-ov-actions {
+    margin-left: 0;
+    width: 100%;
+
+    .ant-btn {
+      flex: 1;
+    }
+  }
+
+  .folder-ov-item {
+    padding: 14px;
+    border-radius: 12px;
+  }
+
+  .editor-empty {
+    padding: 28px 18px;
+    text-align: center;
+  }
+
+  .empty-create-actions {
+    flex-direction: column;
+    width: 100%;
+    max-width: 280px;
+
+    .ant-btn {
+      width: 100%;
+    }
+  }
+
+  .editor-status {
+    padding: 8px 12px calc(10px + env(safe-area-inset-bottom, 0px));
+  }
+
+  .delete-mode-row {
+    flex-direction: column;
+  }
+
+  /* 附件区：小屏更紧凑 */
+  :deep(.file-panel) {
+    border-top: 1px solid var(--border-color);
+    max-height: 36vh;
+    overflow: auto;
+  }
+
+  :deep(.file-panel .drop-hint) {
+    display: none;
   }
 }
 </style>

@@ -1,6 +1,16 @@
 <template>
   <header class="app-header">
     <div class="header-inner">
+      <!-- 移动端：菜单按钮 -->
+      <button
+        type="button"
+        class="icon-btn mobile-menu-btn"
+        aria-label="打开导航菜单"
+        @click="mobileNavOpen = true"
+      >
+        <MenuOutlined />
+      </button>
+
       <!-- Logo -->
       <div class="logo" @click="router.push('/home')">
         <div class="logo-mark">
@@ -12,10 +22,10 @@
         </div>
       </div>
 
-      <div class="header-divider" />
+      <div class="header-divider desktop-only" />
 
-      <!-- 主导航 -->
-      <nav class="nav-list">
+      <!-- 主导航（桌面） -->
+      <nav class="nav-list desktop-only">
         <div
           v-for="group in menuGroups"
           :key="group.key"
@@ -98,16 +108,19 @@
         </div>
       </nav>
 
+      <!-- 移动端当前页标题（替代顶栏导航） -->
+      <div v-if="currentPageTitle" class="mobile-page-title">{{ currentPageTitle }}</div>
+
       <!-- 右侧操作 -->
       <div class="header-right">
         <ThemeToggle />
         <a-tooltip title="刷新页面">
-          <button type="button" class="icon-btn" @click="handleRefresh">
+          <button type="button" class="icon-btn desktop-only" @click="handleRefresh">
             <SyncOutlined />
           </button>
         </a-tooltip>
         <a-tooltip title="通知">
-          <a-badge :count="0" :offset="[-2, 2]">
+          <a-badge :count="0" :offset="[-2, 2]" class="desktop-only">
             <button type="button" class="icon-btn">
               <BellOutlined />
             </button>
@@ -129,6 +142,7 @@
             <template #overlay>
               <a-menu @click="onUserMenu">
                 <a-menu-item key="profile">个人资料</a-menu-item>
+                <a-menu-item key="member">会员中心</a-menu-item>
                 <a-menu-item key="logout">退出登录</a-menu-item>
               </a-menu>
             </template>
@@ -138,6 +152,53 @@
         <ProfileCardModal v-model:open="profileOpen" />
       </div>
     </div>
+
+    <!-- 移动端导航抽屉（桌面不渲染交互，仅小屏打开） -->
+    <a-drawer
+      v-model:open="mobileNavOpen"
+      placement="left"
+      :width="300"
+      :body-style="{ padding: '12px 14px 24px' }"
+      class="mobile-nav-drawer"
+      title="导航"
+      @close="mobileNavOpen = false"
+    >
+      <div class="mobile-nav">
+        <section v-for="group in menuGroups" :key="group.key" class="mobile-nav-group">
+          <div class="mobile-nav-group-title">
+            <span class="mobile-nav-group-icon">
+              <component :is="group.icon" />
+            </span>
+            {{ group.title }}
+          </div>
+          <button
+            v-for="item in group.children"
+            :key="item.key"
+            type="button"
+            class="mobile-nav-item"
+            :class="{ active: currentRouteKey === item.key }"
+            @click="goToMobile(item.key)"
+          >
+            <span class="mobile-nav-item-icon">
+              <component :is="item.icon" />
+            </span>
+            <span class="mobile-nav-item-body">
+              <span class="mobile-nav-item-title">{{ item.title }}</span>
+              <span class="mobile-nav-item-desc">{{ item.description }}</span>
+            </span>
+          </button>
+        </section>
+        <section class="mobile-nav-group">
+          <div class="mobile-nav-group-title">账户</div>
+          <button type="button" class="mobile-nav-item" @click="goToMobile('member')">
+            <span class="mobile-nav-item-body">
+              <span class="mobile-nav-item-title">会员中心</span>
+              <span class="mobile-nav-item-desc">查看会员状态与开通</span>
+            </span>
+          </button>
+        </section>
+      </div>
+    </a-drawer>
   </header>
 </template>
 
@@ -154,6 +215,7 @@ import {
   SyncOutlined,
   BellOutlined,
   DownOutlined,
+  MenuOutlined,
   TeamOutlined,
   AppstoreOutlined,
   FileTextOutlined,
@@ -276,6 +338,7 @@ const auth = useAuthStore()
 
 const openGroup = ref<string | null>(null)
 const profileOpen = ref(false)
+const mobileNavOpen = ref(false)
 
 /** 系统管理仅超管可见 */
 const menuGroups = computed(() =>
@@ -389,6 +452,11 @@ function goTo(key: string) {
   })
 }
 
+function goToMobile(key: string) {
+  mobileNavOpen.value = false
+  goTo(key)
+}
+
 function handleRefresh() {
   window.location.reload()
 }
@@ -396,6 +464,10 @@ function handleRefresh() {
 async function onUserMenu({ key }: { key: string }) {
   if (key === 'profile') {
     openProfileCard()
+    return
+  }
+  if (key === 'member') {
+    goTo('member')
     return
   }
   if (key === 'logout') {
@@ -419,6 +491,10 @@ async function onUserMenu({ key }: { key: string }) {
   box-shadow:
     0 1px 0 var(--header-inset) inset,
     var(--header-shadow);
+
+  @media (max-width: 768px) {
+    height: 56px;
+  }
 }
 
 .header-inner {
@@ -915,6 +991,109 @@ async function onUserMenu({ key }: { key: string }) {
   transform: translateY(-6px);
 }
 
+.mobile-menu-btn {
+  display: none;
+}
+
+.mobile-page-title {
+  display: none;
+}
+
+/* 移动端导航抽屉内容（挂在 body 下，非 scoped 覆盖用 :deep 不够，样式写在全局类） */
+.mobile-nav {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.mobile-nav-group-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-muted);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  margin-bottom: 8px;
+  padding: 0 4px;
+}
+
+.mobile-nav-group-icon {
+  display: inline-flex;
+  font-size: 13px;
+  color: var(--text-secondary);
+}
+
+.mobile-nav-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  width: 100%;
+  text-align: left;
+  padding: 12px;
+  margin-bottom: 6px;
+  border: 1px solid transparent;
+  border-radius: 12px;
+  background: transparent;
+  cursor: pointer;
+  transition: background 0.15s ease, border-color 0.15s ease;
+
+  &:hover,
+  &:active {
+    background: var(--surface-3);
+    border-color: var(--border-color);
+  }
+
+  &.active {
+    background: var(--surface-3);
+    border-color: var(--border-strong);
+
+    .mobile-nav-item-title {
+      color: var(--primary-strong);
+      font-weight: 650;
+    }
+  }
+}
+
+.mobile-nav-item-icon {
+  width: 36px;
+  height: 36px;
+  border-radius: 10px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  font-size: 16px;
+  background: var(--icon-soft-bg);
+  color: var(--icon-soft-fg);
+}
+
+.mobile-nav-item-body {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  flex: 1;
+}
+
+.mobile-nav-item-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-primary);
+  line-height: 1.3;
+}
+
+.mobile-nav-item-desc {
+  font-size: 12px;
+  color: var(--text-tertiary);
+  line-height: 1.4;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
 @media (max-width: 1100px) {
   .nav-current-page {
     display: none;
@@ -927,6 +1106,62 @@ async function onUserMenu({ key }: { key: string }) {
 
   .nav-dropdown.cols-3 {
     min-width: 520px;
+  }
+}
+
+/* 小屏：汉堡导航，桌面 UI 完全保留在更大断点 */
+@media (max-width: 768px) {
+  .header-inner {
+    padding: 0 12px;
+    gap: 8px;
+  }
+
+  .mobile-menu-btn {
+    display: inline-flex;
+    flex-shrink: 0;
+  }
+
+  .desktop-only {
+    display: none !important;
+  }
+
+  .logo-text {
+    display: none;
+  }
+
+  .logo-mark {
+    width: 34px;
+    height: 34px;
+  }
+
+  .mobile-page-title {
+    display: block;
+    flex: 1;
+    min-width: 0;
+    font-size: 14px;
+    font-weight: 650;
+    color: var(--text-primary);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .header-right {
+    gap: 4px;
+  }
+
+  .user-card {
+    padding: 2px 4px 2px 2px;
+  }
+
+  .user-main {
+    padding: 0;
+  }
+
+  .user-avatar {
+    width: 32px !important;
+    height: 32px !important;
+    line-height: 32px !important;
   }
 }
 </style>
