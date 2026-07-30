@@ -341,15 +341,21 @@ CREATE TABLE IF NOT EXISTS kb_note (
     content        LONGTEXT      NULL COMMENT '正文（markdown 或 html）',
     content_format VARCHAR(16)   NOT NULL DEFAULT 'markdown' COMMENT 'html|markdown',
     snippet        VARCHAR(512)  NULL COMMENT '列表摘要（纯文本）',
-    category_id    BIGINT        NULL COMMENT '分类，可空',
+    category_id    BIGINT        NULL COMMENT '文件夹，可空',
+    sort_order     INT           NOT NULL DEFAULT 0 COMMENT '同文件夹内排序，小在前',
     is_pinned      TINYINT       NOT NULL DEFAULT 0 COMMENT '置顶 0/1',
     is_deleted     TINYINT       NOT NULL DEFAULT 0 COMMENT '软删 0/1',
     deleted_at     DATETIME(3)   NULL COMMENT '软删时间',
+    share_token    VARCHAR(64)   NULL COMMENT '公开分享令牌',
+    share_enabled  TINYINT       NOT NULL DEFAULT 0 COMMENT '是否开启分享 0/1',
+    share_enabled_at DATETIME(3) NULL COMMENT '开启分享时间',
     created_at     DATETIME(3)   NOT NULL COMMENT '创建时间',
     updated_at     DATETIME(3)   NOT NULL COMMENT '更新时间',
     PRIMARY KEY (id),
+    UNIQUE KEY uk_kb_note_share_token (share_token),
     INDEX idx_kb_note_user_updated (user_id, is_deleted, updated_at),
     INDEX idx_kb_note_user_cat (user_id, category_id, is_deleted),
+    INDEX idx_kb_note_user_cat_sort (user_id, category_id, is_deleted, sort_order),
     INDEX idx_kb_note_user_pinned (user_id, is_pinned, updated_at)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='知识库笔记';
 

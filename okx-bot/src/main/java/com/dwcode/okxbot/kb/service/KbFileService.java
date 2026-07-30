@@ -221,8 +221,18 @@ public class KbFileService {
         if (!objectStorage.exists(e.getObjectKey())) {
             throw new BusinessException(404, "文件内容不存在");
         }
-        InputStream in = objectStorage.openStream(e.getObjectKey());
-        MediaType mediaType = resolveMediaType(e);
+        InputStream raw = objectStorage.openStream(e.getObjectKey());
+        java.io.BufferedInputStream in = new java.io.BufferedInputStream(raw);
+        byte[] header;
+        try {
+            in.mark(40);
+            header = in.readNBytes(32);
+            in.reset();
+        } catch (Exception ex) {
+            header = new byte[0];
+        }
+        // 魔数优先：nosniff 下扩展名/上传 MIME 与真实内容不一致会导致浏览器拒显
+        MediaType mediaType = KbMediaTypes.resolve(e, header);
         String safeName = e.getOriginalName() == null ? "file" : e.getOriginalName().replace("\"", "");
         String encoded = URLEncoder.encode(safeName, StandardCharsets.UTF_8).replace("+", "%20");
         // 预览必须 inline，否则浏览器 PDF 插件 / iframe 会失败
@@ -238,50 +248,9 @@ public class KbFileService {
                 .body(new InputStreamResource(in));
     }
 
-    /** 按扩展名纠正 MIME，避免上传时 application/octet-stream 导致 PDF 预览失败 */
+    /** @deprecated 使用 {@link KbMediaTypes#resolve(KbFileEntity)} */
     static MediaType resolveMediaType(KbFileEntity e) {
-        String name = e.getOriginalName() == null ? "" : e.getOriginalName().toLowerCase(Locale.ROOT);
-        if (name.endsWith(".pdf")) {
-            return MediaType.APPLICATION_PDF;
-        }
-        if (name.endsWith(".png")) {
-            return MediaType.IMAGE_PNG;
-        }
-        if (name.endsWith(".jpg") || name.endsWith(".jpeg")) {
-            return MediaType.IMAGE_JPEG;
-        }
-        if (name.endsWith(".gif")) {
-            return MediaType.IMAGE_GIF;
-        }
-        if (name.endsWith(".webp")) {
-            return MediaType.parseMediaType("image/webp");
-        }
-        if (name.endsWith(".mp4")) {
-            return MediaType.parseMediaType("video/mp4");
-        }
-        if (name.endsWith(".webm")) {
-            return MediaType.parseMediaType("video/webm");
-        }
-        if (name.endsWith(".docx")) {
-            return MediaType.parseMediaType(
-                    "application/vnd.openxmlformats-officedocument.wordprocessingml.document");
-        }
-        if (name.endsWith(".xlsx")) {
-            return MediaType.parseMediaType(
-                    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
-        }
-        if (name.endsWith(".pptx")) {
-            return MediaType.parseMediaType(
-                    "application/vnd.openxmlformats-officedocument.presentationml.presentation");
-        }
-        try {
-            if (StringUtils.hasText(e.getContentType())) {
-                return MediaType.parseMediaType(e.getContentType());
-            }
-        } catch (Exception ignored) {
-            // fall through
-        }
-        return MediaType.APPLICATION_OCTET_STREAM;
+        return KbMediaTypes.resolve(e);
     }
 
     private KbFileEntity requireOwned(Long id, Long userId) {

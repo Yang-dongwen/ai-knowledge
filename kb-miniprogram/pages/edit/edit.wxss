@@ -1,0 +1,156 @@
+.page {
+  padding: 24rpx;
+}
+
+.format-pick {
+  padding: 24rpx;
+  margin-bottom: 20rpx;
+}
+
+.tip {
+  font-size: 24rpx;
+  margin-bottom: 16rpx;
+}
+
+.fmt-row {
+  display: flex;
+  gap: 16rpx;
+}
+
+.fmt-btn {
+  flex: 1;
+  text-align: center;
+  padding: 20rpx;
+  border-radius: 12rpx;
+  border: 1rpx solid #e2e8f0;
+  font-weight: 650;
+  font-size: 28rpx;
+}
+
+.fmt-btn.on {
+  border-color: #2563eb;
+  color: #2563eb;
+  background: rgba(37, 99, 235, 0.08);
+}
+
+.form {
+  padding: 8rpx 24rpx 24rpx;
+  min-height: 40vh;
+}
+
+.title-input {
+  font-size: 40rpx;
+  font-weight: 700;
+  padding: 24rpx 0 16rpx;
+}
+
+.rule {
+  border-top: 1rpx solid #e2e8f0;
+  margin-bottom: 16rpx;
+}
+
+.tools {
+  display: flex;
+  gap: 12rpx;
+  margin-bottom: 12rpx;
+}
+
+.tool {
+  margin: 0;
+}
+
+.tag-block {
+  padding: 12rpx 0;
+}
+
+.tag-label {
+  font-size: 26rpx;
+  margin-bottom: 12rpx;
+}
+
+.tag-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12rpx;
+}
+
+.chip {
+  border: 1rpx solid #e2e8f0;
+  background: #f8fafc;
+  border-radius: 999rpx;
+  padding: 6rpx 16rpx;
+  font-size: 24rpx;
+}
+
+.chip.on {
+  border-color: #2563eb;
+  color: #2563eb;
+  background: rgba(37, 99, 235, 0.08);
+}
+
+.files {
+  margin-top: 20rpx;
+  padding: 20rpx 24rpx;
+}
+
+.files-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-weight: 650;
+  margin-bottom: 12rpx;
+}
+
+.file-row {
+  display: flex;
+  justify-content: space-between;
+  padding: 12rpx 0;
+  border-top: 1rpx solid #f1f5f9;
+  font-size: 26rpx;
+}
+
+.del {
+  color: #ef4444;
+}
+
+.fname {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  margin-right: 16rpx;
+}
+
+.content-input {
+  width: 100%;
+  min-height: 360rpx;
+  font-size: 28rpx;
+  line-height: 1.65;
+}
+
+.meta {
+  padding: 20rpx 24rpx;
+  margin-top: 20rpx;
+}
+
+.picker-row,
+.pin-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12rpx 0;
+  font-size: 28rpx;
+}
+
+.actions {
+  display: flex;
+  gap: 20rpx;
+  margin-top: 28rpx;
+}
+
+.half {
+  flex: 1;
+  height: 88rpx;
+  line-height: 88rpx;
+  font-size: 28rpx;
+}

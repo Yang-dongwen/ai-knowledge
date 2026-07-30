@@ -1,0 +1,58 @@
+<view class="page safe-bottom" wx:if="{{note}}">
+  <view class="actions-top">
+    <block wx:if="{{note.deleted}}">
+      <button class="btn-ghost half" bindtap="onRestore">恢复</button>
+      <button class="btn-danger half" bindtap="onPermanent">永久删除</button>
+    </block>
+    <block wx:else>
+      <button class="btn-ghost third" bindtap="toggleSharePanel">分享</button>
+      <button class="btn-ghost third" bindtap="onEdit">编辑</button>
+      <button class="btn-danger third" bindtap="onDelete">删除</button>
+    </block>
+  </view>
+
+  <view class="card share-panel" wx:if="{{shareOpen && !note.deleted}}">
+    <view class="share-head">
+      <text>公开分享（只读）</text>
+      <switch checked="{{shareEnabled}}" disabled="{{shareLoading}}" bindchange="onShareSwitch" color="#2563eb" />
+    </view>
+    <view class="hint muted">开启后生成链接，任何人无需登录即可阅读。</view>
+    <block wx:if="{{shareEnabled}}">
+      <view class="share-url">{{shareUrl || '（请配置分享域名）'}}</view>
+      <view class="share-actions">
+        <button class="btn-primary sm" size="mini" bindtap="copyShare">复制链接</button>
+        <button class="btn-ghost sm" size="mini" bindtap="onRotateShare" loading="{{shareLoading}}">重置</button>
+      </view>
+    </block>
+  </view>
+
+  <view class="card body">
+    <view class="meta muted">
+      {{note.formatLabel}} · {{note.updatedAtText}}
+      <text wx:if="{{note.categoryName}}"> · {{note.categoryName}}</text>
+      <text wx:if="{{note.deleted}}"> · 回收站</text>
+    </view>
+    <view class="tags" wx:if="{{note.tags && note.tags.length}}">
+      <text class="tag" wx:for="{{note.tags}}" wx:key="id">#{{item.name}}</text>
+    </view>
+    <rich-text class="md-body" nodes="{{contentHtml}}" />
+  </view>
+
+  <view class="card files" wx:if="{{files.length}}">
+    <view class="files-title">附件</view>
+    <view
+      class="file-row"
+      wx:for="{{files}}"
+      wx:key="id"
+      data-file="{{item}}"
+      bindtap="openFile"
+    >
+      <text class="fname">{{item.originalName}}</text>
+      <text class="farrow">›</text>
+    </view>
+  </view>
+</view>
+
+<view class="empty" wx:elif="{{!loading}}">
+  <view class="empty-title">笔记不存在</view>
+</view>

@@ -23,6 +23,12 @@ const routes: RouteRecordRaw[] = [
     meta: { title: '找回密码', public: true }
   },
   {
+    path: '/s/:token',
+    name: 'KbPublicShare',
+    component: () => import('@/views/kb/PublicShare.vue'),
+    meta: { title: '分享文档', public: true, sharePage: true }
+  },
+  {
     path: '/',
     component: BasicLayout,
     redirect: '/home',

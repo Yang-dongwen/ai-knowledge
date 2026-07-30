@@ -1,0 +1,8 @@
+{
+  "description": "本地私有配置（可改 appid）；勿提交真实密钥",
+  "projectname": "kb-miniprogram",
+  "setting": {
+    "urlCheck": false,
+    "compileHotReLoad": true
+  }
+}

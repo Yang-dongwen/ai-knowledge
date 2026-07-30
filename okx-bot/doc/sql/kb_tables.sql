@@ -36,9 +36,13 @@ CREATE TABLE IF NOT EXISTS kb_note (
     is_pinned      TINYINT       NOT NULL DEFAULT 0 COMMENT '置顶 0/1',
     is_deleted     TINYINT       NOT NULL DEFAULT 0 COMMENT '软删 0/1',
     deleted_at     DATETIME(3)   NULL COMMENT '软删时间',
+    share_token    VARCHAR(64)   NULL COMMENT '公开分享令牌',
+    share_enabled  TINYINT       NOT NULL DEFAULT 0 COMMENT '是否开启分享 0/1',
+    share_enabled_at DATETIME(3) NULL COMMENT '开启分享时间',
     created_at     DATETIME(3)   NOT NULL COMMENT '创建时间',
     updated_at     DATETIME(3)   NOT NULL COMMENT '更新时间',
     PRIMARY KEY (id),
+    UNIQUE KEY uk_kb_note_share_token (share_token),
     INDEX idx_kb_note_user_updated (user_id, is_deleted, updated_at),
     INDEX idx_kb_note_user_cat (user_id, category_id, is_deleted),
     INDEX idx_kb_note_user_pinned (user_id, is_pinned, updated_at)

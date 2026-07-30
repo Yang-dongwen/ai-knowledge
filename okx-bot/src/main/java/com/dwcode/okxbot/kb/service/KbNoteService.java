@@ -64,6 +64,7 @@ public class KbNoteService {
         e.setContentFormat(format);
         e.setSnippet(buildSnippet(content, format));
         e.setCategoryId(categoryId);
+        e.setSortOrder(0);
         e.setIsPinned(Boolean.TRUE.equals(req.getPinned()) ? 1 : 0);
         e.setIsDeleted(0);
         noteMapper.insert(e);
@@ -257,12 +258,15 @@ public class KbNoteService {
                     .like(KbNoteEntity::getSnippet, search));
         }
 
+        // 默认：置顶优先，再按最后修改时间降序（回收站按删除时间）
         if (onlyDeleted) {
             q.orderByDesc(KbNoteEntity::getDeletedAt)
-                    .orderByDesc(KbNoteEntity::getUpdatedAt);
+                    .orderByDesc(KbNoteEntity::getUpdatedAt)
+                    .orderByDesc(KbNoteEntity::getId);
         } else {
             q.orderByDesc(KbNoteEntity::getIsPinned)
-                    .orderByDesc(KbNoteEntity::getUpdatedAt);
+                    .orderByDesc(KbNoteEntity::getUpdatedAt)
+                    .orderByDesc(KbNoteEntity::getId);
         }
 
         Page<KbNoteEntity> pageResult = noteMapper.selectPage(new Page<>(p + 1L, s), q);

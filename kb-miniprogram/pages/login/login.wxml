@@ -1,0 +1,37 @@
+<view class="login-page">
+  <view class="hero">
+    <view class="logo">KB</view>
+    <view class="title">个人知识库</view>
+    <view class="sub muted">与 PC 端共用账号 · 碎片时间快记查阅</view>
+  </view>
+
+  <view class="form card">
+    <view class="field">
+      <text class="label">邮箱</text>
+      <input
+        class="input"
+        type="text"
+        placeholder="注册邮箱"
+        value="{{email}}"
+        bindinput="onEmail"
+        confirm-type="next"
+      />
+    </view>
+    <view class="field">
+      <text class="label">密码</text>
+      <input
+        class="input"
+        password
+        placeholder="登录密码"
+        value="{{password}}"
+        bindinput="onPassword"
+        confirm-type="done"
+        bindconfirm="onLogin"
+      />
+    </view>
+    <button class="btn-primary submit" loading="{{loading}}" disabled="{{loading}}" bindtap="onLogin">
+      登录
+    </button>
+    <view class="hint muted">使用与 PC 工具台相同的邮箱账号</view>
+  </view>
+</view>

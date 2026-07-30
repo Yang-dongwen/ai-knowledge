@@ -73,6 +73,8 @@ public class SecurityConfig {
                                 "/api/pay/notify/**",
                                 "/api/pay/return/**"
                         ).permitAll()
+                        // 知识库公开分享阅读（无需登录）
+                        .requestMatchers("/api/v1/kb/public/**").permitAll()
                         .requestMatchers("/error").permitAll()
                         // 用户管理 / 模型配置 CRUD：仅超级管理员
                         .requestMatchers("/api/admin/**").hasRole("SUPER_ADMIN")

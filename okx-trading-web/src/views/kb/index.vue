@@ -1,84 +1,313 @@
 <template>
   <div class="kb-workspace">
-    <!-- 左：分类 -->
+    <!-- 左：目录树（文件夹 + 文档） -->
     <aside class="kb-sidebar">
       <div class="side-head">
-        <span class="side-title">分类</span>
-        <a-button type="text" size="small" class="icon-action" @click="openCreateCategory()">
-          <PlusOutlined />
-        </a-button>
+        <span class="side-title">{{ trashMode ? '回收站' : '文档目录' }}</span>
+        <div class="side-head-actions">
+          <template v-if="trashMode">
+            <a-button type="link" size="small" class="back-dir-btn" @click="toggleTrashMode">
+              返回目录
+            </a-button>
+          </template>
+          <template v-else>
+            <a-tooltip title="新建文件夹">
+              <a-button type="text" size="small" class="icon-action" @click="openCreateCategory()">
+                <FolderOutlined />
+              </a-button>
+            </a-tooltip>
+            <a-tooltip title="新建文档">
+              <a-button type="text" size="small" class="icon-action" @click="openCreateNote">
+                <PlusOutlined />
+              </a-button>
+            </a-tooltip>
+          </template>
+        </div>
       </div>
-      <button
-        type="button"
-        class="cat-item"
-        :class="{ active: !filterCategoryId && !filterTagId }"
-        @click="selectAll"
+
+      <div class="side-search">
+        <a-input-search
+          v-model:value="keyword"
+          allow-clear
+          size="small"
+          :placeholder="trashMode ? '搜索回收站…' : '搜索文档…'"
+          @search="onSearch"
+        />
+      </div>
+
+      <div
+        class="side-scroll"
+        :class="{
+          'is-tree': isExplorerTreeMode,
+          'is-list': !isExplorerTreeMode
+        }"
       >
-        <FolderOpenOutlined />
-        <span>全部笔记</span>
-      </button>
-      <button
-        type="button"
-        class="cat-item"
-        :class="{ active: filterCategoryId === '__none__' }"
-        @click="selectUncategorized"
-      >
-        <InboxOutlined />
-        <span>未分类</span>
-      </button>
-      <div class="cat-tree">
-        <template v-for="node in flatCategories" :key="node.id">
-          <div
-            class="cat-row"
-            :style="{ paddingLeft: `${12 + node.depth * 14}px` }"
-          >
+        <!-- 回收站 / 搜索 / 标签：统一结果列表 -->
+        <template v-if="!isExplorerTreeMode">
+          <div v-if="!trashMode" class="result-list-head">
+            <span class="result-list-title">
+              <template v-if="searchMode">搜索 · {{ total }}</template>
+              <template v-else>标签 · {{ total }}</template>
+            </span>
             <button
               type="button"
-              class="cat-item flex-1"
-              :class="{ active: filterCategoryId === node.id }"
-              @click="selectCategory(node.id)"
+              class="link-btn"
+              @click="searchMode ? clearSearch() : clearTagFilter()"
             >
-              <FolderOutlined />
-              <span class="cat-name">{{ node.name }}</span>
+              返回目录
             </button>
-            <a-dropdown :trigger="['click']">
-              <button type="button" class="cat-more" @click.stop>
-                <MoreOutlined />
-              </button>
-              <template #overlay>
-                <a-menu>
-                  <a-menu-item @click="openCreateCategory(node.id)">添加子分类</a-menu-item>
-                  <a-menu-item @click="openRenameCategory(node)">重命名</a-menu-item>
-                  <a-menu-item danger @click="confirmDeleteCategory(node)">删除</a-menu-item>
-                </a-menu>
-              </template>
-            </a-dropdown>
+          </div>
+          <div v-else-if="total > 0 || listLoading" class="result-list-head">
+            <span class="result-list-title">共 {{ total }} 条</span>
+          </div>
+          <div v-if="listLoading" class="side-loading"><a-spin size="small" /></div>
+          <!-- 回收站空列表：侧栏轻提示；主区域居中展示完整空态 -->
+          <div
+            v-else-if="!notes.length && trashMode"
+            class="result-empty-side muted"
+          >
+            {{ keyword.trim() ? '无匹配文档' : '暂无已删除文档' }}
+          </div>
+          <div v-else-if="!notes.length" class="side-empty result-empty">
+            <template v-if="searchMode">无匹配文档</template>
+            <template v-else>该标签下暂无文档</template>
+          </div>
+          <div v-else class="result-list">
+            <button
+              v-for="n in notes"
+              :key="(trashMode ? 'trash-' : searchMode ? 'search-' : 'tag-') + n.id"
+              type="button"
+              class="result-item"
+              :class="{ active: selectedId === n.id, deleted: trashMode || n.deleted }"
+              @click="selectNote(n.id)"
+            >
+              <div class="result-item-top">
+                <FileTextOutlined class="result-item-icon" />
+                <span class="result-item-title">{{ n.title || '未命名笔记' }}</span>
+                <a-tag
+                  v-if="n.contentFormat"
+                  class="result-fmt"
+                  :color="n.contentFormat === 'markdown' ? 'blue' : 'green'"
+                >
+                  {{ n.contentFormat === 'markdown' ? 'MD' : '富' }}
+                </a-tag>
+              </div>
+              <div v-if="n.snippet" class="result-item-snippet">{{ n.snippet }}</div>
+              <div class="result-item-foot">
+                <span v-if="n.categoryName" class="result-cat">{{ n.categoryName }}</span>
+                <span
+                  v-for="t in n.tags?.slice(0, 2) || []"
+                  :key="t.id"
+                  class="result-tag"
+                >#{{ t.name }}</span>
+                <span v-if="n.updatedAt" class="result-time">{{ formatListTime(n.updatedAt) }}</span>
+              </div>
+            </button>
+          </div>
+          <div v-if="trashMode && total > 0" class="trash-actions">
+            <a-popconfirm
+              title="清空回收站？将永久删除全部笔记及附件，不可恢复。"
+              ok-text="清空"
+              ok-type="danger"
+              cancel-text="取消"
+              @confirm="emptyTrash"
+            >
+              <a-button danger size="small" block :loading="emptying">清空回收站</a-button>
+            </a-popconfirm>
+          </div>
+          <div v-if="total > pageSize" class="result-pager">
+            <a-pagination
+              size="small"
+              :current="page + 1"
+              :page-size="pageSize"
+              :total="total"
+              :show-size-changer="false"
+              @change="onResultPageChange"
+            />
+          </div>
+        </template>
+
+        <!-- 目录树 -->
+        <template v-else>
+          <div v-if="treeLoading" class="side-loading"><a-spin size="small" /></div>
+          <div v-else-if="!flatTreeRows.length" class="side-empty">
+            还没有内容
+            <div class="side-empty-actions">
+              <a-button size="small" type="primary" @click="openCreateNote">新建文档</a-button>
+              <a-button size="small" @click="openCreateCategory()">新建文件夹</a-button>
+            </div>
+          </div>
+          <div v-else class="explorer-tree">
+            <!-- 根投放区：移到根/未归档 -->
+            <div
+              class="tree-drop-root"
+              :class="{ 'drop-over': dropTargetKey === 'root' }"
+              @dragover.prevent="onDragOverRoot"
+              @dragleave="onDragLeaveRoot"
+              @drop.prevent="onDropRoot"
+            >
+              拖到此处 → 根目录 / 未归档
+            </div>
+            <!-- 虚拟滚动视口：只渲染可见行 -->
+            <div
+              ref="treeViewportRef"
+              class="tree-viewport"
+              @scroll.passive="onTreeScroll"
+            >
+              <div
+                class="tree-virtual-space"
+                :style="{ height: treeVirtual.totalHeight + 'px' }"
+              >
+                <div
+                  class="tree-virtual-window"
+                  :style="{ transform: `translateY(${treeVirtual.offsetY}px)` }"
+                >
+                  <div
+                    v-for="row in virtualTreeRows"
+                    :key="row.key"
+                    class="tree-row-wrap"
+                    :class="{
+                      'drop-over':
+                        dropTargetKey === row.key &&
+                        (row.type === 'folder' ||
+                          (dragPayload && dragPayload.type === row.type)),
+                      dragging: dragPayload && dragPayload.key === row.key
+                    }"
+                    :style="{
+                      height: TREE_ROW_HEIGHT + 'px',
+                      paddingLeft: `${8 + row.depth * 14}px`
+                    }"
+                    draggable="true"
+                    @dragstart="onTreeDragStart($event, row)"
+                    @dragend="onTreeDragEnd"
+                    @dragover.prevent="onTreeDragOver($event, row)"
+                    @dragleave="onTreeDragLeave(row)"
+                    @drop.prevent="onTreeDrop($event, row)"
+                  >
+                    <button
+                      type="button"
+                      class="tree-row"
+                      :class="{
+                        folder: row.type === 'folder',
+                        note: row.type === 'note',
+                        active:
+                          (row.type === 'note' && selectedId === row.id) ||
+                          (row.type === 'folder' &&
+                            activeFolderId === row.id &&
+                            !selectedId &&
+                            !isCreating)
+                      }"
+                      @click="onTreeRowClick(row)"
+                    >
+                      <span
+                        v-if="row.type === 'folder'"
+                        class="tree-twist"
+                        @click.stop="toggleExpand(row.id)"
+                      >
+                        <CaretDownOutlined v-if="expandedIds.has(row.id)" />
+                        <CaretRightOutlined v-else />
+                      </span>
+                      <span v-else class="tree-twist spacer" />
+                      <FolderOpenOutlined
+                        v-if="row.type === 'folder' && expandedIds.has(row.id)"
+                        class="tree-icon folder-icon"
+                      />
+                      <FolderOutlined
+                        v-else-if="row.type === 'folder'"
+                        class="tree-icon folder-icon"
+                      />
+                      <PushpinOutlined
+                        v-else-if="row.pinned"
+                        class="tree-icon pin-icon"
+                      />
+                      <FileTextOutlined v-else class="tree-icon note-icon" />
+                      <span class="tree-label" :title="row.name">{{ row.name }}</span>
+                      <a-tag
+                        v-if="row.type === 'note' && row.contentFormat"
+                        class="tree-fmt"
+                        :color="row.contentFormat === 'markdown' ? 'blue' : 'green'"
+                      >
+                        {{ row.contentFormat === 'markdown' ? 'MD' : '富' }}
+                      </a-tag>
+                    </button>
+                    <a-dropdown :trigger="['click']">
+                      <button type="button" class="tree-more" @click.stop>
+                        <MoreOutlined />
+                      </button>
+                      <template #overlay>
+                        <a-menu>
+                          <template v-if="row.type === 'folder'">
+                            <a-menu-item @click="openCreateNoteInFolder(row.id)">
+                              新建文档
+                            </a-menu-item>
+                            <a-menu-item @click="openCreateCategory(row.id)">
+                              新建子文件夹
+                            </a-menu-item>
+                            <a-menu-item @click="openMoveDialog('folder', row)">
+                              移动到…
+                            </a-menu-item>
+                            <a-menu-item
+                              @click="openRenameCategory({ id: row.id, name: row.name })"
+                            >
+                              重命名
+                            </a-menu-item>
+                            <a-menu-item
+                              danger
+                              @click="confirmDeleteCategory({ id: row.id, name: row.name })"
+                            >
+                              删除
+                            </a-menu-item>
+                          </template>
+                          <template v-else>
+                            <a-menu-item @click="selectNote(row.id)">打开</a-menu-item>
+                            <a-menu-item @click="openMoveDialog('note', row)">
+                              移动到…
+                            </a-menu-item>
+                            <a-menu-item @click="moveNoteToRoot(row.id)">
+                              移到未归档
+                            </a-menu-item>
+                            <a-menu-item danger @click="confirmDeleteNote(row)">
+                              删除
+                            </a-menu-item>
+                          </template>
+                        </a-menu>
+                      </template>
+                    </a-dropdown>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div class="tree-meta muted">
+            {{ treeMeta.folderCount }} 文件夹 · {{ treeMeta.noteCount }} 文档 · 虚拟滚动 · 可拖拽
+          </div>
+        </template>
+
+        <!-- 仅目录树模式显示标签筛选入口 -->
+        <template v-if="isExplorerTreeMode">
+          <div class="side-head tags-head">
+            <span class="side-title">标签筛选</span>
+            <a-button type="text" size="small" class="icon-action" @click="openCreateTag">
+              <PlusOutlined />
+            </a-button>
+          </div>
+          <div class="tag-list">
+            <button
+              v-for="tag in tags"
+              :key="tag.id"
+              type="button"
+              class="tag-chip"
+              :class="{ active: filterTagId === tag.id }"
+              @click="toggleTagFilter(tag.id)"
+            >
+              <span>#{{ tag.name }}</span>
+              <span class="tag-count">{{ tag.noteCount ?? 0 }}</span>
+            </button>
+            <div v-if="!tags.length" class="side-empty">暂无标签</div>
           </div>
         </template>
       </div>
 
-      <div class="side-head tags-head">
-        <span class="side-title">标签</span>
-        <a-button type="text" size="small" class="icon-action" @click="openCreateTag">
-          <PlusOutlined />
-        </a-button>
-      </div>
-      <div class="tag-list">
-        <button
-          v-for="tag in tags"
-          :key="tag.id"
-          type="button"
-          class="tag-chip"
-          :class="{ active: filterTagId === tag.id }"
-          @click="toggleTagFilter(tag.id)"
-        >
-          <span>#{{ tag.name }}</span>
-          <span class="tag-count">{{ tag.noteCount ?? 0 }}</span>
-        </button>
-        <div v-if="!tags.length" class="side-empty">暂无标签</div>
-      </div>
-
-      <!-- 左下角：回收站 -->
       <div class="trash-footer">
         <button
           type="button"
@@ -93,97 +322,90 @@
       </div>
     </aside>
 
-    <!-- 中：列表 -->
-    <section class="kb-list-pane">
-      <div class="list-toolbar">
-        <a-input-search
-          v-model:value="keyword"
-          allow-clear
-          :placeholder="trashMode ? '搜索回收站…' : '搜索标题或正文'"
-          class="search-input"
-          @search="reloadNotes"
-        />
-        <template v-if="trashMode">
-          <a-popconfirm
-            title="清空回收站？将永久删除全部笔记及附件（含 R2 对象），不可恢复。"
-            ok-text="清空"
-            ok-type="danger"
-            cancel-text="取消"
-            :disabled="!total"
-            @confirm="emptyTrash"
-          >
-            <a-button danger :disabled="!total || emptying">清空回收站</a-button>
-          </a-popconfirm>
-        </template>
-        <a-button v-else type="primary" @click="openCreateNote">
-          <template #icon><PlusOutlined /></template>
-          新建
-        </a-button>
-      </div>
-      <div class="list-meta">
-        <span v-if="trashMode" class="trash-mode-label">回收站 · {{ total }} 条</span>
-        <span v-else>共 {{ total }} 条</span>
-      </div>
-      <div v-if="listLoading" class="list-loading">
-        <a-spin />
-      </div>
-      <div v-else-if="!notes.length" class="list-empty">
-        <EmptyState
-          v-if="trashMode"
-          title="回收站为空"
-          description="删除的笔记会出现在这里"
-        />
-        <EmptyState v-else title="还没有笔记" description="点击「新建」开始记录" />
-      </div>
-      <div v-else class="note-list">
-        <button
-          v-for="n in notes"
-          :key="n.id"
-          type="button"
-          class="note-card"
-          :class="{ active: selectedId === n.id, deleted: n.deleted || trashMode }"
-          @click="selectNote(n.id)"
-        >
-          <div class="note-card-title">
-            <PushpinOutlined v-if="n.pinned" class="pin-icon" />
-            <span>{{ n.title || '未命名笔记' }}</span>
-            <a-tag class="fmt-tag" :color="n.contentFormat === 'markdown' ? 'blue' : 'green'">
-              {{ n.contentFormat === 'markdown' ? 'MD' : '富文本' }}
-            </a-tag>
-          </div>
-          <div class="note-card-snippet">{{ n.snippet || '暂无正文' }}</div>
-          <div class="note-card-foot">
-            <span v-if="n.categoryName" class="meta-cat">{{ n.categoryName }}</span>
-            <span
-              v-for="t in n.tags?.slice(0, 3) || []"
-              :key="t.id"
-              class="meta-tag"
-            >#{{ t.name }}</span>
-            <span class="meta-time">{{ formatTime(n.updatedAt) }}</span>
-          </div>
-        </button>
-      </div>
-      <div v-if="total > pageSize" class="list-pager">
-        <a-pagination
-          size="small"
-          :current="page + 1"
-          :page-size="pageSize"
-          :total="total"
-          :show-size-changer="false"
-          @change="onPageChange"
-        />
-      </div>
-    </section>
-
-    <!-- 右：编辑 -->
+    <!-- 右：编辑 / 夹内概览 -->
     <section class="kb-editor-pane">
-      <template v-if="!selectedId && !isCreating">
+      <!-- 选中文件夹且未打开文档：夹内概览 -->
+      <template v-if="!selectedId && !isCreating && !trashMode && !searchMode && !filterTagId && activeFolderId">
+        <div class="folder-overview">
+          <div class="folder-ov-head">
+            <FolderOpenOutlined class="folder-ov-icon" />
+            <div>
+              <h2>{{ activeFolderName || '文件夹' }}</h2>
+              <p class="muted">{{ folderChildNotes.length }} 篇文档 · {{ folderChildFolders.length }} 个子文件夹</p>
+            </div>
+            <div class="folder-ov-actions">
+              <a-button type="primary" @click="openCreateNoteInFolder(activeFolderId)">在此新建文档</a-button>
+              <a-button @click="openCreateCategory(activeFolderId)">新建子文件夹</a-button>
+            </div>
+          </div>
+          <div v-if="!folderChildNotes.length && !folderChildFolders.length" class="folder-ov-empty">
+            <EmptyState title="文件夹为空" description="可在此新建文档或子文件夹" />
+          </div>
+          <div v-else class="folder-ov-list">
+            <button
+              v-for="f in folderChildFolders"
+              :key="'fov-f-' + f.id"
+              type="button"
+              class="folder-ov-item"
+              @click="onTreeRowClick(f)"
+            >
+              <FolderOutlined />
+              <span>{{ f.name }}</span>
+              <span class="muted">文件夹</span>
+            </button>
+            <button
+              v-for="n in folderChildNotes"
+              :key="'fov-n-' + n.id"
+              type="button"
+              class="folder-ov-item"
+              @click="selectNote(n.id)"
+            >
+              <FileTextOutlined />
+              <span>{{ n.name }}</span>
+              <span v-if="n.updatedAt" class="muted">{{ formatListTime(n.updatedAt) }}</span>
+            </button>
+          </div>
+        </div>
+      </template>
+      <!-- 回收站为空：主区域居中展示 -->
+      <template
+        v-else-if="
+          trashMode &&
+          !selectedId &&
+          !isCreating &&
+          !listLoading &&
+          total === 0 &&
+          !keyword.trim()
+        "
+      >
+        <div class="editor-empty trash-empty-center">
+          <DeleteOutlined class="editor-empty-icon trash-empty-icon" />
+          <h2 class="trash-empty-title">回收站为空</h2>
+          <p class="muted">删除的文档会出现在这里，可恢复或永久删除</p>
+          <div class="empty-create-actions">
+            <a-button type="primary" @click="toggleTrashMode">返回目录</a-button>
+          </div>
+        </div>
+      </template>
+      <!-- 回收站未选中 / 搜索无结果 -->
+      <template v-else-if="trashMode && !selectedId && !isCreating">
+        <div class="editor-empty">
+          <DeleteOutlined class="editor-empty-icon trash-empty-icon" />
+          <p v-if="keyword.trim() && !notes.length">未找到匹配的已删除文档</p>
+          <p v-else>从左侧选择一条已删除文档</p>
+          <div class="empty-create-actions">
+            <a-button type="primary" ghost @click="toggleTrashMode">返回目录</a-button>
+          </div>
+        </div>
+      </template>
+      <template v-else-if="!selectedId && !isCreating">
         <div class="editor-empty">
           <BookOutlined class="editor-empty-icon" />
-          <p>选择一条笔记，或点击「新建」并选择编辑格式</p>
+          <p>在左侧目录选择文档，或新建文件夹 / 文档</p>
           <div class="empty-create-actions">
             <a-button type="primary" @click="openCreateNoteWith('html')">富文本新建</a-button>
             <a-button @click="openCreateNoteWith('markdown')">Markdown 新建</a-button>
+            <a-button @click="openCreateCategory()">新建文件夹</a-button>
           </div>
         </div>
       </template>
@@ -220,47 +442,104 @@
               </a-popconfirm>
             </template>
             <template v-else>
+              <a-button
+                v-if="selectedId && !isCreating"
+                @click="shareOpen = true"
+              >
+                分享
+              </a-button>
               <a-button @click="confirmConvertFormat">
                 转为{{ editFormat === 'html' ? 'Markdown' : '富文本' }}
               </a-button>
               <a-button type="primary" :loading="saving" @click="saveNote">保存</a-button>
-              <a-popconfirm
+              <a-button
                 v-if="selectedId"
-                title="移入回收站？"
-                ok-text="删除"
-                cancel-text="取消"
-                @confirm="deleteCurrent"
+                danger
+                @click="confirmDeleteNote({ id: selectedId, name: editTitle || '未命名笔记' })"
               >
-                <a-button danger>删除</a-button>
-              </a-popconfirm>
+                删除
+              </a-button>
             </template>
           </div>
         </div>
         <div class="editor-meta-row">
-          <a-select
-            v-model:value="editCategoryId"
-            allow-clear
-            placeholder="分类"
-            class="meta-select"
-            :disabled="editDeleted"
-            :options="categoryOptions"
-            @change="autoSave"
-          />
-          <a-select
-            v-model:value="editTagIds"
-            mode="multiple"
-            allow-clear
-            placeholder="标签"
-            class="meta-select tags-select"
-            :disabled="editDeleted"
-            :options="tagOptions"
-            @change="autoSave"
-          />
+          <div class="doc-location" :title="folderPathText">
+            <FolderOutlined class="loc-icon" />
+            <span class="loc-text">{{ folderPathText }}</span>
+            <span class="loc-hint muted">目录树中拖动可移动</span>
+          </div>
+          <div class="doc-tags" :class="{ disabled: editDeleted }">
+            <button
+              v-for="t in editTagChips"
+              :key="t.id"
+              type="button"
+              class="doc-tag-chip"
+              :disabled="editDeleted"
+              :title="'移除 #' + t.name"
+              @click="removeDocTag(t.id)"
+            >
+              <span>#{{ t.name }}</span>
+              <span v-if="!editDeleted" class="chip-x">×</span>
+            </button>
+            <a-popover
+              v-model:open="tagPickerOpen"
+              trigger="click"
+              placement="bottomLeft"
+              :overlay-style="{ width: '260px' }"
+              destroy-tooltip-on-hide
+            >
+              <template #content>
+                <div class="tag-picker">
+                  <a-input
+                    v-model:value="tagPickerQuery"
+                    size="small"
+                    allow-clear
+                    placeholder="搜索或输入新建标签"
+                    @press-enter="createAndApplyTag"
+                  />
+                  <div class="tag-picker-list">
+                    <button
+                      v-for="tag in filteredPickerTags"
+                      :key="tag.id"
+                      type="button"
+                      class="tag-picker-item"
+                      :class="{ on: editTagIds.includes(tag.id) }"
+                      @click="toggleDocTag(tag.id)"
+                    >
+                      <span>#{{ tag.name }}</span>
+                      <span v-if="editTagIds.includes(tag.id)" class="check">✓</span>
+                    </button>
+                    <div v-if="!filteredPickerTags.length" class="tag-picker-empty muted">
+                      {{ tagPickerQuery.trim() ? '回车创建新标签' : '暂无标签' }}
+                    </div>
+                  </div>
+                  <a-button
+                    v-if="canCreatePickerTag"
+                    type="link"
+                    size="small"
+                    block
+                    class="tag-picker-create"
+                    @click="createAndApplyTag"
+                  >
+                    创建并添加 #{{ tagPickerQuery.trim() }}
+                  </a-button>
+                </div>
+              </template>
+              <button
+                type="button"
+                class="add-tag-btn"
+                :disabled="editDeleted"
+              >
+                + 标签
+              </button>
+            </a-popover>
+          </div>
           <a-radio-group
             v-if="editFormat === 'markdown'"
             v-model:value="viewMode"
             size="small"
             button-style="solid"
+            class="view-mode-group"
           >
             <a-radio-button value="edit">编辑</a-radio-button>
             <a-radio-button value="split">分栏</a-radio-button>
@@ -340,7 +619,7 @@
                   插入图片
                 </a-button>
                 <span class="md-toolbar-tip muted">
-                  支持按钮上传 / 粘贴 / 拖入图片，语法：![说明](/api/v1/kb/files/…/content)
+                  支持上传 / 粘贴 / 拖入；在预览区点击图片可缩放
                 </span>
               </div>
               <a-textarea
@@ -358,8 +637,22 @@
             <div
               v-if="viewMode !== 'edit'"
               class="md-preview doc-preview"
+              @click="onMarkdownPreviewClick"
               v-html="previewHtml"
             />
+            <div
+              v-if="mdImgMenu.visible"
+              class="md-img-menu"
+              :style="{ left: mdImgMenu.x + 'px', top: mdImgMenu.y + 'px' }"
+              @mousedown.prevent
+            >
+              <span class="md-img-menu-label">图片宽度</span>
+              <button type="button" @click="applyMdImageWidth(30)">30%</button>
+              <button type="button" @click="applyMdImageWidth(50)">50%</button>
+              <button type="button" @click="applyMdImageWidth(75)">75%</button>
+              <button type="button" @click="applyMdImageWidth(100)">100%</button>
+              <button type="button" class="ghost" @click="closeMdImgMenu">关闭</button>
+            </div>
           </template>
         </div>
         <!-- 附件面板略延迟，不与正文首屏抢主线程 -->
@@ -377,22 +670,88 @@
       </template>
     </section>
 
-    <!-- 新建分类 -->
+    <!-- 删除文件夹策略（横向卡片，不用 radio 竖排） -->
+    <a-modal
+      v-model:open="deleteFolderOpen"
+      :title="deleteFolderTarget ? `删除文件夹「${deleteFolderTarget.name}」` : '删除文件夹'"
+      ok-text="确认删除"
+      ok-type="danger"
+      cancel-text="取消"
+      :width="680"
+      wrap-class-name="kb-delete-folder-modal"
+      :confirm-loading="deleteFolderLoading"
+      @ok="submitDeleteFolder"
+    >
+      <p class="delete-mode-tip muted">请选择处理方式（横向选择一项）：</p>
+      <div class="delete-mode-row" role="radiogroup" aria-label="删除策略">
+        <button
+          v-for="opt in deleteFolderModeOptions"
+          :key="opt.value"
+          type="button"
+          class="delete-mode-card"
+          :class="{ active: deleteFolderMode === opt.value }"
+          role="radio"
+          :aria-checked="deleteFolderMode === opt.value"
+          @click="deleteFolderMode = opt.value"
+        >
+          <span class="dm-title">{{ opt.title }}</span>
+          <span class="dm-desc muted">{{ opt.desc }}</span>
+        </button>
+      </div>
+    </a-modal>
+
+    <!-- 移动到文件夹 -->
+    <a-modal
+      v-model:open="moveModalOpen"
+      :title="moveModalTitle"
+      ok-text="移动到此处"
+      cancel-text="取消"
+      :confirm-loading="moveModalLoading"
+      @ok="submitMoveModal"
+    >
+      <p class="move-tip muted">选择目标文件夹（或不选=根目录 / 未归档）</p>
+      <div class="move-folder-list">
+        <button
+          type="button"
+          class="move-folder-item"
+          :class="{ active: moveTargetId === null }"
+          @click="moveTargetId = null"
+        >
+          <InboxOutlined />
+          根目录 / 未归档
+        </button>
+        <button
+          v-for="f in flatCategories"
+          :key="f.id"
+          type="button"
+          class="move-folder-item"
+          :class="{ active: moveTargetId === f.id, disabled: isInvalidMoveTarget(f.id) }"
+          :style="{ paddingLeft: `${12 + f.depth * 14}px` }"
+          :disabled="isInvalidMoveTarget(f.id)"
+          @click="moveTargetId = f.id"
+        >
+          <FolderOutlined />
+          {{ f.name }}
+        </button>
+      </div>
+    </a-modal>
+
+    <!-- 新建文件夹 -->
     <a-modal
       v-model:open="catModalOpen"
-      :title="catModalParentId ? '添加子分类' : '新建分类'"
+      :title="catModalParentId ? '新建子文件夹' : '新建文件夹'"
       ok-text="创建"
       cancel-text="取消"
       :confirm-loading="catModalLoading"
       @ok="submitCategory"
     >
-      <a-input v-model:value="catModalName" placeholder="分类名称" allow-clear @press-enter="submitCategory" />
+      <a-input v-model:value="catModalName" placeholder="文件夹名称" allow-clear @press-enter="submitCategory" />
     </a-modal>
 
-    <!-- 重命名分类 -->
+    <!-- 重命名文件夹 -->
     <a-modal
       v-model:open="renameModalOpen"
-      title="重命名分类"
+      title="重命名文件夹"
       ok-text="保存"
       cancel-text="取消"
       :confirm-loading="renameModalLoading"
@@ -412,6 +771,8 @@
     >
       <a-input v-model:value="tagModalName" placeholder="标签名称" allow-clear @press-enter="submitTag" />
     </a-modal>
+
+    <ShareModal v-model:open="shareOpen" :note-id="selectedId" />
 
     <!-- 新建：先选格式 -->
     <a-modal
@@ -438,11 +799,22 @@
 </template>
 
 <script setup lang="ts">
-import { computed, defineAsyncComponent, onMounted, ref, watch } from 'vue'
+import {
+  computed,
+  defineAsyncComponent,
+  nextTick,
+  onBeforeUnmount,
+  onMounted,
+  ref,
+  watch
+} from 'vue'
 import { message, Modal } from 'ant-design-vue'
 import {
   BookOutlined,
+  CaretDownOutlined,
+  CaretRightOutlined,
   DeleteOutlined,
+  FileTextOutlined,
   FolderOpenOutlined,
   FolderOutlined,
   InboxOutlined,
@@ -452,6 +824,7 @@ import {
 } from '@ant-design/icons-vue'
 import dayjs from 'dayjs'
 import EmptyState from '@/components/EmptyState.vue'
+import ShareModal from './ShareModal.vue'
 import {
   kbApi,
   injectKbMediaTokens,
@@ -460,6 +833,7 @@ import {
   stripKbMediaTokensAll,
   type KbCategory,
   type KbContentFormat,
+  type KbExplorerNode,
   type KbNoteItem,
   type KbTag
 } from '@/api/kb.api'
@@ -469,9 +843,22 @@ import {
   ensureHtmlHasTitle,
   ensureMarkdownHasTitle,
   extractTitle,
+  isBlankDraftContent,
   joinMarkdownDoc,
   splitMarkdownDoc
 } from './kbDocTitle'
+import {
+  appendMarkdownImage,
+  imageSrcKey,
+  setMarkdownImageWidth
+} from './kbMdImage'
+import {
+  TREE_ROW_HEIGHT,
+  applyDragGhost,
+  calcVirtualRange,
+  cleanupDragGhost,
+  scrollIndexIntoView
+} from './kbTreeVirtual'
 
 /** 异步加载，避免 turndown/wangeditor/docx 阻塞首屏路由 */
 const RichEditor = defineAsyncComponent(() => import('./RichEditor.vue'))
@@ -482,9 +869,23 @@ let mdRender: ((src: string) => string) | null = null
 async function ensureMd() {
   if (mdRender) return mdRender
   const mod = await import('markdown-it')
+  const multimd = await import('markdown-it-multimd-table')
   const MarkdownIt = mod.default
-  const md = new MarkdownIt({ html: false, linkify: true, breaks: true })
-  mdRender = (src: string) => md.render(src || '')
+  const tablePlugin = (multimd as any).default || multimd
+  // html:true — 允许 <img style="width:.."> 做缩放（笔记为本人内容）
+  const md = new MarkdownIt({ html: true, linkify: true, breaks: true }).use(tablePlugin, {
+    multiline: true,
+    rowspan: true,
+    headerless: true
+  })
+  mdRender = (src: string) => {
+    const raw = src || ''
+    // 预览时给图片补 token，并加上可点提示 class
+    let html = md.render(raw)
+    html = injectKbMediaTokens(html)
+    html = html.replace(/<img\b/gi, '<img class="kb-md-img" title="点击调整大小"')
+    return html
+  }
   return mdRender
 }
 
@@ -504,7 +905,12 @@ function htmlToMarkdownLite(html: string): string {
   s = s.replace(/<em[^>]*>([\s\S]*?)<\/em>/gi, '*$1*')
   s = s.replace(/<code[^>]*>([\s\S]*?)<\/code>/gi, '`$1`')
   s = s.replace(/<a[^>]*href="([^"]*)"[^>]*>([\s\S]*?)<\/a>/gi, '[$2]($1)')
-  s = s.replace(/<img[^>]*src="([^"]*)"[^>]*\/?>/gi, '![]($1)')
+  // 暂存可缩放 HTML 图片，避免被剥标签时丢掉 width
+  const imgs: string[] = []
+  s = s.replace(/<img\b[^>]*\/?\s*>/gi, (full) => {
+    imgs.push(full)
+    return `\n\n@@KBIMG${imgs.length - 1}@@\n\n`
+  })
   s = s.replace(/<[^>]+>/g, '')
   s = s
     .replace(/&nbsp;/g, ' ')
@@ -512,6 +918,7 @@ function htmlToMarkdownLite(html: string): string {
     .replace(/&gt;/g, '>')
     .replace(/&amp;/g, '&')
     .replace(/&quot;/g, '"')
+  s = s.replace(/@@KBIMG(\d+)@@/g, (_, i) => imgs[Number(i)] || '')
   return s.replace(/\n{3,}/g, '\n\n').trim()
 }
 
@@ -520,15 +927,44 @@ const tags = ref<KbTag[]>([])
 const notes = ref<KbNoteItem[]>([])
 const total = ref(0)
 const page = ref(0)
-const pageSize = 20
+const pageSize = 50
 const listLoading = ref(false)
+const treeLoading = ref(false)
 const keyword = ref('')
+/** 搜索模式：侧栏显示搜索结果而非目录树 */
+const searchMode = ref(false)
 const filterCategoryId = ref<string | null>(null)
 const filterTagId = ref<string | null>(null)
+/** 当前选中的文件夹（夹内概览 / 新建默认落点） */
+const activeFolderId = ref<string | null>(null)
+const treeRoots = ref<KbExplorerNode[]>([])
+const treeMeta = ref({ folderCount: 0, noteCount: 0 })
+const expandedIds = ref<Set<string>>(new Set())
+/** 拖拽中的节点 key/type/id */
+const dragPayload = ref<{
+  key: string
+  type: 'folder' | 'note'
+  id: string
+  parentId?: string | null
+  name: string
+} | null>(null)
+const dropTargetKey = ref<string | null>(null)
+/** 移动对话框 */
+const moveModalOpen = ref(false)
+const moveModalLoading = ref(false)
+const moveModalType = ref<'folder' | 'note'>('note')
+const moveModalItemId = ref<string | null>(null)
+const moveModalItemName = ref('')
+const moveTargetId = ref<string | null>(null)
 /** 左侧回收站模式：只看软删笔记 */
 const trashMode = ref(false)
 const trashCount = ref(0)
 const emptying = ref(false)
+
+/** 是否为目录树主视图（非回收站/搜索/标签列表） */
+const isExplorerTreeMode = computed(
+  () => !trashMode.value && !searchMode.value && !filterTagId.value
+)
 
 const selectedId = ref<string | null>(null)
 const isCreating = ref(false)
@@ -537,6 +973,12 @@ const editContent = ref('')
 /** Markdown 编辑区：标题与正文视觉分离（仍合并进 editContent 存库） */
 const mdTitleLine = ref('未命名笔记')
 const mdBodyText = ref('')
+const mdImgMenu = ref<{ visible: boolean; x: number; y: number; src: string }>({
+  visible: false,
+  x: 0,
+  y: 0,
+  src: ''
+})
 const editFormat = ref<KbContentFormat>('html')
 const editCategoryId = ref<string | undefined>(undefined)
 const editTagIds = ref<string[]>([])
@@ -565,6 +1007,7 @@ const tagModalLoading = ref(false)
 
 /** 新建时先选格式 */
 const createFormatOpen = ref(false)
+const shareOpen = ref(false)
 /** 未关联笔记的附件 id（拖入时 note 尚未保存） */
 const pendingFileIds = ref<string[]>([])
 const filePanelRef = ref<{ reload: () => Promise<void> } | null>(null)
@@ -670,6 +1113,20 @@ interface FlatCat {
   depth: number
 }
 
+interface FlatTreeRow {
+  key: string
+  type: 'folder' | 'note'
+  id: string
+  name: string
+  depth: number
+  pinned?: boolean
+  contentFormat?: string
+  updatedAt?: string
+  parentId?: string | null
+  /** 原始子节点（仅 folder 且用于夹内概览） */
+  children?: KbExplorerNode[]
+}
+
 const flatCategories = computed(() => {
   const out: FlatCat[] = []
   const walk = (nodes: KbCategory[], depth: number) => {
@@ -682,16 +1139,209 @@ const flatCategories = computed(() => {
   return out
 })
 
-const categoryOptions = computed(() =>
-  flatCategories.value.map((c) => ({
-    value: c.id,
-    label: `${'— '.repeat(c.depth)}${c.name}`
-  }))
+/** 当前文档所在文件夹路径（只读展示，移动请拖目录树） */
+const folderPathText = computed(() => {
+  const id = editCategoryId.value
+  if (!id) return '未归档'
+  const map = new Map(flatCategories.value.map((c) => [c.id, c]))
+  // 需要 parent 链：从 categories 树建 parentMap
+  const parentMap = new Map<string, string | null>()
+  const nameMap = new Map<string, string>()
+  const walk = (nodes: KbCategory[], parent: string | null) => {
+    for (const n of nodes) {
+      parentMap.set(n.id, parent)
+      nameMap.set(n.id, n.name)
+      if (n.children?.length) walk(n.children, n.id)
+    }
+  }
+  walk(categories.value, null)
+  const parts: string[] = []
+  let cur: string | null = id
+  let guard = 0
+  while (cur && guard++ < 32) {
+    parts.unshift(nameMap.get(cur) || map.get(cur)?.name || '…')
+    cur = parentMap.get(cur) ?? null
+  }
+  return parts.length ? parts.join(' / ') : '未归档'
+})
+
+const editTagChips = computed(() => {
+  const set = new Set(editTagIds.value)
+  return tags.value.filter((t) => set.has(t.id))
+})
+
+const tagPickerOpen = ref(false)
+const tagPickerQuery = ref('')
+
+const filteredPickerTags = computed(() => {
+  const q = tagPickerQuery.value.trim().toLowerCase()
+  if (!q) return tags.value
+  return tags.value.filter((t) => t.name.toLowerCase().includes(q))
+})
+
+const canCreatePickerTag = computed(() => {
+  const name = tagPickerQuery.value.trim()
+  if (!name) return false
+  return !tags.value.some((t) => t.name.toLowerCase() === name.toLowerCase())
+})
+
+/** 展开后的目录树行（文件夹 + 文档） */
+const flatTreeRows = computed(() => {
+  const out: FlatTreeRow[] = []
+  const walk = (nodes: KbExplorerNode[], depth: number) => {
+    for (const n of nodes) {
+      const type = n.type === 'folder' ? 'folder' : 'note'
+      out.push({
+        key: `${type}-${n.id}`,
+        type,
+        id: n.id,
+        name: n.name || (type === 'folder' ? '未命名文件夹' : '未命名笔记'),
+        depth,
+        pinned: !!n.pinned,
+        contentFormat: n.contentFormat,
+        updatedAt: n.updatedAt,
+        parentId: n.parentId,
+        children: n.children
+      })
+      if (type === 'folder' && expandedIds.value.has(n.id) && n.children?.length) {
+        walk(n.children, depth + 1)
+      }
+    }
+  }
+  walk(treeRoots.value, 0)
+  return out
+})
+
+/** —— 虚拟滚动 —— */
+const treeViewportRef = ref<HTMLElement | null>(null)
+const treeScrollTop = ref(0)
+const treeViewportH = ref(360)
+let treeResizeObs: ResizeObserver | null = null
+let dragGhostCleanup: (() => void) | null = null
+
+const treeVirtual = computed(() =>
+  calcVirtualRange(treeScrollTop.value, treeViewportH.value, flatTreeRows.value.length)
 )
 
-const tagOptions = computed(() =>
-  tags.value.map((t) => ({ value: t.id, label: t.name }))
+const virtualTreeRows = computed(() => {
+  const { start, end } = treeVirtual.value
+  return flatTreeRows.value.slice(start, end)
+})
+
+function onTreeScroll(e: Event) {
+  const el = e.target as HTMLElement
+  treeScrollTop.value = el.scrollTop
+}
+
+function measureTreeViewport() {
+  const el = treeViewportRef.value
+  if (!el) return
+  treeViewportH.value = el.clientHeight || 360
+}
+
+function scrollTreeToNote(noteId: string) {
+  const idx = flatTreeRows.value.findIndex((r) => r.type === 'note' && r.id === noteId)
+  if (idx < 0) return
+  nextTick(() => {
+    scrollIndexIntoView(treeViewportRef.value, idx)
+    // 同步 scrollTop 状态，避免窗口偏移不同步
+    if (treeViewportRef.value) {
+      treeScrollTop.value = treeViewportRef.value.scrollTop
+    }
+  })
+}
+
+function bindTreeViewport() {
+  unbindTreeViewport()
+  nextTick(() => {
+    measureTreeViewport()
+    const el = treeViewportRef.value
+    if (!el || typeof ResizeObserver === 'undefined') return
+    treeResizeObs = new ResizeObserver(() => measureTreeViewport())
+    treeResizeObs.observe(el)
+  })
+}
+
+function unbindTreeViewport() {
+  treeResizeObs?.disconnect()
+  treeResizeObs = null
+}
+
+// 展开/树数据变化后重新测量；节点变少时校正 scrollTop
+watch(
+  () => flatTreeRows.value.length,
+  () => {
+    nextTick(() => {
+      measureTreeViewport()
+      const el = treeViewportRef.value
+      if (!el) return
+      const maxScroll = Math.max(0, treeVirtual.value.totalHeight - el.clientHeight)
+      if (el.scrollTop > maxScroll) {
+        el.scrollTop = maxScroll
+        treeScrollTop.value = maxScroll
+      }
+    })
+  }
 )
+
+const activeFolderName = computed(() => {
+  if (!activeFolderId.value) return ''
+  const row = flatTreeRows.value.find(
+    (r) => r.type === 'folder' && r.id === activeFolderId.value
+  )
+  if (row) return row.name
+  const cat = flatCategories.value.find((c) => c.id === activeFolderId.value)
+  return cat?.name || ''
+})
+
+function findExplorerNode(
+  nodes: KbExplorerNode[],
+  id: string,
+  type: 'folder' | 'note'
+): KbExplorerNode | null {
+  for (const n of nodes) {
+    if (n.type === type && n.id === id) return n
+    if (n.children?.length) {
+      const hit = findExplorerNode(n.children, id, type)
+      if (hit) return hit
+    }
+  }
+  return null
+}
+
+const folderChildFolders = computed((): FlatTreeRow[] => {
+  if (!activeFolderId.value) return []
+  const node = findExplorerNode(treeRoots.value, activeFolderId.value, 'folder')
+  if (!node?.children) return []
+  return node.children
+    .filter((c) => c.type === 'folder')
+    .map((c) => ({
+      key: `folder-${c.id}`,
+      type: 'folder' as const,
+      id: c.id,
+      name: c.name,
+      depth: 0,
+      children: c.children
+    }))
+})
+
+const folderChildNotes = computed((): FlatTreeRow[] => {
+  if (!activeFolderId.value) return []
+  const node = findExplorerNode(treeRoots.value, activeFolderId.value, 'folder')
+  if (!node?.children) return []
+  return node.children
+    .filter((c) => c.type === 'note')
+    .map((c) => ({
+      key: `note-${c.id}`,
+      type: 'note' as const,
+      id: c.id,
+      name: c.name,
+      depth: 0,
+      pinned: !!c.pinned,
+      contentFormat: c.contentFormat,
+      updatedAt: c.updatedAt
+    }))
+})
 
 const previewHtml = ref('')
 const mdBodyAreaRef = ref<any>(null)
@@ -748,10 +1398,20 @@ async function uploadImagesForMarkdown(files: File[]) {
       const res = await kbApi.uploadFile(file, selectedId.value || undefined)
       onPendingFile(res.data.id)
       const alt = (file.name || 'image').replace(/\.[^.]+$/, '')
-      // 存库用干净路径；预览时 inject token
-      insertMarkdownAtCursor(mdImageSyntax(res.data.contentPath, alt))
+      const path = res.data.contentPath.startsWith('/')
+        ? res.data.contentPath
+        : `/${res.data.contentPath}`
+      // 使用可缩放 HTML img（预览可点宽度）；存库干净路径
+      insertMarkdownAtCursor(
+        appendMarkdownImage('', path, alt, 100).trim()
+      )
     }
-    message.success(images.length > 1 ? `已插入 ${images.length} 张图片` : '已插入图片')
+    if (viewMode.value === 'edit') viewMode.value = 'split'
+    message.success(
+      images.length > 1
+        ? `已插入 ${images.length} 张图片，预览中点击可缩放`
+        : '已插入图片，预览中点击可缩放'
+    )
   } catch (e: any) {
     message.error(e?.message || '图片上传失败')
   } finally {
@@ -901,12 +1561,58 @@ function onMarkdownBlur() {
   autoSave()
 }
 
+function closeMdImgMenu() {
+  mdImgMenu.value = { visible: false, x: 0, y: 0, src: '' }
+}
+
+function onMarkdownPreviewClick(e: MouseEvent) {
+  if (editDeleted.value) return
+  const t = e.target as HTMLElement | null
+  if (!t || t.tagName !== 'IMG') {
+    closeMdImgMenu()
+    return
+  }
+  const img = t as HTMLImageElement
+  const src = imageSrcKey(img.currentSrc || img.src || '')
+  if (!src) return
+  e.preventDefault()
+  e.stopPropagation()
+  // fixed 定位，避免嵌套滚动容器偏移
+  mdImgMenu.value = {
+    visible: true,
+    x: Math.min(e.clientX + 8, window.innerWidth - 280),
+    y: Math.min(e.clientY + 8, window.innerHeight - 56),
+    src
+  }
+}
+
+function applyMdImageWidth(pct: number) {
+  const src = mdImgMenu.value.src
+  if (!src) return
+  // 支持 ![alt](url) 与 <img> 两种写法
+  const nextBody = setMarkdownImageWidth(mdBodyText.value || '', src, pct)
+  mdBodyText.value = nextBody
+  syncMarkdownFromParts()
+  dirty.value = true
+  saveHint.value = '未保存'
+  closeMdImgMenu()
+  void renderMarkdownPreview(editContent.value)
+  message.success(`已设为宽度 ${pct}%`)
+}
+
 function openCreateNote() {
   if (trashMode.value) {
     exitTrashMode()
-    void reloadNotes()
   }
+  searchMode.value = false
   createFormatOpen.value = true
+}
+
+function openCreateNoteInFolder(folderId: string) {
+  activeFolderId.value = folderId
+  filterCategoryId.value = folderId
+  expandedIds.value = new Set([...expandedIds.value, folderId])
+  openCreateNote()
 }
 
 function openCreateNoteWith(format: KbContentFormat) {
@@ -915,6 +1621,272 @@ function openCreateNoteWith(format: KbContentFormat) {
     exitTrashMode()
   }
   void createNote(format)
+}
+
+function toggleExpand(folderId: string) {
+  const next = new Set(expandedIds.value)
+  if (next.has(folderId)) next.delete(folderId)
+  else next.add(folderId)
+  expandedIds.value = next
+}
+
+function onTreeRowClick(row: FlatTreeRow) {
+  if (row.type === 'folder') {
+    // 离开编辑时丢弃未保存的空草稿，避免后续误创建空文档
+    discardBlankDraftIfNeeded()
+    activeFolderId.value = row.id
+    filterCategoryId.value = row.id
+    // 单击文件夹：展开并显示夹内概览（不打开文档）
+    if (!expandedIds.value.has(row.id)) {
+      expandedIds.value = new Set([...expandedIds.value, row.id])
+    }
+    selectedId.value = null
+    isCreating.value = false
+    return
+  }
+  activeFolderId.value = row.parentId || null
+  void selectNote(row.id)
+}
+
+/**
+ * 点文件夹等离开编辑时：丢掉未保存的新建草稿（永不因树操作自动 create）。
+ */
+function discardBlankDraftIfNeeded() {
+  const orphanDirty = !selectedId.value && dirty.value
+  if (!isCreating.value && !orphanDirty) return
+  if (
+    dirty.value &&
+    !isBlankDraftContent(editContent.value, editFormat.value)
+  ) {
+    message.info('未保存的新建草稿已取消')
+  }
+  resetEditorToIdle()
+}
+
+function resetEditorToIdle() {
+  isCreating.value = false
+  selectedId.value = null
+  dirty.value = false
+  saveHint.value = ''
+  editContent.value = ''
+  editTitle.value = ''
+  mdTitleLine.value = ''
+  mdBodyText.value = ''
+  previewHtml.value = ''
+  fastShellHtml.value = ''
+  richEditorActive.value = false
+  htmlShellVisible.value = false
+  filePanelActive.value = false
+  pendingFileIds.value = []
+}
+
+const moveModalTitle = computed(
+  () => `移动「${moveModalItemName.value || '项目'}」`
+)
+
+function isInvalidMoveTarget(folderId: string): boolean {
+  if (moveModalType.value !== 'folder' || !moveModalItemId.value) return false
+  // 不能移到自身
+  if (folderId === moveModalItemId.value) return true
+  // 不能移到自己的子孙（简单：展开路径上 id 出现在 flatCategories 后代）
+  // 用 parent 链反查：目标的祖先含自身则非法
+  const parentMap = new Map<string, string | null | undefined>()
+  const walk = (nodes: KbExplorerNode[], parent: string | null) => {
+    for (const n of nodes) {
+      if (n.type === 'folder') {
+        parentMap.set(n.id, parent)
+        if (n.children?.length) walk(n.children, n.id)
+      }
+    }
+  }
+  walk(treeRoots.value, null)
+  let cur: string | null | undefined = folderId
+  let guard = 0
+  while (cur && guard++ < 32) {
+    if (cur === moveModalItemId.value) return true
+    cur = parentMap.get(cur) ?? null
+  }
+  return false
+}
+
+function openMoveDialog(type: 'folder' | 'note', row: { id: string; name: string }) {
+  moveModalType.value = type
+  moveModalItemId.value = row.id
+  moveModalItemName.value = row.name
+  moveTargetId.value = null
+  moveModalOpen.value = true
+}
+
+async function submitMoveModal() {
+  if (!moveModalItemId.value) return
+  moveModalLoading.value = true
+  try {
+    await kbApi.treeMove({
+      type: moveModalType.value,
+      id: moveModalItemId.value,
+      ...(moveTargetId.value
+        ? { targetFolderId: moveTargetId.value }
+        : { clearToRoot: true })
+    })
+    message.success('已移动')
+    moveModalOpen.value = false
+    if (moveTargetId.value) {
+      expandedIds.value = new Set([...expandedIds.value, moveTargetId.value])
+    }
+    await Promise.all([loadCategories(), loadTree({ keepExpanded: true })])
+  } catch (e: any) {
+    message.error(e?.message || '移动失败')
+  } finally {
+    moveModalLoading.value = false
+  }
+}
+
+async function moveNoteToRoot(noteId: string) {
+  try {
+    await kbApi.treeMove({ type: 'note', id: noteId, clearToRoot: true })
+    message.success('已移到未归档')
+    await loadTree({ keepExpanded: true })
+  } catch (e: any) {
+    message.error(e?.message || '移动失败')
+  }
+}
+
+function onTreeDragStart(e: DragEvent, row: FlatTreeRow) {
+  dragPayload.value = {
+    key: row.key,
+    type: row.type,
+    id: row.id,
+    parentId: row.parentId,
+    name: row.name
+  }
+  e.dataTransfer?.setData('text/plain', row.key)
+  if (e.dataTransfer) e.dataTransfer.effectAllowed = 'move'
+  // 自定义幽灵图（卡片样式），替代浏览器默认半透明截图
+  dragGhostCleanup?.()
+  dragGhostCleanup = applyDragGhost(e, {
+    name: row.name,
+    kind: row.type,
+    pinned: row.pinned
+  })
+}
+
+function onTreeDragEnd() {
+  dragPayload.value = null
+  dropTargetKey.value = null
+  dragGhostCleanup?.()
+  dragGhostCleanup = null
+  cleanupDragGhost()
+}
+
+function onTreeDragOver(_e: DragEvent, row: FlatTreeRow) {
+  if (!dragPayload.value) return
+  if (row.type === 'folder') {
+    // 文件夹不能拖到自己或子孙
+    if (dragPayload.value.type === 'folder' && dragPayload.value.id === row.id) {
+      dropTargetKey.value = null
+      return
+    }
+    dropTargetKey.value = row.key
+  } else if (row.type === 'note' && dragPayload.value.type === row.type) {
+    // 同类型文档：作为同级重排指示（高亮该行）
+    dropTargetKey.value = row.key
+  } else {
+    dropTargetKey.value = null
+  }
+}
+
+function onTreeDragLeave(row: FlatTreeRow) {
+  if (dropTargetKey.value === row.key) dropTargetKey.value = null
+}
+
+function onDragOverRoot() {
+  if (dragPayload.value) dropTargetKey.value = 'root'
+}
+
+function onDragLeaveRoot() {
+  if (dropTargetKey.value === 'root') dropTargetKey.value = null
+}
+
+async function onDropRoot() {
+  const src = dragPayload.value
+  dropTargetKey.value = null
+  dragPayload.value = null
+  if (!src) return
+  try {
+    await kbApi.treeMove({ type: src.type, id: src.id, clearToRoot: true })
+    message.success('已移到根目录')
+    await Promise.all([loadCategories(), loadTree({ keepExpanded: true })])
+  } catch (e: any) {
+    message.error(e?.message || '移动失败')
+  }
+}
+
+async function onTreeDrop(_e: DragEvent, row: FlatTreeRow) {
+  const src = dragPayload.value
+  dropTargetKey.value = null
+  dragPayload.value = null
+  if (!src) return
+  if (src.key === row.key) return
+
+  try {
+    if (row.type === 'folder') {
+      // 放入目标文件夹
+      if (src.type === 'folder' && src.id === row.id) return
+      await kbApi.treeMove({
+        type: src.type,
+        id: src.id,
+        targetFolderId: row.id
+      })
+      expandedIds.value = new Set([...expandedIds.value, row.id])
+      message.success('已移动')
+      await Promise.all([loadCategories(), loadTree({ keepExpanded: true })])
+      return
+    }
+
+    // 拖到文档上：同类型 → 重排（把 src 插到 row 之前）
+    if (src.type === row.type) {
+      // 若拖到不同父级的文档上，先移动到该父级再重排
+      const srcParent = src.parentId ?? null
+      const dstParent = row.parentId ?? null
+      if (srcParent !== dstParent) {
+        if (dstParent) {
+          await kbApi.treeMove({ type: src.type, id: src.id, targetFolderId: dstParent })
+        } else {
+          await kbApi.treeMove({ type: src.type, id: src.id, clearToRoot: true })
+        }
+      }
+      const siblings = collectSiblingIds(src.type, dstParent).filter((id) => id !== src.id)
+      const idx = siblings.indexOf(row.id)
+      const ordered =
+        idx < 0 ? [...siblings, src.id] : [...siblings.slice(0, idx), src.id, ...siblings.slice(idx)]
+      await kbApi.treeReorder({
+        type: src.type,
+        orderedIds: ordered,
+        ...(dstParent ? { parentFolderId: dstParent } : { clearParent: true })
+      })
+      message.success('已调整顺序')
+      await loadTree({ keepExpanded: true })
+    }
+  } catch (e: any) {
+    message.error(e?.message || '操作失败')
+  }
+}
+
+/** 收集某父级下同类型节点 id（当前树序） */
+function collectSiblingIds(type: 'folder' | 'note', parentId: string | null): string[] {
+  const ids: string[] = []
+  if (parentId == null) {
+    for (const n of treeRoots.value) {
+      if (n.type === type) ids.push(n.id)
+    }
+    return ids
+  }
+  const folder = findExplorerNode(treeRoots.value, parentId, 'folder')
+  if (!folder?.children) return ids
+  for (const c of folder.children) {
+    if (c.type === type) ids.push(c.id)
+  }
+  return ids
 }
 
 /** Markdown ↔ HTML 内容转换（显式「转为…」时使用） */
@@ -983,14 +1955,69 @@ function confirmConvertFormat() {
   })
 }
 
+function parseNoteTime(t?: string) {
+  if (!t) return null
+  const d = dayjs(t)
+  return d.isValid() ? d : null
+}
+
 function formatTime(t?: string) {
-  if (!t) return ''
-  return dayjs(t).format('MM-DD HH:mm')
+  const d = parseNoteTime(t)
+  return d ? d.format('MM-DD HH:mm') : ''
+}
+
+/** 列表展示：今天只显示时刻，本年 MM-DD，跨年带年份 */
+function formatListTime(t?: string) {
+  const d = parseNoteTime(t)
+  if (!d) return ''
+  const now = dayjs()
+  if (d.isSame(now, 'day')) return `今天 ${d.format('HH:mm')}`
+  if (d.isSame(now, 'year')) return d.format('MM-DD HH:mm')
+  return d.format('YYYY-MM-DD')
+}
+
+function formatTimeFull(t?: string) {
+  const d = parseNoteTime(t)
+  return d ? `最后修改 ${d.format('YYYY-MM-DD HH:mm:ss')}` : ''
+}
+
+/** 置顶优先，再按最后修改时间降序（与后端一致，前端再排一次更稳） */
+function sortNotesForList(items: KbNoteItem[]): KbNoteItem[] {
+  return [...items].sort((a, b) => {
+    const pin = Number(!!b.pinned) - Number(!!a.pinned)
+    if (pin !== 0) return pin
+    const ta = parseNoteTime(a.updatedAt)?.valueOf() ?? 0
+    const tb = parseNoteTime(b.updatedAt)?.valueOf() ?? 0
+    if (tb !== ta) return tb - ta
+    // id 降序作稳定次序
+    if (a.id === b.id) return 0
+    return a.id < b.id ? 1 : -1
+  })
 }
 
 async function loadCategories() {
   const res = await kbApi.listCategories()
   categories.value = res.data || []
+}
+
+async function loadTree(opts?: { keepExpanded?: boolean }) {
+  treeLoading.value = true
+  try {
+    const res = await kbApi.getExplorerTree()
+    const data = res.data
+    treeRoots.value = data?.roots || []
+    treeMeta.value = {
+      folderCount: data?.folderCount ?? 0,
+      noteCount: data?.noteCount ?? 0
+    }
+    // 首次：默认展开根层文件夹
+    if (!opts?.keepExpanded && expandedIds.value.size === 0) {
+      const roots = treeRoots.value.filter((n) => n.type === 'folder').map((n) => n.id)
+      expandedIds.value = new Set(roots.slice(0, 20))
+    }
+  } finally {
+    treeLoading.value = false
+  }
 }
 
 async function loadTags() {
@@ -1007,6 +2034,7 @@ async function reloadTrashCount() {
   }
 }
 
+/** 列表查询：回收站 / 搜索 / 标签筛选 */
 async function reloadNotes() {
   listLoading.value = true
   try {
@@ -1014,15 +2042,19 @@ async function reloadNotes() {
       page: page.value,
       size: pageSize,
       categoryId:
-        !trashMode.value && filterCategoryId.value && filterCategoryId.value !== '__none__'
+        !trashMode.value &&
+        !searchMode.value &&
+        filterCategoryId.value &&
+        filterCategoryId.value !== '__none__'
           ? filterCategoryId.value
           : undefined,
-      uncategorized: !trashMode.value && filterCategoryId.value === '__none__',
+      uncategorized:
+        !trashMode.value && !searchMode.value && filterCategoryId.value === '__none__',
       tagId: !trashMode.value ? filterTagId.value || undefined : undefined,
       keyword: keyword.value || undefined,
       onlyDeleted: trashMode.value
     })
-    notes.value = res.data?.items || []
+    notes.value = sortNotesForList(res.data?.items || [])
     total.value = res.data?.total ?? 0
     if (trashMode.value) {
       trashCount.value = total.value
@@ -1032,6 +2064,62 @@ async function reloadNotes() {
   } finally {
     listLoading.value = false
   }
+}
+
+async function refreshExplorer() {
+  if (trashMode.value || searchMode.value || filterTagId.value) {
+    await reloadNotes()
+  } else {
+    await loadTree({ keepExpanded: true })
+  }
+  await reloadTrashCount()
+}
+
+function onSearch() {
+  const kw = keyword.value.trim()
+  if (!kw) {
+    // 回收站内清空关键词：重新加载回收站列表
+    if (trashMode.value) {
+      page.value = 0
+      void reloadNotes()
+      return
+    }
+    clearSearch()
+    return
+  }
+  // 回收站内搜索：保持 trashMode，只按关键词过滤已删文档
+  if (!trashMode.value) {
+    filterTagId.value = null
+    searchMode.value = true
+  }
+  page.value = 0
+  selectedId.value = null
+  isCreating.value = false
+  void reloadNotes()
+}
+
+function clearSearch() {
+  keyword.value = ''
+  searchMode.value = false
+  notes.value = []
+  total.value = 0
+  if (trashMode.value) {
+    void reloadNotes()
+  } else {
+    void loadTree({ keepExpanded: true })
+  }
+}
+
+function onResultPageChange(p: number) {
+  page.value = Math.max(0, p - 1)
+  void reloadNotes()
+}
+
+function clearTagFilter() {
+  filterTagId.value = null
+  notes.value = []
+  total.value = 0
+  void loadTree({ keepExpanded: true })
 }
 
 function exitTrashMode() {
@@ -1048,55 +2136,51 @@ function toggleTrashMode() {
   isCreating.value = false
   filterCategoryId.value = null
   filterTagId.value = null
+  searchMode.value = false
   page.value = 0
   keyword.value = ''
-  reloadNotes()
-}
-
-function selectAll() {
-  exitTrashMode()
-  filterCategoryId.value = null
-  filterTagId.value = null
-  page.value = 0
-  reloadNotes()
-}
-
-function selectUncategorized() {
-  exitTrashMode()
-  filterCategoryId.value = '__none__'
-  filterTagId.value = null
-  page.value = 0
-  reloadNotes()
-}
-
-function selectCategory(id: string) {
-  exitTrashMode()
-  filterCategoryId.value = id
-  filterTagId.value = null
-  page.value = 0
-  reloadNotes()
+  if (trashMode.value) {
+    reloadNotes()
+  } else {
+    void loadTree({ keepExpanded: true })
+  }
 }
 
 function toggleTagFilter(id: string) {
   exitTrashMode()
-  filterTagId.value = filterTagId.value === id ? null : id
+  searchMode.value = false
+  keyword.value = ''
+  if (filterTagId.value === id) {
+    clearTagFilter()
+    return
+  }
+  filterTagId.value = id
   filterCategoryId.value = null
   page.value = 0
-  reloadNotes()
-}
-
-function onPageChange(p: number) {
-  page.value = p - 1
+  selectedId.value = null
+  isCreating.value = false
   reloadNotes()
 }
 
 async function selectNote(id: string) {
-  if (dirty.value && !editDeleted.value) {
+  // 仅自动保存「已有文档」的修改；新建空草稿绝不因切换而入库
+  if (dirty.value && !editDeleted.value && selectedId.value && !isCreating.value) {
     try {
       await saveNote(true)
     } catch {
       /* keep going */
     }
+  } else if (isCreating.value || (!selectedId.value && dirty.value)) {
+    if (
+      dirty.value &&
+      !isBlankDraftContent(editContent.value, editFormat.value)
+    ) {
+      message.info('未保存的新建草稿已取消')
+    }
+    // 丢弃新建态，避免 saveNote 因 !selectedId 误创建
+    isCreating.value = false
+    dirty.value = false
+    saveHint.value = ''
   }
   const seq = ++openSeq
   clearBootTimers()
@@ -1109,18 +2193,25 @@ async function selectNote(id: string) {
   htmlShellVisible.value = true
   fastShellHtml.value = ''
 
-  // 先用列表缓存标题/摘要占位
-  const cached = notes.value.find((n) => n.id === id)
-  if (cached) {
+  // 树中滚到该文档行（虚拟列表）
+  scrollTreeToNote(id)
+
+  // 先用列表/树缓存标题占位
+  const cachedList = notes.value.find((n) => n.id === id)
+  const cachedTree = findExplorerNode(treeRoots.value, id, 'note')
+  if (cachedList || cachedTree) {
     applying.value = true
-    editTitle.value = cached.title || ''
+    editTitle.value = cachedList?.title || cachedTree?.name || ''
     editContent.value = ''
-    editFormat.value = cached.contentFormat === 'markdown' ? 'markdown' : 'html'
-    editCategoryId.value = cached.categoryId || undefined
-    editTagIds.value = (cached.tags || []).map((t) => t.id)
-    editPinned.value = !!cached.pinned
-    editDeleted.value = !!cached.deleted
-    editUpdatedAt.value = cached.updatedAt
+    editFormat.value =
+      (cachedList?.contentFormat || cachedTree?.contentFormat) === 'markdown'
+        ? 'markdown'
+        : 'html'
+    editCategoryId.value = cachedList?.categoryId || cachedTree?.parentId || undefined
+    editTagIds.value = (cachedList?.tags || []).map((t) => t.id)
+    editPinned.value = !!(cachedList?.pinned ?? cachedTree?.pinned)
+    editDeleted.value = !!cachedList?.deleted
+    editUpdatedAt.value = cachedList?.updatedAt || cachedTree?.updatedAt
     saveHint.value = '加载正文中…'
     dirty.value = false
     Promise.resolve().then(() => {
@@ -1249,9 +2340,10 @@ async function createNote(format: KbContentFormat = 'html') {
   editFormat.value = format
   viewMode.value = format === 'markdown' ? 'split' : 'edit'
   editCategoryId.value =
-    filterCategoryId.value && filterCategoryId.value !== '__none__'
+    activeFolderId.value ||
+    (filterCategoryId.value && filterCategoryId.value !== '__none__'
       ? filterCategoryId.value
-      : undefined
+      : undefined)
   editTagIds.value = filterTagId.value ? [filterTagId.value] : []
   editPinned.value = false
   editDeleted.value = false
@@ -1288,13 +2380,37 @@ async function saveNote(silent = false) {
   if (editDeleted.value) return
   // 保存前把编辑器防抖中的最新内容刷出来
   richEditorRef.value?.flushEmit?.()
+
+  // Markdown 先合并，便于判断是否空草稿
+  if (editFormat.value === 'markdown') {
+    syncMarkdownFromParts()
+  }
+
+  // 关键规则：只有明确「新建中」才 create；禁止 !selectedId 误创建
+  const creating = isCreating.value
+  const existingId = selectedId.value
+  if (!creating && !existingId) {
+    dirty.value = false
+    saveHint.value = ''
+    return
+  }
+
+  // 新建且仍是空白：不写库（树操作/切换时也不会留下空文件）
+  if (
+    creating &&
+    isBlankDraftContent(editContent.value, editFormat.value) &&
+    silent
+  ) {
+    return
+  }
+  if (creating && isBlankDraftContent(editContent.value, editFormat.value) && !silent) {
+    message.warning('请先写点内容再保存')
+    return
+  }
+
   saving.value = true
   saveHint.value = '保存中…'
   try {
-    // Markdown 先把标题区 + 正文区合并
-    if (editFormat.value === 'markdown') {
-      syncMarkdownFromParts()
-    }
     // 正文只存干净媒体路径（HTML 属性 + Markdown ![]() 均去 token）
     let contentToSave = stripKbMediaTokensAll(editContent.value || '')
     // 保证存库时正文含首行标题
@@ -1314,7 +2430,7 @@ async function saveNote(silent = false) {
       pinned: editPinned.value
     }
     let note: KbNoteItem
-    if (isCreating.value || !selectedId.value) {
+    if (creating) {
       const res = await kbApi.createNote({
         title: body.title,
         content: body.content,
@@ -1327,7 +2443,7 @@ async function saveNote(silent = false) {
       isCreating.value = false
       selectedId.value = note.id
     } else {
-      const res = await kbApi.updateNote(selectedId.value, body)
+      const res = await kbApi.updateNote(existingId!, body)
       note = res.data
     }
     if (note.id) {
@@ -1376,22 +2492,114 @@ async function saveNote(silent = false) {
       applying.value = false
     })
     if (!silent) message.success('已保存')
-    void Promise.all([reloadNotes(), loadTags(), filePanelRef.value?.reload?.() ?? Promise.resolve()])
+    // 展开文档所在文件夹
+    if (note.categoryId) {
+      expandedIds.value = new Set([...expandedIds.value, note.categoryId])
+      activeFolderId.value = note.categoryId
+    }
+    // 新建后必须刷新树；普通静默保存只改标题，避免整树重载闪动
+    // 显式保存也刷新（置顶等元数据）；后端排序已与 updatedAt 解耦，不会「点谁谁置顶」
+    if (creating || !silent) {
+      void Promise.all([
+        refreshExplorer(),
+        loadTags(),
+        filePanelRef.value?.reload?.() ?? Promise.resolve()
+      ])
+    } else {
+      patchTreeNoteTitle(note.id, note.title || '未命名笔记')
+      void (filePanelRef.value?.reload?.() ?? Promise.resolve())
+    }
   } finally {
     saving.value = false
   }
 }
 
+/** 不重排整树，只更新某文档显示名 */
+function patchTreeNoteTitle(noteId: string, title: string) {
+  const walk = (nodes: KbExplorerNode[]): boolean => {
+    for (const n of nodes) {
+      if (n.type === 'note' && n.id === noteId) {
+        n.name = title
+        return true
+      }
+      if (n.children?.length && walk(n.children)) return true
+    }
+    return false
+  }
+  // 触发响应式：浅拷贝 roots
+  const roots = treeRoots.value
+  if (walk(roots)) {
+    treeRoots.value = roots.slice()
+  }
+}
+
 function autoSave() {
   if (applying.value || editDeleted.value) return
-  if (!dirty.value && !isCreating.value) return
-  if (isCreating.value || selectedId.value) {
+  if (!dirty.value) return
+  // 仅更新已有文档；新建空草稿不在 blur 时入库
+  if (selectedId.value && !isCreating.value) {
     void saveNote(true)
   }
 }
 
-// 分类/标签/置顶变更标脏；标题由正文首行同步，不单独 watch
-watch([editCategoryId, editTagIds, editPinned], () => {
+function markMetaDirtyAndSave() {
+  if (applying.value || editDeleted.value) return
+  if (!(selectedId.value || isCreating.value)) return
+  dirty.value = true
+  saveHint.value = '未保存'
+  // 新建空白时不因打标签而 create 空文档
+  if (isCreating.value && isBlankDraftContent(editContent.value, editFormat.value)) {
+    return
+  }
+  if (selectedId.value || isCreating.value) {
+    void saveNote(true)
+  }
+}
+
+function toggleDocTag(tagId: string) {
+  if (editDeleted.value) return
+  const set = new Set(editTagIds.value)
+  if (set.has(tagId)) set.delete(tagId)
+  else set.add(tagId)
+  editTagIds.value = [...set]
+  markMetaDirtyAndSave()
+}
+
+function removeDocTag(tagId: string) {
+  if (editDeleted.value) return
+  editTagIds.value = editTagIds.value.filter((id) => id !== tagId)
+  markMetaDirtyAndSave()
+}
+
+async function createAndApplyTag() {
+  const name = tagPickerQuery.value.trim()
+  if (!name || editDeleted.value) return
+  const existing = tags.value.find((t) => t.name.toLowerCase() === name.toLowerCase())
+  if (existing) {
+    if (!editTagIds.value.includes(existing.id)) {
+      editTagIds.value = [...editTagIds.value, existing.id]
+      markMetaDirtyAndSave()
+    }
+    tagPickerQuery.value = ''
+    return
+  }
+  try {
+    const res = await kbApi.createTag(name)
+    const tag = res.data
+    await loadTags()
+    if (tag?.id && !editTagIds.value.includes(tag.id)) {
+      editTagIds.value = [...editTagIds.value, tag.id]
+      markMetaDirtyAndSave()
+    }
+    tagPickerQuery.value = ''
+    message.success(`已添加 #${name}`)
+  } catch (e: any) {
+    message.error(e?.message || '创建标签失败')
+  }
+}
+
+// 置顶变更标脏；标签由 toggle/remove 自行保存
+watch(editPinned, () => {
   if (applying.value) return
   if (selectedId.value || isCreating.value) {
     dirty.value = true
@@ -1402,32 +2610,54 @@ watch([editCategoryId, editTagIds, editPinned], () => {
 async function togglePin() {
   editPinned.value = !editPinned.value
   dirty.value = true
-  await saveNote(true)
+  // 非静默：刷新树以更新置顶排序（仍不按 updatedAt 跳动）
+  await saveNote(false)
+}
+
+/** 左侧目录：删除文档 */
+function confirmDeleteNote(row: { id: string; name: string }) {
+  Modal.confirm({
+    title: `删除「${row.name || '未命名笔记'}」？`,
+    content: '将移入回收站，可稍后恢复。',
+    okText: '移入回收站',
+    okType: 'danger',
+    cancelText: '取消',
+    centered: true,
+    async onOk() {
+      await deleteNoteById(row.id)
+    }
+  })
 }
 
 async function deleteCurrent() {
   const id = selectedId.value
+  if (!id) return
+  await deleteNoteById(id)
+}
+
+async function deleteNoteById(id: string) {
   if (!id) return
   // 阻止编辑器 blur/防抖保存在软删之后把笔记「救回」正常列表
   applying.value = true
   dirty.value = false
   try {
     await kbApi.deleteNote(id)
-    // 乐观更新：立即从当前列表移除
     notes.value = notes.value.filter((n) => n.id !== id)
     total.value = Math.max(0, total.value - (trashMode.value ? 0 : 1))
     if (!trashMode.value) {
       trashCount.value += 1
     }
-    selectedId.value = null
-    isCreating.value = false
-    editContent.value = ''
-    saveHint.value = ''
+    if (selectedId.value === id) {
+      selectedId.value = null
+      isCreating.value = false
+      editContent.value = ''
+      saveHint.value = ''
+    }
     message.success('已移入回收站')
-    await Promise.all([reloadNotes(), loadTags(), reloadTrashCount()])
+    await Promise.all([refreshExplorer(), loadTags(), reloadTrashCount()])
   } catch (e: any) {
     message.error(e?.message || '删除失败')
-    await reloadNotes()
+    await refreshExplorer()
   } finally {
     applying.value = false
   }
@@ -1444,7 +2674,7 @@ async function restoreCurrent() {
       await reloadNotes()
     } else {
       applyNote(res.data)
-      await Promise.all([reloadNotes(), loadTags()])
+      await Promise.all([refreshExplorer(), loadTags()])
     }
     await reloadTrashCount()
   } finally {
@@ -1461,7 +2691,7 @@ async function permanentDeleteCurrent() {
     selectedId.value = null
     isCreating.value = false
     dirty.value = false
-    await Promise.all([reloadNotes(), loadTags(), reloadTrashCount()])
+    await Promise.all([refreshExplorer(), loadTags(), reloadTrashCount()])
   } catch (e: any) {
     message.error(e?.message || '永久删除失败')
   } finally {
@@ -1477,6 +2707,7 @@ async function emptyTrash() {
     message.success(n ? `已清空 ${n} 条` : '回收站已空')
     selectedId.value = null
     await reloadNotes()
+    await reloadTrashCount()
   } catch (e: any) {
     message.error(e?.message || '清空失败')
   } finally {
@@ -1485,7 +2716,7 @@ async function emptyTrash() {
 }
 
 function openCreateCategory(parentId?: string) {
-  catModalParentId.value = parentId || null
+  catModalParentId.value = parentId || activeFolderId.value || null
   catModalName.value = ''
   catModalOpen.value = true
 }
@@ -1493,24 +2724,32 @@ function openCreateCategory(parentId?: string) {
 async function submitCategory() {
   const name = catModalName.value.trim()
   if (!name) {
-    message.warning('请输入分类名称')
+    message.warning('请输入文件夹名称')
     return
   }
   catModalLoading.value = true
   try {
-    await kbApi.createCategory({
+    const res = await kbApi.createCategory({
       name,
       parentId: catModalParentId.value || undefined
     })
     catModalOpen.value = false
-    message.success('分类已创建')
-    await loadCategories()
+    message.success('文件夹已创建')
+    const newId = res.data?.id
+    if (catModalParentId.value) {
+      expandedIds.value = new Set([...expandedIds.value, catModalParentId.value])
+    }
+    if (newId) {
+      expandedIds.value = new Set([...expandedIds.value, newId])
+      activeFolderId.value = newId
+    }
+    await Promise.all([loadCategories(), loadTree({ keepExpanded: true })])
   } finally {
     catModalLoading.value = false
   }
 }
 
-function openRenameCategory(node: FlatCat) {
+function openRenameCategory(node: { id: string; name: string }) {
   renameModalId.value = node.id
   renameModalName.value = node.name
   renameModalOpen.value = true
@@ -1520,7 +2759,7 @@ async function submitRenameCategory() {
   if (!renameModalId.value) return
   const name = renameModalName.value.trim()
   if (!name) {
-    message.warning('请输入分类名称')
+    message.warning('请输入文件夹名称')
     return
   }
   renameModalLoading.value = true
@@ -1528,30 +2767,61 @@ async function submitRenameCategory() {
     await kbApi.updateCategory(renameModalId.value, { name })
     renameModalOpen.value = false
     message.success('已重命名')
-    await loadCategories()
-    await reloadNotes()
+    await Promise.all([loadCategories(), loadTree({ keepExpanded: true })])
   } finally {
     renameModalLoading.value = false
   }
 }
 
-function confirmDeleteCategory(node: FlatCat) {
-  Modal.confirm({
-    title: `删除分类「${node.name}」？`,
-    content: '仅当无子分类且无关联笔记时可删除。',
-    okText: '删除',
-    okType: 'danger',
-    cancelText: '取消',
-    async onOk() {
-      await kbApi.deleteCategory(node.id)
+function confirmDeleteCategory(node: { id: string; name: string }) {
+  deleteFolderTarget.value = node
+  deleteFolderMode.value = 'reject'
+  deleteFolderOpen.value = true
+}
+
+const deleteFolderOpen = ref(false)
+const deleteFolderLoading = ref(false)
+const deleteFolderMode = ref<'reject' | 'orphan' | 'trash'>('reject')
+const deleteFolderTarget = ref<{ id: string; name: string } | null>(null)
+const deleteFolderModeOptions: {
+  value: 'reject' | 'orphan' | 'trash'
+  title: string
+  desc: string
+}[] = [
+  { value: 'reject', title: '仅删空夹', desc: '有内容时失败，最安全' },
+  { value: 'orphan', title: '内容上移后删', desc: '子项移到父级/未归档' },
+  { value: 'trash', title: '进回收站后删', desc: '文档软删，夹物理删除' }
+]
+
+async function submitDeleteFolder() {
+  if (!deleteFolderTarget.value) return
+  deleteFolderLoading.value = true
+  try {
+    const res = await kbApi.deleteCategory(deleteFolderTarget.value.id, deleteFolderMode.value)
+    const name = deleteFolderTarget.value.name
+    if (deleteFolderMode.value === 'orphan') {
+      message.success(`已删除「${name}」，${res.data?.notesOrphaned ?? 0} 篇文档已上移`)
+    } else if (deleteFolderMode.value === 'trash') {
+      message.success(
+        `已删除 ${res.data?.foldersDeleted ?? 0} 个文件夹，${res.data?.notesTrashed ?? 0} 篇文档进回收站`
+      )
+    } else {
       message.success('已删除')
-      if (filterCategoryId.value === node.id) {
-        filterCategoryId.value = null
-      }
-      await loadCategories()
-      await reloadNotes()
     }
-  })
+    if (
+      filterCategoryId.value === deleteFolderTarget.value.id ||
+      activeFolderId.value === deleteFolderTarget.value.id
+    ) {
+      filterCategoryId.value = null
+      activeFolderId.value = null
+    }
+    deleteFolderOpen.value = false
+    await Promise.all([loadCategories(), loadTree({ keepExpanded: true }), reloadTrashCount()])
+  } catch (e: any) {
+    message.error(e?.message || '删除失败')
+  } finally {
+    deleteFolderLoading.value = false
+  }
 }
 
 function openCreateTag() {
@@ -1577,14 +2847,28 @@ async function submitTag() {
 }
 
 onMounted(async () => {
-  await Promise.all([loadCategories(), loadTags(), reloadNotes(), reloadTrashCount()])
+  await Promise.all([loadCategories(), loadTree(), loadTags(), reloadTrashCount()])
+  bindTreeViewport()
+})
+
+onBeforeUnmount(() => {
+  unbindTreeViewport()
+  dragGhostCleanup?.()
+  cleanupDragGhost()
+})
+
+// 树模式显示时绑定视口（从搜索/回收站切回）
+watch(isExplorerTreeMode, (showTree) => {
+  if (showTree) bindTreeViewport()
+  else unbindTreeViewport()
 })
 </script>
 
 <style lang="scss" scoped>
 .kb-workspace {
   display: grid;
-  grid-template-columns: 220px minmax(260px, 340px) 1fr;
+  /* F1：目录树 + 编辑区两栏 */
+  grid-template-columns: minmax(280px, 340px) 1fr;
   gap: 12px;
   height: 100%;
   min-height: 0;
@@ -1592,7 +2876,6 @@ onMounted(async () => {
 }
 
 .kb-sidebar,
-.kb-list-pane,
 .kb-editor-pane {
   background: var(--surface-1);
   border: 1px solid var(--border-color);
@@ -1605,6 +2888,610 @@ onMounted(async () => {
 
 .kb-sidebar {
   position: relative;
+}
+
+.side-head-actions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.back-dir-btn {
+  padding: 0 4px;
+  height: auto;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.result-empty-side {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px 12px;
+  font-size: 13px;
+  text-align: center;
+}
+
+.trash-empty-center {
+  .trash-empty-title {
+    margin: 0 0 8px;
+    font-size: 20px;
+    font-weight: 700;
+    color: var(--text-primary);
+  }
+
+  p {
+    margin: 0 0 4px;
+  }
+}
+
+.trash-empty-icon {
+  color: #a8a29e !important;
+  opacity: 0.7;
+}
+
+.side-search {
+  padding: 0 10px 8px;
+}
+
+.side-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding-bottom: 8px;
+
+  /* 目录树模式：树内部虚拟滚动，标签贴底 */
+  &.is-tree {
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+    padding-bottom: 0;
+
+    > .explorer-tree {
+      flex: 1;
+      min-height: 0;
+    }
+
+    > .tags-head,
+    > .tag-list {
+      flex-shrink: 0;
+    }
+
+    > .tag-list {
+      max-height: 120px;
+      overflow: auto;
+      margin-bottom: 4px;
+    }
+  }
+
+  /* 回收站 / 搜索 / 标签结果列表 */
+  &.is-list {
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    padding-bottom: 0;
+  }
+}
+
+.result-list-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 8px 12px 6px;
+  flex-shrink: 0;
+}
+
+.result-list-title {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--text-secondary);
+}
+
+.result-list {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: 0 8px 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.result-empty {
+  padding: 24px 12px;
+}
+
+.result-item {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  width: 100%;
+  text-align: left;
+  border: 1px solid var(--border-color);
+  background: var(--surface-2, transparent);
+  border-radius: 10px;
+  padding: 10px 12px;
+  cursor: pointer;
+  color: inherit;
+  transition: border-color 0.15s, background 0.15s;
+
+  &:hover {
+    border-color: color-mix(in srgb, var(--primary-color) 45%, var(--border-color));
+  }
+
+  &.active {
+    border-color: var(--primary-color);
+    background: color-mix(in srgb, var(--primary-color) 10%, transparent);
+  }
+
+  &.deleted .result-item-title {
+    color: var(--text-secondary);
+  }
+}
+
+.result-item-top {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.result-item-icon {
+  flex-shrink: 0;
+  color: var(--text-secondary);
+  font-size: 14px;
+}
+
+.result-item-title {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 13px;
+  font-weight: 650;
+  color: var(--text-primary);
+}
+
+.result-fmt {
+  margin-inline-end: 0;
+  font-size: 10px;
+  line-height: 16px;
+  padding: 0 5px;
+  flex-shrink: 0;
+}
+
+.result-item-snippet {
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--text-secondary);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  word-break: break-word;
+}
+
+.result-item-foot {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  color: var(--text-secondary);
+}
+
+.result-cat {
+  padding: 0 6px;
+  border-radius: 4px;
+  background: var(--surface-3, rgba(0, 0, 0, 0.04));
+}
+
+.result-tag {
+  opacity: 0.9;
+}
+
+.result-time {
+  margin-left: auto;
+  font-variant-numeric: tabular-nums;
+  flex-shrink: 0;
+}
+
+.result-pager {
+  flex-shrink: 0;
+  padding: 8px 12px 10px;
+  display: flex;
+  justify-content: center;
+  border-top: 1px solid var(--border-color);
+}
+
+.trash-actions {
+  flex-shrink: 0;
+  padding: 8px 12px 10px;
+  border-top: 1px solid var(--border-color);
+}
+
+.side-loading {
+  padding: 16px;
+  text-align: center;
+}
+
+.side-empty-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 12px;
+  padding: 0 12px;
+}
+
+.tree-section-label {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 12px 4px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+
+.link-btn {
+  border: none;
+  background: none;
+  color: var(--primary-color);
+  cursor: pointer;
+  font-size: 12px;
+  padding: 0;
+}
+
+.explorer-tree {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  flex: 1;
+  padding: 2px 4px 0 0;
+}
+
+.tree-viewport {
+  flex: 1;
+  min-height: 120px;
+  overflow: auto;
+  overscroll-behavior: contain;
+}
+
+.tree-virtual-space {
+  position: relative;
+  width: 100%;
+}
+
+.tree-virtual-window {
+  will-change: transform;
+}
+
+.tree-row-wrap {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  min-width: 0;
+  box-sizing: border-box;
+}
+
+.tree-row {
+  flex: 1;
+  min-width: 0;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  border: none;
+  background: transparent;
+  color: var(--text-primary);
+  padding: 0 6px;
+  border-radius: 8px;
+  cursor: grab;
+  text-align: left;
+  font-size: 13px;
+
+  &:active {
+    cursor: grabbing;
+  }
+
+  &:hover {
+    background: var(--surface-2);
+  }
+
+  &.active {
+    background: color-mix(in srgb, var(--primary-color) 14%, transparent);
+    color: var(--primary-color);
+    font-weight: 600;
+  }
+}
+
+.tree-twist {
+  width: 16px;
+  height: 16px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  color: var(--text-secondary);
+  font-size: 10px;
+
+  &.spacer {
+    visibility: hidden;
+  }
+}
+
+.tree-icon {
+  flex-shrink: 0;
+  font-size: 14px;
+}
+
+.folder-icon {
+  color: #d97706;
+}
+
+.note-icon {
+  color: var(--text-secondary);
+}
+
+.pin-icon {
+  color: var(--primary-color);
+}
+
+.tree-label {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tree-fmt {
+  margin-inline-end: 0;
+  font-size: 10px;
+  line-height: 16px;
+  padding: 0 4px;
+  flex-shrink: 0;
+}
+
+.tree-time {
+  flex-shrink: 0;
+  font-size: 11px;
+  color: var(--text-secondary);
+  font-variant-numeric: tabular-nums;
+}
+
+.tree-more {
+  flex-shrink: 0;
+  border: none;
+  background: transparent;
+  color: var(--text-secondary);
+  width: 24px;
+  height: 24px;
+  border-radius: 6px;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0.55;
+
+  &:hover {
+    opacity: 1;
+    background: var(--surface-2);
+  }
+}
+
+.tree-meta {
+  padding: 6px 12px 4px;
+  font-size: 11px;
+}
+
+.tree-indent {
+  width: 16px;
+  flex-shrink: 0;
+}
+
+.tree-drop-root {
+  margin: 4px 10px 8px;
+  padding: 8px 10px;
+  border: 1px dashed var(--border-color);
+  border-radius: 8px;
+  font-size: 12px;
+  color: var(--text-secondary);
+  text-align: center;
+  transition: border-color 0.15s, background 0.15s;
+
+  &.drop-over {
+    border-color: var(--primary-color);
+    background: color-mix(in srgb, var(--primary-color) 10%, transparent);
+    color: var(--primary-color);
+  }
+}
+
+.tree-row-wrap {
+  &.drop-over {
+    outline: 1px solid var(--primary-color);
+    border-radius: 8px;
+    background: color-mix(in srgb, var(--primary-color) 8%, transparent);
+  }
+
+  &.dragging {
+    opacity: 0.45;
+  }
+}
+
+.move-tip {
+  margin: 0 0 10px;
+  font-size: 13px;
+}
+
+.move-folder-list {
+  max-height: 360px;
+  overflow: auto;
+  border: 1px solid var(--border-color);
+  border-radius: 10px;
+  padding: 6px;
+}
+
+.move-folder-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  border: none;
+  background: transparent;
+  text-align: left;
+  padding: 8px 10px;
+  border-radius: 8px;
+  cursor: pointer;
+  color: inherit;
+  font-size: 13px;
+
+  &:hover:not(:disabled) {
+    background: var(--surface-2);
+  }
+
+  &.active {
+    background: color-mix(in srgb, var(--primary-color) 14%, transparent);
+    color: var(--primary-color);
+    font-weight: 600;
+  }
+
+  &:disabled,
+  &.disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+  }
+}
+
+.delete-mode-tip {
+  margin: 0 0 14px;
+  font-size: 13px;
+}
+
+/* 三列横向卡片，彻底避免 ant-radio 默认竖排 */
+.delete-mode-row {
+  display: flex;
+  flex-direction: row;
+  flex-wrap: nowrap;
+  align-items: stretch;
+  gap: 12px;
+  width: 100%;
+}
+
+.delete-mode-card {
+  flex: 1 1 0;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+  margin: 0;
+  padding: 14px 12px;
+  border: 1px solid var(--border-color);
+  border-radius: 12px;
+  background: var(--surface-2, transparent);
+  cursor: pointer;
+  text-align: left;
+  color: inherit;
+  transition: border-color 0.15s, background 0.15s, box-shadow 0.15s;
+
+  &:hover {
+    border-color: color-mix(in srgb, var(--primary-color) 50%, var(--border-color));
+  }
+
+  &.active {
+    border-color: var(--primary-color);
+    background: color-mix(in srgb, var(--primary-color) 10%, transparent);
+    box-shadow: 0 0 0 1px color-mix(in srgb, var(--primary-color) 35%, transparent);
+  }
+
+  .dm-title {
+    font-weight: 700;
+    font-size: 13px;
+    color: var(--text-primary);
+    line-height: 1.3;
+  }
+
+  .dm-desc {
+    font-size: 12px;
+    line-height: 1.45;
+  }
+}
+
+.folder-overview {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: 28px 32px;
+}
+
+.folder-ov-head {
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+  margin-bottom: 20px;
+  flex-wrap: wrap;
+
+  h2 {
+    margin: 0 0 4px;
+    font-size: 22px;
+    font-weight: 700;
+  }
+
+  p {
+    margin: 0;
+    font-size: 13px;
+  }
+}
+
+.folder-ov-icon {
+  font-size: 28px;
+  color: #d97706;
+  margin-top: 4px;
+}
+
+.folder-ov-actions {
+  margin-left: auto;
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.folder-ov-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-width: 720px;
+}
+
+.folder-ov-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  border: 1px solid var(--border-color);
+  background: var(--surface-2);
+  border-radius: 10px;
+  padding: 12px 14px;
+  cursor: pointer;
+  text-align: left;
+  color: inherit;
+  font-size: 14px;
+
+  span:nth-child(2) {
+    flex: 1;
+    font-weight: 600;
+  }
+
+  &:hover {
+    border-color: var(--primary-color);
+  }
+}
+
+.folder-ov-empty {
+  padding: 40px 0;
 }
 
 .trash-footer {
@@ -1987,6 +3874,10 @@ onMounted(async () => {
 
 .meta-time {
   margin-left: auto;
+  flex-shrink: 0;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-tertiary, var(--text-secondary));
+  opacity: 0.95;
 }
 
 .list-pager {
@@ -2015,19 +3906,164 @@ onMounted(async () => {
 .editor-meta-row {
   display: flex;
   flex-wrap: wrap;
-  gap: 8px;
+  gap: 10px 14px;
   padding: 8px 14px;
   align-items: center;
   border-bottom: 1px solid var(--border-color);
 }
 
-.meta-select {
-  min-width: 140px;
+.doc-location {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  font-size: 12px;
+  color: var(--text-secondary);
+  max-width: 42%;
+
+  .loc-icon {
+    color: #d97706;
+    flex-shrink: 0;
+  }
+
+  .loc-text {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-weight: 600;
+    color: var(--text-primary);
+  }
+
+  .loc-hint {
+    flex-shrink: 0;
+    font-size: 11px;
+    opacity: 0.75;
+  }
 }
 
-.tags-select {
-  min-width: 200px;
+.doc-tags {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
   flex: 1;
+  min-width: 0;
+
+  &.disabled {
+    opacity: 0.7;
+  }
+}
+
+.doc-tag-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  border: none;
+  border-radius: 999px;
+  padding: 2px 8px 2px 10px;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  color: var(--primary-color);
+  background: color-mix(in srgb, var(--primary-color) 12%, transparent);
+  transition: background 0.15s, transform 0.1s;
+
+  &:hover:not(:disabled) {
+    background: color-mix(in srgb, var(--primary-color) 20%, transparent);
+  }
+
+  &:disabled {
+    cursor: default;
+  }
+
+  .chip-x {
+    opacity: 0.55;
+    font-size: 14px;
+    line-height: 1;
+    margin-left: 1px;
+  }
+
+  &:hover:not(:disabled) .chip-x {
+    opacity: 1;
+  }
+}
+
+.add-tag-btn {
+  border: 1px dashed var(--border-color);
+  background: transparent;
+  color: var(--text-secondary);
+  border-radius: 999px;
+  padding: 2px 10px;
+  font-size: 12px;
+  cursor: pointer;
+  transition: border-color 0.15s, color 0.15s;
+
+  &:hover:not(:disabled) {
+    border-color: var(--primary-color);
+    color: var(--primary-color);
+  }
+
+  &:disabled {
+    cursor: not-allowed;
+    opacity: 0.5;
+  }
+}
+
+.view-mode-group {
+  margin-left: auto;
+  flex-shrink: 0;
+}
+
+.tag-picker {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.tag-picker-list {
+  max-height: 200px;
+  overflow: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.tag-picker-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border: none;
+  background: transparent;
+  text-align: left;
+  padding: 6px 8px;
+  border-radius: 8px;
+  cursor: pointer;
+  font-size: 13px;
+  color: inherit;
+
+  &:hover {
+    background: var(--surface-2, rgba(0, 0, 0, 0.04));
+  }
+
+  &.on {
+    background: color-mix(in srgb, var(--primary-color) 12%, transparent);
+    color: var(--primary-color);
+    font-weight: 600;
+  }
+
+  .check {
+    font-size: 12px;
+  }
+}
+
+.tag-picker-empty {
+  padding: 10px 8px;
+  font-size: 12px;
+  text-align: center;
+}
+
+.tag-picker-create {
+  padding: 0;
 }
 
 .editor-body {
@@ -2191,9 +4227,11 @@ onMounted(async () => {
   border-radius: 0 !important;
 }
 
-/* Markdown 预览：首个 h1 与正文横线分隔 */
+/* Markdown 预览：首个 h1 与正文横线分隔 + 可点图片缩放 */
 .md-preview.doc-preview,
 .md-preview {
+  position: relative;
+
   :deep(h1) {
     font-size: 1.85em;
     font-weight: 700;
@@ -2209,11 +4247,97 @@ onMounted(async () => {
     border-top: 1px solid var(--border-color);
   }
 
+  :deep(img.kb-md-img),
   :deep(img) {
     max-width: 100%;
     height: auto;
     border-radius: 8px;
     margin: 0.5em 0;
+    cursor: pointer;
+    outline: 2px solid transparent;
+    transition: outline-color 0.15s;
+
+    &:hover {
+      outline-color: color-mix(in srgb, var(--primary-color) 50%, transparent);
+    }
+  }
+
+  :deep(table) {
+    width: 100%;
+    border-collapse: separate;
+    border-spacing: 0;
+    margin: 1em 0 1.25em;
+    font-size: 0.92em;
+    border: 1px solid var(--border-color);
+    border-radius: 10px;
+    overflow: hidden;
+  }
+
+  :deep(th),
+  :deep(td) {
+    padding: 10px 12px;
+    border-bottom: 1px solid var(--border-color);
+    text-align: left;
+    vertical-align: top;
+  }
+
+  :deep(th + th),
+  :deep(td + td) {
+    border-left: 1px solid var(--border-color);
+  }
+
+  :deep(th) {
+    font-weight: 650;
+    background: var(--surface-2);
+  }
+
+  :deep(tbody tr:last-child td) {
+    border-bottom: none;
+  }
+
+  :deep(tbody tr:nth-child(even)) {
+    background: color-mix(in srgb, var(--primary-color) 5%, transparent);
+  }
+}
+
+.md-img-menu {
+  position: fixed;
+  z-index: 1000;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 10px;
+  background: var(--surface-1);
+  border: 1px solid var(--border-color);
+  border-radius: 10px;
+  box-shadow: 0 8px 24px rgba(15, 23, 42, 0.12);
+}
+
+.md-img-menu-label {
+  font-size: 12px;
+  color: var(--text-secondary);
+  margin-right: 2px;
+}
+
+.md-img-menu button {
+  border: 1px solid var(--border-color);
+  background: var(--surface-2);
+  border-radius: 6px;
+  padding: 4px 10px;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  color: var(--text-primary);
+
+  &:hover {
+    border-color: var(--primary-color);
+    color: var(--primary-color);
+  }
+
+  &.ghost {
+    background: transparent;
+    font-weight: 500;
   }
 }
 
@@ -2333,34 +4457,20 @@ onMounted(async () => {
 
 @media (max-width: 1100px) {
   .kb-workspace {
-    grid-template-columns: 200px 1fr;
-    grid-template-rows: 1fr 1fr;
-  }
-
-  .kb-sidebar {
-    grid-row: 1 / span 2;
-  }
-
-  .kb-list-pane {
-    grid-column: 2;
-  }
-
-  .kb-editor-pane {
-    grid-column: 2;
+    grid-template-columns: minmax(240px, 300px) 1fr;
   }
 }
 
 @media (max-width: 768px) {
   .kb-workspace {
     grid-template-columns: 1fr;
-    grid-template-rows: auto;
+    grid-template-rows: minmax(240px, 40vh) 1fr;
     overflow: auto;
   }
 
   .kb-sidebar,
-  .kb-list-pane,
   .kb-editor-pane {
-    min-height: 280px;
+    min-height: 220px;
   }
 }
 </style>

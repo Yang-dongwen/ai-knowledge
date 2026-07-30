@@ -4,6 +4,7 @@ import com.dwcode.okxbot.common.response.ApiResult;
 import com.dwcode.okxbot.kb.dto.CategoryCreateRequest;
 import com.dwcode.okxbot.kb.dto.CategoryResponse;
 import com.dwcode.okxbot.kb.dto.CategoryUpdateRequest;
+import com.dwcode.okxbot.kb.dto.FolderDeleteResult;
 import com.dwcode.okxbot.kb.service.KbCategoryService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -14,6 +15,7 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.util.List;
@@ -44,9 +46,13 @@ public class KbCategoryController {
         return ApiResult.ok(categoryService.update(id, request));
     }
 
+    /**
+     * @param mode reject|orphan|trash，默认 reject
+     */
     @DeleteMapping("/{id}")
-    public ApiResult<Void> delete(@PathVariable Long id) {
-        categoryService.delete(id);
-        return ApiResult.ok();
+    public ApiResult<FolderDeleteResult> delete(
+            @PathVariable Long id,
+            @RequestParam(defaultValue = "reject") String mode) {
+        return ApiResult.ok(categoryService.delete(id, mode));
     }
 }

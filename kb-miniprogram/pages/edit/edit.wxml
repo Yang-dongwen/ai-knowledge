@@ -1,0 +1,85 @@
+<view class="page safe-bottom">
+  <view class="format-pick card" wx:if="{{!formatLocked}}">
+    <view class="muted tip">选择格式（创建后固定）</view>
+    <view class="fmt-row">
+      <view class="fmt-btn {{format==='html'?'on':''}}" data-format="html" bindtap="pickFormat">富文本</view>
+      <view class="fmt-btn {{format==='markdown'?'on':''}}" data-format="markdown" bindtap="pickFormat">Markdown</view>
+    </view>
+  </view>
+
+  <view class="card form">
+    <input class="title-input" placeholder="标题" value="{{title}}" bindinput="onTitle" maxlength="200" />
+    <view class="rule" />
+    <view class="tools">
+      <button class="tool" size="mini" bindtap="pickImage">插图</button>
+      <button class="tool" size="mini" bindtap="pickFile" wx:if="{{id}}">附件</button>
+    </view>
+    <textarea
+      wx:if="{{format==='markdown'}}"
+      class="content-input"
+      placeholder="正文 Markdown…"
+      value="{{mdBody}}"
+      maxlength="-1"
+      auto-height
+      show-confirm-bar="{{false}}"
+      bindinput="onMdBody"
+    />
+    <textarea
+      wx:else
+      class="content-input"
+      placeholder="正文（简易 HTML，复杂排版请用 PC）"
+      value="{{htmlContent}}"
+      maxlength="-1"
+      auto-height
+      show-confirm-bar="{{false}}"
+      bindinput="onHtmlContent"
+    />
+  </view>
+
+  <view class="card meta">
+    <picker mode="selector" range="{{categories}}" range-key="name" bindchange="onCategory">
+      <view class="picker-row">
+        <text>分类</text>
+        <text class="muted">{{categoryLabel}} ›</text>
+      </view>
+    </picker>
+    <view class="tag-block" wx:if="{{allTags.length}}">
+      <view class="tag-label">标签</view>
+      <view class="tag-chips">
+        <view
+          class="chip {{item.selected ? 'on' : ''}}"
+          wx:for="{{allTags}}"
+          wx:key="id"
+          data-id="{{item.id}}"
+          bindtap="toggleTag"
+        >#{{item.name}}</view>
+      </view>
+    </view>
+    <view class="tag-block" wx:else>
+      <view class="muted tip">暂无标签（可在 PC 创建）</view>
+    </view>
+    <label class="pin-row">
+      <switch checked="{{pinned}}" bindchange="onPinned" color="#2563eb" />
+      <text>置顶</text>
+    </label>
+  </view>
+
+  <view class="card files" wx:if="{{id}}">
+    <view class="files-head">
+      <text>附件</text>
+      <button class="tool" size="mini" bindtap="pickFile">上传</button>
+    </view>
+    <view class="muted tip" wx:if="{{!files.length}}">暂无附件</view>
+    <view class="file-row" wx:for="{{files}}" wx:key="id">
+      <text class="fname">{{item.originalName}}</text>
+      <text class="del" data-id="{{item.id}}" data-name="{{item.originalName}}" bindtap="removeFile">删</text>
+    </view>
+  </view>
+
+  <view class="actions">
+    <button class="btn-ghost half" bindtap="onClear" disabled="{{saving}}">清空</button>
+    <button class="btn-primary half" loading="{{saving}}" disabled="{{saving}}" bindtap="onSave">
+      {{id ? '保存修改' : '保存笔记'}}
+    </button>
+  </view>
+</view>

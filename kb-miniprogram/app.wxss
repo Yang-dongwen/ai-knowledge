@@ -1,0 +1,71 @@
+/** 全局基础样式 */
+page {
+  background: #f1f5f9;
+  color: #0f172a;
+  font-size: 28rpx;
+  line-height: 1.5;
+  box-sizing: border-box;
+}
+
+.safe-bottom {
+  padding-bottom: calc(24rpx + env(safe-area-inset-bottom));
+}
+
+.card {
+  background: #ffffff;
+  border-radius: 20rpx;
+  box-shadow: 0 4rpx 20rpx rgba(15, 23, 42, 0.04);
+}
+
+.btn-primary {
+  background: #2563eb;
+  color: #ffffff;
+  border-radius: 16rpx;
+  font-weight: 600;
+}
+
+.btn-primary::after {
+  border: none;
+}
+
+.btn-ghost {
+  background: #e2e8f0;
+  color: #0f172a;
+  border-radius: 16rpx;
+}
+
+.btn-ghost::after {
+  border: none;
+}
+
+.muted {
+  color: #64748b;
+}
+
+.empty {
+  padding: 120rpx 40rpx;
+  text-align: center;
+  color: #94a3b8;
+}
+
+.empty-title {
+  font-size: 30rpx;
+  color: #64748b;
+  margin-bottom: 12rpx;
+}
+
+.tag {
+  display: inline-block;
+  padding: 4rpx 14rpx;
+  margin-right: 10rpx;
+  margin-bottom: 8rpx;
+  font-size: 22rpx;
+  color: #2563eb;
+  background: rgba(37, 99, 235, 0.1);
+  border-radius: 999rpx;
+}
+
+.pin {
+  color: #2563eb;
+  margin-right: 8rpx;
+}

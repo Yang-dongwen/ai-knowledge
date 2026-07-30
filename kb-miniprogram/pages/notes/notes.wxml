@@ -1,0 +1,62 @@
+<view class="page safe-bottom">
+  <view class="search-bar">
+    <input
+      class="search-input"
+      placeholder="{{trashMode ? '搜索回收站' : '搜索标题/摘要'}}"
+      value="{{keyword}}"
+      confirm-type="search"
+      bindinput="onKeyword"
+      bindconfirm="onSearch"
+    />
+    <view class="search-btn" bindtap="onSearch">搜索</view>
+  </view>
+
+  <scroll-view scroll-x class="chips">
+    <view class="chip {{!trashMode && !filterCategoryId ? 'on' : ''}}" bindtap="clearFilter">全部</view>
+    <view
+      wx:for="{{categories}}"
+      wx:key="id"
+      class="chip {{!trashMode && filterCategoryId === item.id ? 'on' : ''}}"
+      data-id="{{item.id}}"
+      bindtap="filterCat"
+    >{{item.name}}</view>
+    <view class="chip trash {{trashMode ? 'on' : ''}}" bindtap="toggleTrash">
+      回收站{{trashCount ? ' ' + trashCount : ''}}
+    </view>
+  </scroll-view>
+
+  <view class="meta muted">
+    <text wx:if="{{trashMode}}">回收站 · {{total}} 条</text>
+    <text wx:else>共 {{total}} 条</text>
+    <text wx:if="{{trashMode && total}}" class="empty-link" bindtap="emptyTrash">清空</text>
+  </view>
+
+  <view class="empty" wx:if="{{!loading && !notes.length}}">
+    <view class="empty-title">{{trashMode ? '回收站为空' : '还没有笔记'}}</view>
+  </view>
+
+  <view class="list" wx:else>
+    <view
+      class="note card {{item.deleted || trashMode ? 'deleted' : ''}}"
+      wx:for="{{notes}}"
+      wx:key="id"
+      data-id="{{item.id}}"
+      bindtap="goDetail"
+    >
+      <view class="note-title">
+        <text wx:if="{{item.pinned}}">📌</text>
+        <text>{{item.title || '未命名笔记'}}</text>
+        <text class="fmt">{{item.formatLabel}}</text>
+      </view>
+      <view class="snippet muted">{{item.snippet || '暂无摘要'}}</view>
+      <view class="foot">
+        <text class="cat" wx:if="{{item.categoryName}}">{{item.categoryName}}</text>
+        <text class="time muted">{{item.updatedAtText}}</text>
+      </view>
+    </view>
+  </view>
+
+  <view class="more" wx:if="{{hasMore && notes.length}}">
+    <button class="btn-ghost load-more" loading="{{loadingMore}}" bindtap="loadMore">加载更多</button>
+  </view>
+</view>

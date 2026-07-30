@@ -42,6 +42,26 @@ export interface KbCategory {
   updatedAt?: string
 }
 
+/** 目录树节点（folder | note） */
+export interface KbExplorerNode {
+  type: 'folder' | 'note' | string
+  id: string
+  name: string
+  parentId?: string | null
+  contentFormat?: KbContentFormat | string
+  pinned?: boolean
+  snippet?: string
+  updatedAt?: string
+  sortOrder?: number
+  children?: KbExplorerNode[]
+}
+
+export interface KbExplorerTree {
+  roots: KbExplorerNode[]
+  folderCount: number
+  noteCount: number
+}
+
 export interface KbTag {
   id: string
   name: string
@@ -247,6 +267,76 @@ export const kbApi = {
     return request.delete('/v1/kb/notes/trash')
   },
 
+  getShareStatus(noteId: string): Promise<{ data: KbShareStatus }> {
+    return request.get(`/v1/kb/notes/${noteId}/share`)
+  },
+
+  enableShare(noteId: string): Promise<{ data: KbShareStatus }> {
+    return request.post(`/v1/kb/notes/${noteId}/share`)
+  },
+
+  disableShare(noteId: string): Promise<{ data: KbShareStatus }> {
+    return request.delete(`/v1/kb/notes/${noteId}/share`)
+  },
+
+  rotateShare(noteId: string): Promise<{ data: KbShareStatus }> {
+    return request.post(`/v1/kb/notes/${noteId}/share/rotate`)
+  },
+
+  /** 目录树：文件夹 + 文档叶子（无正文） */
+  getExplorerTree(): Promise<{ data: KbExplorerTree }> {
+    return request.get('/v1/kb/tree')
+  },
+
+  /** 移动文件夹或文档 */
+  treeMove(body: {
+    type: 'folder' | 'note'
+    id: string
+    targetFolderId?: string | null
+    clearToRoot?: boolean
+  }): Promise<{ data: null }> {
+    return request.post('/v1/kb/tree/move', {
+      type: body.type,
+      id: body.id,
+      ...(body.clearToRoot
+        ? { clearToRoot: true }
+        : body.targetFolderId != null
+          ? { targetFolderId: body.targetFolderId }
+          : { clearToRoot: true })
+    })
+  },
+
+  /** 同级重排 */
+  treeReorder(body: {
+    type: 'folder' | 'note'
+    parentFolderId?: string | null
+    clearParent?: boolean
+    orderedIds: string[]
+  }): Promise<{ data: null }> {
+    return request.post('/v1/kb/tree/reorder', {
+      type: body.type,
+      orderedIds: body.orderedIds,
+      ...(body.clearParent || body.parentFolderId == null
+        ? { clearParent: true }
+        : { parentFolderId: body.parentFolderId })
+    })
+  },
+
+  batchMoveNotes(body: {
+    noteIds: string[]
+    targetFolderId?: string | null
+    clearToRoot?: boolean
+  }): Promise<{ data: { moved: number } }> {
+    return request.post('/v1/kb/notes/batch-move', {
+      noteIds: body.noteIds,
+      ...(body.clearToRoot
+        ? { clearToRoot: true }
+        : body.targetFolderId != null
+          ? { targetFolderId: body.targetFolderId }
+          : { clearToRoot: true })
+    })
+  },
+
   listCategories(): Promise<{ data: KbCategory[] }> {
     return request.get('/v1/kb/categories')
   },
@@ -271,8 +361,15 @@ export const kbApi = {
     return request.put(`/v1/kb/categories/${id}`, body)
   },
 
-  deleteCategory(id: string): Promise<{ data: null }> {
-    return request.delete(`/v1/kb/categories/${id}`)
+  /**
+   * 删除文件夹
+   * @param mode reject | orphan | trash
+   */
+  deleteCategory(
+    id: string,
+    mode: 'reject' | 'orphan' | 'trash' = 'reject'
+  ): Promise<{ data: { foldersDeleted: number; notesOrphaned: number; notesTrashed: number } }> {
+    return request.delete(`/v1/kb/categories/${id}`, { params: { mode } })
   },
 
   listTags(): Promise<{ data: KbTag[] }> {
@@ -299,7 +396,6 @@ export const kbApi = {
     const res = await axios.post('/api/v1/kb/files', fd, {
       headers: {
         ...(token ? { Authorization: `Bearer ${token}` } : {})
-        // 不要手动设 Content-Type，让浏览器带 boundary
       },
       timeout: 120000
     })
@@ -321,4 +417,32 @@ export const kbApi = {
   deleteFile(fileId: string): Promise<{ data: null }> {
     return request.delete(`/v1/kb/files/${fileId}`)
   }
+}
+
+export interface KbShareStatus {
+  noteId: string
+  enabled: boolean
+  shareToken?: string | null
+  sharePath?: string | null
+  enabledAt?: string | null
+}
+
+export interface KbPublicNote {
+  title: string
+  content: string
+  contentFormat: 'html' | 'markdown' | string
+  authorName?: string
+  updatedAt?: string
+  publishedAt?: string
+  tags?: string[]
+}
+
+/** 公开分享（无需登录） */
+export async function fetchPublicNote(token: string): Promise<KbPublicNote> {
+  const res = await fetch(`/api/v1/kb/public/s/${encodeURIComponent(token)}`)
+  const body = await res.json()
+  if (!res.ok || !body?.success) {
+    throw new Error(body?.message || '分享不存在或已关闭')
+  }
+  return body.data as KbPublicNote
 }

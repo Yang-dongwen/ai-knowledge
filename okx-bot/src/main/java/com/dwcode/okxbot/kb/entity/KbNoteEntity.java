@@ -35,11 +35,20 @@ public class KbNoteEntity {
     @JsonSerialize(using = ToStringSerializer.class)
     private Long categoryId;
 
+    /** 同文件夹内排序，小在前 */
+    private Integer sortOrder;
+
     /** 0/1 */
     private Integer isPinned;
     /** 0/1 软删除（非 MP 全局 logic-delete 字段，业务自管） */
     private Integer isDeleted;
     private LocalDateTime deletedAt;
+
+    /** 公开分享令牌（URL 用，可空） */
+    private String shareToken;
+    /** 0/1 是否开启分享 */
+    private Integer shareEnabled;
+    private LocalDateTime shareEnabledAt;
 
     @TableField(fill = FieldFill.INSERT)
     private LocalDateTime createdAt;

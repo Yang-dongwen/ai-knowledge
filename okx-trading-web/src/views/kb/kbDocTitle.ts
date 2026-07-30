@@ -94,6 +94,33 @@ export function emptyMarkdownDoc(title = DEFAULT_TITLE): string {
   return `# ${title}\n\n`
 }
 
+/**
+ * 是否为「空草稿」：仅默认标题、无实质正文。
+ * 用于避免树操作 / 切换文档时误保存出空笔记。
+ */
+export function isBlankDraftContent(
+  content: string | null | undefined,
+  format: 'html' | 'markdown' | string
+): boolean {
+  const raw = (content || '').trim()
+  if (!raw) return true
+  if (format === 'markdown') {
+    const { title, body } = splitMarkdownDoc(raw)
+    const t = (title || '').trim()
+    const b = (body || '').trim()
+    const titleEmpty = !t || t === DEFAULT_TITLE
+    return titleEmpty && !b
+  }
+  // html：去掉标签后仅剩默认标题或空白
+  const title = extractTitleFromHtml(raw)
+  const plain = stripTags(raw)
+    .replace(title, '')
+    .replace(DEFAULT_TITLE, '')
+    .replace(/\s+/g, '')
+  const titleEmpty = !title || title === DEFAULT_TITLE
+  return titleEmpty && !plain
+}
+
 /** 拆分 Markdown：标题行 + 正文（编辑区用横线视觉分隔） */
 export function splitMarkdownDoc(md: string): { title: string; body: string } {
   const ensured = ensureMarkdownHasTitle(md || '')
