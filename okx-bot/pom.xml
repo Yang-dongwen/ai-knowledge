@@ -107,6 +107,16 @@
             <scope>runtime</scope>
         </dependency>
 
+        <!-- Flyway：启动时自动执行 db/migration 下版本化 SQL（需 MySQL 8+；由 Boot 托管 9.x） -->
+        <dependency>
+            <groupId>org.flywaydb</groupId>
+            <artifactId>flyway-core</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.flywaydb</groupId>
+            <artifactId>flyway-mysql</artifactId>
+        </dependency>
+
         <!-- Lombok -->
         <dependency>
             <groupId>org.projectlombok</groupId>

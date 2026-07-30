@@ -38,11 +38,15 @@ okx-bot/
 ├── src/main/java/com/dwcode/okxbot/
 ├── src/main/resources/
 │   ├── application.yml           # 主配置（DB、AI、video、aigen、imggen、auth）
-│   └── db/schema.sql             # 全量建表脚本
+│   └── db/
+│       ├── schema.sql            # 仅手动建库（CREATE DATABASE）
+│       └── migration/            # Flyway 版本化 SQL（启动自动执行）
+│           └── V1__baseline.sql
 ├── whisper-service/              # Python Whisper 微服务
 ├── docker-compose.video.yml      # Whisper（及可选 Ollama）容器
 ├── data/                         # 运行时产物（视频/音频/成片，已 gitignore）
 ├── doc/                          # 模块级详细设计与手册
+│   └── sql/                      # 引入 Flyway 前的历史增量归档
 └── README.md                     # 本文
 ```
 
@@ -137,7 +141,9 @@ okx:
 
 ---
 
-## 5. 数据库初始化
+## 5. 数据库初始化（Flyway）
+
+表结构由 **Flyway** 在应用启动时自动迁移，无需再手动 `mysql < xxx.sql`。
 
 ### 5.1 创建库
 
@@ -145,27 +151,43 @@ okx:
 CREATE DATABASE IF NOT EXISTS okx_bot DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci;
 ```
 
-### 5.2 建表
+或执行 `src/main/resources/db/schema.sql`（现仅含建库语句）。生产可用 `deploy/scripts/init-rds.sh`（同样只建库）。
 
-**全新环境（推荐）**：直接执行全量脚本：
+**MySQL 版本**：本地与生产均建议 **MySQL 8+**（Flyway Community 9.x 不支持 5.7）。本机已可按 `MySQL84` 服务使用 8.4。
+
+### 5.2 启动即迁移
+
+配置见 `application.yml` → `spring.flyway`：
+
+| 场景 | 行为 |
+|------|------|
+| **全新空库** | 执行 `V1__baseline.sql` 及之后所有版本 |
+| **已有库（当前结构）且无 `flyway_schema_history`** | `baseline-on-migrate` 记基线 **V1**，**不重跑**建表；只执行 **V2+** |
+| **已纳入 Flyway 的库** | 只执行尚未应用的版本 |
+
+迁移目录：
 
 ```text
-src/main/resources/db/schema.sql
+src/main/resources/db/migration/
+  V1__baseline.sql          # 当前库结构基线（已冻结，勿改内容）
+  V2__add_xxx_column.sql    # 示例：后续增量
 ```
 
-覆盖表包括：交易侧（`okx_config`、`strategy_config`、`market_candle`、订单/持仓/成交、回测）、`chat_*`、`video_task`、`sys_user` / `email_code`、`ai_model_config`、`aigen_task`、`imggen_task` 等。
+**后续加表/改列**：只新增 `V{n}__描述.sql`（版本号递增），提交后各环境启动自动升级。
 
-**从旧库升级**：按需执行 `doc/sql/` 下增量脚本（如 `video_task_v2_alter.sql`、`aigen_task_*.sql`、`auth_tables.sql` 等）。新装勿重复执行冲突的 alter。
+命名约定：`V{版本}__{snake_描述}.sql`，版本整数递增（`V2`、`V3`…）。同一版本号不要改已发布脚本（checksum 会失败）。
 
-### 5.3 模型配置种子（建议）
+历史手写脚本归档在 `doc/sql/`，**不要**再对新环境批量套用。
 
-`schema.sql` 会建 `ai_model_config` 表；**模型列表初始数据**见：
+### 5.3 模型配置种子（可选）
+
+表结构由 V1 创建；**模型列表初始数据**仍可用：
 
 ```text
 doc/sql/ai_model_config.sql
 ```
 
-以及后续 capability / 协议相关 alter。**供应商 API Key 不在库表中**，仍写在 `application.yml` 的 `ai.providers`。
+（手工执行一次即可。）若需版本化种子，可另写 `Vn__seed_ai_model_config.sql`（幂等 INSERT）。**供应商 API Key 不在库表中**，写在 profile 的 `ai.providers`。
 
 ### 5.4 数据源
 
@@ -612,7 +634,7 @@ Invoke-RestMethod -Uri "http://127.0.0.1:8080/api/v1/video/tasks?page=0&size=1" 
 | 现象 | 可能原因 | 处理 |
 |------|----------|------|
 | 启动失败 DataSource | MySQL 未启 / 库不存在 / 密码错 | 检查 URL 与建库 |
-| SQL 字段缺失 | 未跑 schema 或增量脚本 | 执行 `schema.sql` 或对应 alter |
+| SQL 字段缺失 | 未启动迁移 / 缺 migration | 确认 Flyway 已跑；补 `db/migration/Vn__*.sql` 后重启 |
 | 401 全接口 | 未带 JWT 或过期 | 重新登录；检查 `auth.jwt.secret` 是否被改导致旧 Token 失效 |
 | 403 交易接口 | 非超管账号 | 使用 seed 超管或改库角色 |
 | 视频下载失败 | yt-dlp 过旧、路径错误、需代理 | 升级 yt-dlp、写绝对路径、开代理 |
@@ -658,7 +680,7 @@ Invoke-RestMethod -Uri "http://127.0.0.1:8080/api/v1/video/tasks?page=0&size=1" 
 | `Auth_登录架构与安全设计.md` | 认证安全 |
 | `会员充值与支付宝微信支付对接架构设计方案.md` | 会员支付架构 |
 | `LangChain4j_三工具切换架构设计.md` | Chat 出站引擎切换 |
-| `sql/*.sql` | 增量 / 种子 SQL |
+| `sql/*.sql` | 历史增量归档；新 DDL 写 `resources/db/migration/` |
 
 渲染侧：`aigen-remotion/README.md`。
 
@@ -668,7 +690,7 @@ Invoke-RestMethod -Uri "http://127.0.0.1:8080/api/v1/video/tasks?page=0&size=1" 
 
 ```text
 [ ] JDK 17 + Maven + MySQL 8
-[ ] 执行 schema.sql（+ 可选 ai_model_config 种子）
+[ ] 建库 okx_bot → 启动应用（Flyway 自动建表）+ 可选 ai_model_config 种子
 [ ] 修改 datasource / jwt.secret / ai.providers.api-key
 [ ] （视频提取）yt-dlp + ffmpeg 绝对路径
 [ ] （视频提取）whisper venv 或 docker；确认 :8000

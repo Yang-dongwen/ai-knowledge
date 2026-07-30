@@ -32,8 +32,8 @@
 2. 创建 EC2 + Docker + swap  
 3. 把代码放到 `~/auto-exchange`（git clone 或 `deploy-local.ps1`）  
 4. 填 `deploy/env/app.env`  
-5. 在 EC2：`set -a; source deploy/env/app.env; set +a` → `bash deploy/scripts/init-rds.sh`  
-6. `bash deploy/scripts/server-deploy.sh`  
+5. 在 EC2：`set -a; source deploy/env/app.env; set +a` → `bash deploy/scripts/init-rds.sh`（只建库；表由应用 Flyway 迁移）  
+6. `bash deploy/scripts/server-deploy.sh`（okx-bot 启动时自动执行 `db/migration`）  
 7. 浏览器 `http://公网IP:8088/`  
 8. 配 Deploy Key + GitHub Actions Secrets → 以后 `git push` 即可  
 
