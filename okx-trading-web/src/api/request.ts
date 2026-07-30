@@ -36,8 +36,16 @@ request.interceptors.request.use(
 // 响应拦截
 request.interceptors.response.use(
   (response: AxiosResponse<ApiResponse>) => {
-    const res = response.data
+    const res = response.data as ApiResponse & { headers?: Record<string, string> }
     if (res.success) {
+      // 保留响应头（知识库详情用 X-Kb-* 做耗时分析）；业务仍主要用 data
+      const h = response.headers || {}
+      const flat: Record<string, string> = {}
+      Object.keys(h).forEach((k) => {
+        const v = (h as any)[k]
+        if (v != null && typeof v !== 'object') flat[k.toLowerCase()] = String(v)
+      })
+      res.headers = flat
       return res as any
     }
     message.error(res.message || '请求失败')

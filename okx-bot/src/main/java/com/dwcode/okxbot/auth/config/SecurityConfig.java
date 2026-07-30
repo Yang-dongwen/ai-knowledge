@@ -54,6 +54,8 @@ public class SecurityConfig {
         http
                 .csrf(AbstractHttpConfigurer::disable)
                 .cors(Customizer.withDefaults())
+                // 知识库 PDF 等同源 iframe 预览需要 sameOrigin（默认 DENY 会浏览器拒绝）
+                .headers(h -> h.frameOptions(f -> f.sameOrigin()))
                 .sessionManagement(s -> s.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(auth -> auth
                         // SSE/SseEmitter 异步派发时 SecurityContext 不在 HTTP 线程，勿二次鉴权

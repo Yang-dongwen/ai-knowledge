@@ -4,6 +4,11 @@
 
 server:
   port: 8080
+  # 大笔记 JSON 压缩，显著减小详情接口传输体积
+  compression:
+    enabled: true
+    mime-types: application/json,application/xml,text/html,text/xml,text/plain,text/css,application/javascript
+    min-response-size: 1024
 
 spring:
   datasource:
@@ -15,6 +20,11 @@ spring:
     default-property-inclusion: non_null
   profiles:
     active: local
+  servlet:
+    multipart:
+      max-file-size: 110MB
+      max-request-size: 120MB
+
 # 认证：密钥与管理员账号在 local / ec2
 auth:
   jwt:
@@ -69,7 +79,9 @@ pay:
 mybatis-plus:
   configuration:
     map-underscore-to-camel-case: true
-    log-impl: org.apache.ibatis.logging.stdout.StdOutImpl
+    # 勿用 stdout 打全量 SQL：知识库 LONGTEXT 会把接口拖到秒级
+    # 需要排查 SQL 时在 local profile 临时打开 StdOutImpl
+    # log-impl: org.apache.ibatis.logging.stdout.StdOutImpl
   global-config:
     db-config:
       id-type: assign_id
@@ -103,6 +115,22 @@ ai:
       name: NVIDIA NIM
       base-url: https://integrate.api.nvidia.com/v1
       models: []
+
+# 个人知识库
+kb:
+  note:
+    max-content-chars: 2097152
+    snippet-chars: 160
+    default-title: 未命名笔记
+    default-format: html
+  category:
+    max-depth: 3
+  search:
+    mode: like
+  file:
+    max-image-bytes: 10485760
+    max-video-bytes: 104857600
+    max-other-bytes: 31457280
 
 # 存储：provider/r2 凭证/env-prefix 在 local / ec2
 storage:

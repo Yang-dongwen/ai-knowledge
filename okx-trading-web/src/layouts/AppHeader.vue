@@ -20,8 +20,8 @@
           v-for="group in menuGroups"
           :key="group.key"
           class="nav-item-wrap"
-          @mouseenter="openGroup = group.key"
-          @mouseleave="openGroup = null"
+          @mouseenter="onGroupEnter(group)"
+          @mouseleave="onGroupLeave"
         >
           <button
             type="button"
@@ -30,19 +30,27 @@
               active: activeGroupKey === group.key,
               open: openGroup === group.key
             }"
-            @click="toggleGroup(group.key)"
+            @click="toggleGroup(group)"
           >
             <span class="nav-trigger-icon">
               <component :is="group.icon" />
             </span>
             <span class="nav-trigger-label">{{ group.title }}</span>
-            <span v-if="activeGroupKey === group.key && currentPageTitle" class="nav-current-page">
+            <span
+              v-if="activeGroupKey === group.key && currentPageTitle && group.children.length > 1"
+              class="nav-current-page"
+            >
               {{ currentPageTitle }}
             </span>
-            <DownOutlined class="nav-arrow" :class="{ rotated: openGroup === group.key }" />
+            <DownOutlined
+              v-if="group.children.length > 1"
+              class="nav-arrow"
+              :class="{ rotated: openGroup === group.key }"
+            />
           </button>
 
-          <transition name="dropdown-fade">
+          <!-- 仅多子项展示下拉；单入口（如知识库）点击顶栏直接跳转，避免 hover 收起导致点不到 -->
+          <transition v-if="group.children.length > 1" name="dropdown-fade">
             <div
               v-show="openGroup === group.key"
               class="nav-dropdown"
@@ -70,7 +78,7 @@
                   type="button"
                   class="dropdown-item"
                   :class="{ active: currentRouteKey === item.key }"
-                  @click="goTo(item.key)"
+                  @click.stop="goTo(item.key)"
                 >
                   <span class="item-icon">
                     <component :is="item.icon" />
@@ -135,7 +143,7 @@
 
 <script setup lang="ts">
 import { ref, computed, watch, markRaw, onMounted, onUnmounted, type Component } from 'vue'
-import { useRouter, useRoute } from 'vue-router'
+import { useRouter, useRoute, isNavigationFailure, NavigationFailureType } from 'vue-router'
 import { message } from 'ant-design-vue'
 import { useAuthStore } from '@/stores/auth.store'
 import {
@@ -148,7 +156,8 @@ import {
   DownOutlined,
   TeamOutlined,
   AppstoreOutlined,
-  FileTextOutlined
+  FileTextOutlined,
+  BookOutlined
 } from '@ant-design/icons-vue'
 import ProfileCardModal from '@/components/ProfileCardModal.vue'
 import ThemeToggle from '@/components/ThemeToggle.vue'
@@ -178,6 +187,8 @@ const TOOLS_KEYS = new Set([
   'article-extract',
   'ai-chat'
 ])
+/** 知识库独立一级菜单（与 AI 工具平级） */
+const KB_KEYS = new Set(['kb'])
 const ADMIN_KEYS = new Set(['user-manage'])
 const SUPER_ADMIN_ONLY_GROUPS = new Set(['admin'])
 
@@ -228,6 +239,21 @@ const ALL_MENU_GROUPS: MenuGroup[] = [
     ]
   },
   {
+    key: 'kb',
+    title: '知识库',
+    description: '个人笔记整理与检索，独立于 AI 工具',
+    icon: markRaw(BookOutlined),
+    cols: 1,
+    children: [
+      {
+        key: 'kb',
+        title: '知识库工作台',
+        description: '富文本/Markdown 笔记、附件与分类标签',
+        icon: markRaw(BookOutlined)
+      }
+    ]
+  },
+  {
     key: 'admin',
     title: '系统管理',
     description: '用户与权限等管理功能',
@@ -274,6 +300,7 @@ const currentRouteKey = computed(() => route.path.split('/')[1] || 'home')
 
 const activeGroupKey = computed(() => {
   if (TOOLS_KEYS.has(currentRouteKey.value)) return 'tools'
+  if (KB_KEYS.has(currentRouteKey.value)) return 'kb'
   if (ADMIN_KEYS.has(currentRouteKey.value)) return 'admin'
   return ''
 })
@@ -311,13 +338,55 @@ onUnmounted(() => {
   document.removeEventListener('click', onDocumentClick)
 })
 
-function toggleGroup(key: string) {
-  openGroup.value = openGroup.value === key ? null : key
+function isSingleEntry(group: MenuGroup) {
+  return group.children.length === 1
+}
+
+function onGroupEnter(group: MenuGroup) {
+  // 单入口菜单不展开空下拉，避免鼠标移出就关导致“点了没反应”
+  if (isSingleEntry(group)) return
+  openGroup.value = group.key
+}
+
+function onGroupLeave() {
+  openGroup.value = null
+}
+
+function toggleGroup(group: MenuGroup | string) {
+  const g =
+    typeof group === 'string'
+      ? menuGroups.value.find((x) => x.key === group)
+      : group
+  if (!g) return
+  // 知识库等单入口：直接跳转
+  if (isSingleEntry(g)) {
+    goTo(g.children[0].key)
+    return
+  }
+  openGroup.value = openGroup.value === g.key ? null : g.key
 }
 
 function goTo(key: string) {
   openGroup.value = null
-  router.push(`/${key}`)
+  const path = key.startsWith('/') ? key : `/${key}`
+  router.push(path).catch((err: unknown) => {
+    // Vue Router 4：重复/取消导航会 reject，不应当成失败
+    if (
+      isNavigationFailure(err, NavigationFailureType.duplicated) ||
+      isNavigationFailure(err, NavigationFailureType.cancelled) ||
+      isNavigationFailure(err, NavigationFailureType.aborted)
+    ) {
+      return
+    }
+    console.error('导航失败', path, err)
+    const detail =
+      err instanceof Error
+        ? err.message
+        : typeof err === 'string'
+          ? err
+          : '未知错误'
+    message.error(`页面打开失败：${detail.slice(0, 120)}`)
+  })
 }
 
 function handleRefresh() {

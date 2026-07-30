@@ -1,0 +1,324 @@
+import request from './request'
+import axios from 'axios'
+
+const TOKEN_KEY = 'okx_auth_token'
+
+export interface KbTagBrief {
+  id: string
+  name: string
+}
+
+export type KbContentFormat = 'html' | 'markdown'
+
+export interface KbNoteItem {
+  id: string
+  title: string
+  content?: string
+  contentFormat?: KbContentFormat
+  snippet?: string
+  categoryId?: string | null
+  categoryName?: string | null
+  tags?: KbTagBrief[]
+  pinned: boolean
+  deleted: boolean
+  createdAt?: string
+  updatedAt?: string
+}
+
+export interface KbNotePage {
+  items: KbNoteItem[]
+  total: number
+  page: number
+  size: number
+}
+
+export interface KbCategory {
+  id: string
+  name: string
+  parentId?: string | null
+  sortOrder?: number
+  children?: KbCategory[]
+  createdAt?: string
+  updatedAt?: string
+}
+
+export interface KbTag {
+  id: string
+  name: string
+  noteCount?: number
+  createdAt?: string
+}
+
+export type KbFileKind = 'image' | 'video' | 'audio' | 'pdf' | 'office' | 'other'
+
+export interface KbFileItem {
+  id: string
+  noteId?: string | null
+  originalName: string
+  contentType?: string
+  sizeBytes: number
+  kind: KbFileKind
+  contentPath: string
+  createdAt?: string
+}
+
+export interface NoteCreateBody {
+  title?: string
+  content?: string
+  contentFormat?: KbContentFormat
+  categoryId?: string | null
+  tagIds?: string[]
+  pinned?: boolean
+}
+
+export interface NoteUpdateBody {
+  title?: string
+  content?: string
+  contentFormat?: KbContentFormat
+  categoryId?: string | null
+  clearCategory?: boolean
+  tagIds?: string[]
+  pinned?: boolean
+}
+
+/** 知识库媒体路径（正文存库用干净路径，不含 token） */
+const KB_FILE_CONTENT_RE = /\/api\/v1\/kb\/files\/\d+\/content/i
+
+/** 给 <img>/<video>/iframe 用：query 带 JWT（无法设 Authorization 头） */
+export function kbMediaUrl(contentPath: string): string {
+  if (!contentPath) return ''
+  if (contentPath.startsWith('blob:') || contentPath.startsWith('data:')) {
+    return contentPath
+  }
+  // 去掉旧 token，避免叠加
+  let path = contentPath.trim()
+  try {
+    if (/^https?:\/\//i.test(path)) {
+      const u = new URL(path)
+      path = u.pathname + (u.search || '')
+    }
+  } catch {
+    /* ignore */
+  }
+  path = path.replace(/[?&](access_token|token)=[^&]*/gi, '').replace(/\?&/, '?').replace(/[?&]$/, '')
+  if (!path.startsWith('/')) path = `/${path}`
+  const token = localStorage.getItem(TOKEN_KEY) || ''
+  if (!token) return path
+  const sep = path.includes('?') ? '&' : '?'
+  return `${path}${sep}access_token=${encodeURIComponent(token)}`
+}
+
+/**
+ * 存库前：去掉 HTML 内媒体 URL 上的 access_token，只保留 /api/v1/kb/files/{id}/content
+ * 否则 token 过期或转义后图片在正文里加载失败，看起来像「只在附件里有」。
+ * 无知识库媒体路径时直接返回，避免大文档无意义正则。
+ */
+export function stripKbMediaTokens(html: string): string {
+  if (!html) return html
+  if (!html.includes('/api/v1/kb/files/')) return html
+  return html.replace(
+    /((?:src|href)=["'])([^"']*\/api\/v1\/kb\/files\/\d+\/content)[^"']*(["'])/gi,
+    (_m, pre: string, path: string, post: string) => {
+      const m = path.match(/^(.*?\/api\/v1\/kb\/files\/\d+\/content)/i)
+      const clean = m ? m[1] : path.split('?')[0]
+      return `${pre}${clean}${post}`
+    }
+  )
+}
+
+/** 展示前：给正文中的知识库媒体路径注入当前 JWT（HTML 属性） */
+export function injectKbMediaTokens(html: string): string {
+  if (!html) return html
+  if (!html.includes('/api/v1/kb/files/')) return html
+  const token = localStorage.getItem(TOKEN_KEY) || ''
+  if (!token) return html
+  return html.replace(
+    /((?:src|href)=["'])([^"']*\/api\/v1\/kb\/files\/\d+\/content)([^"']*)(["'])/gi,
+    (_m, pre: string, path: string, _rest: string, post: string) => {
+      const m = path.match(/^(.*?\/api\/v1\/kb\/files\/\d+\/content)/i)
+      let clean = m ? m[1] : path.split('?')[0]
+      if (!clean.startsWith('/') && !/^https?:/i.test(clean)) clean = `/${clean}`
+      try {
+        if (/^https?:\/\//i.test(clean)) {
+          clean = new URL(clean).pathname
+        }
+      } catch {
+        /* ignore */
+      }
+      return `${pre}${clean}?access_token=${encodeURIComponent(token)}${post}`
+    }
+  )
+}
+
+/**
+ * Markdown 正文存库前：去掉 ![](.../content?access_token=) 中的 token
+ */
+export function stripKbMediaTokensInMarkdown(md: string): string {
+  if (!md) return md
+  if (!md.includes('/api/v1/kb/files/')) return md
+  return md.replace(
+    /(\]\()([^)\s]*\/api\/v1\/kb\/files\/\d+\/content)[^)]*(\))/gi,
+    (_m, pre: string, path: string, post: string) => {
+      const m = path.match(/^(.*?\/api\/v1\/kb\/files\/\d+\/content)/i)
+      const clean = m ? m[1] : path.split('?')[0]
+      return `${pre}${clean}${post}`
+    }
+  )
+}
+
+/** HTML + Markdown 统一清理 token */
+export function stripKbMediaTokensAll(text: string): string {
+  return stripKbMediaTokensInMarkdown(stripKbMediaTokens(text || ''))
+}
+
+/** 生成 Markdown 图片语法（存库用干净路径） */
+export function mdImageSyntax(contentPath: string, alt = 'image'): string {
+  let path = (contentPath || '').trim()
+  path = path.replace(/[?&](access_token|token)=[^&]*/gi, '').replace(/[?&]$/, '')
+  if (!path.startsWith('/')) path = `/${path}`
+  const safeAlt = (alt || 'image').replace(/[[\]]/g, '')
+  return `![${safeAlt}](${path})`
+}
+
+export function isKbFileContentUrl(url: string): boolean {
+  return KB_FILE_CONTENT_RE.test(url || '')
+}
+
+/**
+ * 个人知识库 API（/api/v1/kb/*）
+ */
+export const kbApi = {
+  listNotes(params: {
+    page?: number
+    size?: number
+    categoryId?: string | null
+    tagId?: string | null
+    keyword?: string
+    includeDeleted?: boolean
+    uncategorized?: boolean
+    onlyDeleted?: boolean
+  } = {}): Promise<{ data: KbNotePage }> {
+    return request.get('/v1/kb/notes', {
+      params: {
+        page: params.page ?? 0,
+        size: params.size ?? 20,
+        ...(params.categoryId ? { categoryId: params.categoryId } : {}),
+        ...(params.tagId ? { tagId: params.tagId } : {}),
+        ...(params.keyword ? { keyword: params.keyword } : {}),
+        ...(params.includeDeleted ? { includeDeleted: true } : {}),
+        ...(params.uncategorized ? { uncategorized: true } : {}),
+        ...(params.onlyDeleted ? { onlyDeleted: true } : {})
+      }
+    })
+  },
+
+  getNote(id: string): Promise<{ data: KbNoteItem }> {
+    // 大正文可能超过默认 15s；详情单独放宽
+    return request.get(`/v1/kb/notes/${id}`, { timeout: 120000 })
+  },
+
+  createNote(body: NoteCreateBody): Promise<{ data: KbNoteItem }> {
+    return request.post('/v1/kb/notes', body)
+  },
+
+  updateNote(id: string, body: NoteUpdateBody): Promise<{ data: KbNoteItem }> {
+    return request.put(`/v1/kb/notes/${id}`, body)
+  },
+
+  /** 软删除 → 回收站 */
+  deleteNote(id: string): Promise<{ data: null }> {
+    return request.delete(`/v1/kb/notes/${id}`)
+  },
+
+  restoreNote(id: string): Promise<{ data: KbNoteItem }> {
+    return request.post(`/v1/kb/notes/${id}/restore`)
+  },
+
+  /** 永久删除（含 R2/本地附件对象） */
+  permanentDeleteNote(id: string): Promise<{ data: null }> {
+    return request.delete(`/v1/kb/notes/${id}/permanent`)
+  },
+
+  trashCount(): Promise<{ data: { count: number } }> {
+    return request.get('/v1/kb/notes/trash/count')
+  },
+
+  emptyTrash(): Promise<{ data: { deleted: number } }> {
+    return request.delete('/v1/kb/notes/trash')
+  },
+
+  listCategories(): Promise<{ data: KbCategory[] }> {
+    return request.get('/v1/kb/categories')
+  },
+
+  createCategory(body: {
+    name: string
+    parentId?: string | null
+    sortOrder?: number
+  }): Promise<{ data: KbCategory }> {
+    return request.post('/v1/kb/categories', body)
+  },
+
+  updateCategory(
+    id: string,
+    body: {
+      name?: string
+      parentId?: string | null
+      clearParent?: boolean
+      sortOrder?: number
+    }
+  ): Promise<{ data: KbCategory }> {
+    return request.put(`/v1/kb/categories/${id}`, body)
+  },
+
+  deleteCategory(id: string): Promise<{ data: null }> {
+    return request.delete(`/v1/kb/categories/${id}`)
+  },
+
+  listTags(): Promise<{ data: KbTag[] }> {
+    return request.get('/v1/kb/tags')
+  },
+
+  createTag(name: string): Promise<{ data: KbTag }> {
+    return request.post('/v1/kb/tags', { name })
+  },
+
+  updateTag(id: string, name: string): Promise<{ data: KbTag }> {
+    return request.put(`/v1/kb/tags/${id}`, { name })
+  },
+
+  deleteTag(id: string): Promise<{ data: null }> {
+    return request.delete(`/v1/kb/tags/${id}`)
+  },
+
+  async uploadFile(file: File, noteId?: string | null): Promise<{ data: KbFileItem }> {
+    const fd = new FormData()
+    fd.append('file', file)
+    if (noteId) fd.append('noteId', noteId)
+    const token = localStorage.getItem(TOKEN_KEY)
+    const res = await axios.post('/api/v1/kb/files', fd, {
+      headers: {
+        ...(token ? { Authorization: `Bearer ${token}` } : {})
+        // 不要手动设 Content-Type，让浏览器带 boundary
+      },
+      timeout: 120000
+    })
+    const body = res.data
+    if (!body?.success) {
+      throw new Error(body?.message || '上传失败')
+    }
+    return { data: body.data }
+  },
+
+  listFiles(noteId: string): Promise<{ data: KbFileItem[] }> {
+    return request.get('/v1/kb/files', { params: { noteId } })
+  },
+
+  bindFile(fileId: string, noteId: string): Promise<{ data: KbFileItem }> {
+    return request.post(`/v1/kb/files/${fileId}/bind`, { noteId })
+  },
+
+  deleteFile(fileId: string): Promise<{ data: null }> {
+    return request.delete(`/v1/kb/files/${fileId}`)
+  }
+}

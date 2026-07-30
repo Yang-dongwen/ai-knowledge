@@ -70,6 +70,12 @@ const routes: RouteRecordRaw[] = [
         meta: { title: 'AI 对话', group: 'tools', immersive: true }
       },
       {
+        path: 'kb',
+        name: 'KnowledgeBase',
+        component: () => import('@/views/kb/index.vue'),
+        meta: { title: '知识库', group: 'kb', immersive: true }
+      },
+      {
         path: 'member',
         name: 'Member',
         component: () => import('@/views/member/index.vue'),

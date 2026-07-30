@@ -1,0 +1,550 @@
+package com.dwcode.okxbot.kb.service;
+
+import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
+import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
+import com.dwcode.okxbot.auth.security.SecurityUtils;
+import com.dwcode.okxbot.common.exception.BusinessException;
+import com.dwcode.okxbot.kb.config.KbProperties;
+import com.dwcode.okxbot.kb.dto.NoteCreateRequest;
+import com.dwcode.okxbot.kb.dto.NotePageResponse;
+import com.dwcode.okxbot.kb.dto.NoteResponse;
+import com.dwcode.okxbot.kb.dto.NoteUpdateRequest;
+import com.dwcode.okxbot.kb.dto.TagBrief;
+import com.dwcode.okxbot.kb.entity.KbNoteEntity;
+import com.dwcode.okxbot.kb.entity.KbNoteTagEntity;
+import com.dwcode.okxbot.kb.entity.KbTagEntity;
+import com.dwcode.okxbot.kb.mapper.KbNoteMapper;
+import com.dwcode.okxbot.kb.mapper.KbNoteTagMapper;
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+import org.springframework.util.StringUtils;
+
+import java.time.LocalDateTime;
+import java.util.Collections;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Map;
+import java.util.Objects;
+import java.util.Set;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
+import java.util.stream.Collectors;
+
+@Slf4j
+@Service
+@RequiredArgsConstructor
+public class KbNoteService {
+
+    private static final Pattern FILE_ID_IN_CONTENT =
+            Pattern.compile("/api/v1/kb/files/(\\d+)/content", Pattern.CASE_INSENSITIVE);
+
+    private final KbNoteMapper noteMapper;
+    private final KbNoteTagMapper noteTagMapper;
+    private final KbTagService tagService;
+    private final KbCategoryService categoryService;
+    private final KbFileService fileService;
+    private final KbProperties kbProperties;
+
+    @Transactional
+    public NoteResponse create(NoteCreateRequest req) {
+        Long userId = SecurityUtils.requireCurrentUserId();
+        String content = normalizeContent(req.getContent());
+        String title = resolveTitle(req.getTitle());
+        Long categoryId = resolveCategoryId(userId, req.getCategoryId());
+        List<Long> tagIds = tagService.validateOwnedTagIds(userId, req.getTagIds());
+
+        String format = resolveFormat(req.getContentFormat());
+        KbNoteEntity e = new KbNoteEntity();
+        e.setUserId(userId);
+        e.setTitle(title);
+        e.setContent(content);
+        e.setContentFormat(format);
+        e.setSnippet(buildSnippet(content, format));
+        e.setCategoryId(categoryId);
+        e.setIsPinned(Boolean.TRUE.equals(req.getPinned()) ? 1 : 0);
+        e.setIsDeleted(0);
+        noteMapper.insert(e);
+        tagService.replaceNoteTags(e.getId(), tagIds);
+        // 不再 selectById 整篇重读
+        return toResponse(e, true);
+    }
+
+    @Transactional
+    public NoteResponse update(Long id, NoteUpdateRequest req) {
+        Long userId = SecurityUtils.requireCurrentUserId();
+        KbNoteEntity e = requireOwned(id, userId, false);
+        if (Objects.equals(e.getIsDeleted(), 1)) {
+            throw new BusinessException(400, "已删除的笔记无法编辑，请先恢复");
+        }
+
+        // 只用 UpdateWrapper 更新业务字段，且强制 is_deleted=0，
+        // 避免 updateById 整行写回时把并发软删盖回 0（回收站有、外面还在）
+        LambdaUpdateWrapper<KbNoteEntity> uw = new LambdaUpdateWrapper<KbNoteEntity>()
+                .eq(KbNoteEntity::getId, id)
+                .eq(KbNoteEntity::getUserId, userId)
+                .eq(KbNoteEntity::getIsDeleted, 0);
+
+        boolean any = false;
+        if (req.getTitle() != null) {
+            String title = resolveTitle(req.getTitle());
+            e.setTitle(title);
+            uw.set(KbNoteEntity::getTitle, title);
+            any = true;
+        }
+        if (req.getContent() != null) {
+            String content = normalizeContent(req.getContent());
+            String format = req.getContentFormat() != null
+                    ? resolveFormat(req.getContentFormat())
+                    : (StringUtils.hasText(e.getContentFormat()) ? e.getContentFormat() : "html");
+            String snippet = buildSnippet(content, format);
+            e.setContent(content);
+            e.setContentFormat(format);
+            e.setSnippet(snippet);
+            uw.set(KbNoteEntity::getContent, content);
+            uw.set(KbNoteEntity::getContentFormat, format);
+            uw.set(KbNoteEntity::getSnippet, snippet);
+            any = true;
+        } else if (req.getContentFormat() != null) {
+            String format = resolveFormat(req.getContentFormat());
+            String snippet = buildSnippet(e.getContent(), format);
+            e.setContentFormat(format);
+            e.setSnippet(snippet);
+            uw.set(KbNoteEntity::getContentFormat, format);
+            uw.set(KbNoteEntity::getSnippet, snippet);
+            any = true;
+        }
+        if (Boolean.TRUE.equals(req.getClearCategory())) {
+            e.setCategoryId(null);
+            uw.set(KbNoteEntity::getCategoryId, null);
+            any = true;
+        } else if (req.getCategoryId() != null) {
+            Long categoryId = resolveCategoryId(userId, req.getCategoryId());
+            e.setCategoryId(categoryId);
+            uw.set(KbNoteEntity::getCategoryId, categoryId);
+            any = true;
+        }
+        if (req.getPinned() != null) {
+            int pinned = Boolean.TRUE.equals(req.getPinned()) ? 1 : 0;
+            e.setIsPinned(pinned);
+            uw.set(KbNoteEntity::getIsPinned, pinned);
+            any = true;
+        }
+
+        if (any) {
+            uw.set(KbNoteEntity::getUpdatedAt, LocalDateTime.now());
+            int rows = noteMapper.update(null, uw);
+            if (rows == 0) {
+                throw new BusinessException(404, "笔记不存在或已在回收站，无法保存");
+            }
+            e.setUpdatedAt(LocalDateTime.now());
+        }
+
+        if (req.getTagIds() != null) {
+            List<Long> tagIds = tagService.validateOwnedTagIds(userId, req.getTagIds());
+            tagService.replaceNoteTags(id, tagIds);
+        }
+        return toResponse(e, true);
+    }
+
+    public NoteResponse get(Long id) {
+        return getTimed(id).response();
+    }
+
+    /**
+     * 详情查询（带分段耗时，便于判断慢在 DB 还是组装）。
+     */
+    public TimedNote getTimed(Long id) {
+        long t0 = System.nanoTime();
+        Long userId = SecurityUtils.requireCurrentUserId();
+        long tAuth = System.nanoTime();
+
+        KbNoteEntity e = requireOwned(id, userId, true);
+        long tDb = System.nanoTime();
+        int contentChars = e.getContent() == null ? 0 : e.getContent().length();
+
+        NoteResponse resp = toResponse(e, true);
+        long tBuild = System.nanoTime();
+
+        long authMs = (tAuth - t0) / 1_000_000L;
+        long dbMs = (tDb - tAuth) / 1_000_000L;
+        long buildMs = (tBuild - tDb) / 1_000_000L;
+        long totalMs = (tBuild - t0) / 1_000_000L;
+
+        if (totalMs >= 200 || contentChars >= 100_000) {
+            log.warn("kb note get timed id={} totalMs={} authMs={} dbMs={} buildMs={} contentChars={} userId={}",
+                    id, totalMs, authMs, dbMs, buildMs, contentChars, userId);
+        } else {
+            log.debug("kb note get timed id={} totalMs={} dbMs={} contentChars={}",
+                    id, totalMs, dbMs, contentChars);
+        }
+        return new TimedNote(resp, totalMs, authMs, dbMs, buildMs, contentChars);
+    }
+
+    public record TimedNote(
+            NoteResponse response,
+            long totalMs,
+            long authMs,
+            long dbMs,
+            long buildMs,
+            int contentChars
+    ) {}
+
+    public NotePageResponse list(int page, int size, Long categoryId, Long tagId,
+                                 String keyword, boolean includeDeleted, boolean uncategorized,
+                                 boolean onlyDeleted) {
+        Long userId = SecurityUtils.requireCurrentUserId();
+        int p = Math.max(0, page);
+        int s = Math.min(100, Math.max(1, size));
+
+        LambdaQueryWrapper<KbNoteEntity> q = new LambdaQueryWrapper<KbNoteEntity>()
+                .eq(KbNoteEntity::getUserId, userId)
+                // 列表绝不加载 LONGTEXT content，只取摘要与元数据
+                .select(
+                        KbNoteEntity::getId,
+                        KbNoteEntity::getUserId,
+                        KbNoteEntity::getTitle,
+                        KbNoteEntity::getContentFormat,
+                        KbNoteEntity::getSnippet,
+                        KbNoteEntity::getCategoryId,
+                        KbNoteEntity::getIsPinned,
+                        KbNoteEntity::getIsDeleted,
+                        KbNoteEntity::getDeletedAt,
+                        KbNoteEntity::getCreatedAt,
+                        KbNoteEntity::getUpdatedAt
+                );
+
+        if (onlyDeleted) {
+            q.eq(KbNoteEntity::getIsDeleted, 1);
+        } else if (!includeDeleted) {
+            q.eq(KbNoteEntity::getIsDeleted, 0);
+        }
+
+        // 回收站列表不按分类/标签过滤（已删笔记仍可带 categoryId）
+        if (!onlyDeleted) {
+            if (uncategorized) {
+                q.isNull(KbNoteEntity::getCategoryId);
+            } else if (categoryId != null) {
+                categoryService.requireOwned(categoryId, userId);
+                q.eq(KbNoteEntity::getCategoryId, categoryId);
+            }
+
+            if (tagId != null) {
+                List<Long> noteIds = tagService.noteIdsByTag(userId, tagId);
+                if (noteIds.isEmpty()) {
+                    return NotePageResponse.builder()
+                            .items(List.of())
+                            .total(0)
+                            .page(p)
+                            .size(s)
+                            .build();
+                }
+                q.in(KbNoteEntity::getId, noteIds);
+            }
+        }
+
+        if (StringUtils.hasText(keyword)) {
+            String kw = keyword.trim();
+            if (kw.length() > 100) {
+                kw = kw.substring(0, 100);
+            }
+            final String search = kw;
+            // 禁止对 content LONGTEXT 做 LIKE（长文会拖垮接口）；搜标题 + 摘要
+            q.and(w -> w.like(KbNoteEntity::getTitle, search)
+                    .or()
+                    .like(KbNoteEntity::getSnippet, search));
+        }
+
+        if (onlyDeleted) {
+            q.orderByDesc(KbNoteEntity::getDeletedAt)
+                    .orderByDesc(KbNoteEntity::getUpdatedAt);
+        } else {
+            q.orderByDesc(KbNoteEntity::getIsPinned)
+                    .orderByDesc(KbNoteEntity::getUpdatedAt);
+        }
+
+        Page<KbNoteEntity> pageResult = noteMapper.selectPage(new Page<>(p + 1L, s), q);
+        List<KbNoteEntity> records = pageResult.getRecords();
+        if (records.isEmpty()) {
+            return NotePageResponse.builder()
+                    .items(List.of())
+                    .total(pageResult.getTotal())
+                    .page(p)
+                    .size(s)
+                    .build();
+        }
+
+        List<Long> ids = records.stream().map(KbNoteEntity::getId).toList();
+        Map<Long, List<KbTagEntity>> tagsMap = tagService.tagsByNoteIds(userId, ids);
+        Map<Long, String> catNames = categoryService.nameMap(userId,
+                records.stream().map(KbNoteEntity::getCategoryId).filter(Objects::nonNull).toList());
+
+        List<NoteResponse> items = records.stream()
+                .map(n -> toResponse(n, false, tagsMap.getOrDefault(n.getId(), List.of()),
+                        catNames.get(n.getCategoryId())))
+                .toList();
+
+        return NotePageResponse.builder()
+                .items(items)
+                .total(pageResult.getTotal())
+                .page(p)
+                .size(s)
+                .build();
+    }
+
+    @Transactional
+    public void delete(Long id) {
+        Long userId = SecurityUtils.requireCurrentUserId();
+        // 只改软删字段，绝不 updateById 整实体（防止与保存并发把 is_deleted 写回 0）
+        int rows = noteMapper.update(null, new LambdaUpdateWrapper<KbNoteEntity>()
+                .eq(KbNoteEntity::getId, id)
+                .eq(KbNoteEntity::getUserId, userId)
+                .eq(KbNoteEntity::getIsDeleted, 0)
+                .set(KbNoteEntity::getIsDeleted, 1)
+                .set(KbNoteEntity::getDeletedAt, LocalDateTime.now())
+                .set(KbNoteEntity::getUpdatedAt, LocalDateTime.now()));
+        if (rows == 0) {
+            // 已删或不存在：幂等视为成功（已在回收站）
+            KbNoteEntity e = noteMapper.selectById(id);
+            if (e == null || !Objects.equals(e.getUserId(), userId)) {
+                throw new BusinessException(404, "笔记不存在");
+            }
+            if (!Objects.equals(e.getIsDeleted(), 1)) {
+                throw new BusinessException(400, "无法移入回收站");
+            }
+        }
+        log.info("kb note soft-deleted userId={} noteId={} rows={}", userId, id, rows);
+    }
+
+    @Transactional
+    public NoteResponse restore(Long id) {
+        Long userId = SecurityUtils.requireCurrentUserId();
+        int rows = noteMapper.update(null, new LambdaUpdateWrapper<KbNoteEntity>()
+                .eq(KbNoteEntity::getId, id)
+                .eq(KbNoteEntity::getUserId, userId)
+                .eq(KbNoteEntity::getIsDeleted, 1)
+                .set(KbNoteEntity::getIsDeleted, 0)
+                .set(KbNoteEntity::getDeletedAt, null)
+                .set(KbNoteEntity::getUpdatedAt, LocalDateTime.now()));
+        if (rows == 0) {
+            KbNoteEntity e = requireOwned(id, userId, true);
+            if (!Objects.equals(e.getIsDeleted(), 1)) {
+                return toResponse(e, true);
+            }
+            throw new BusinessException(404, "笔记不存在");
+        }
+        return toResponse(requireOwned(id, userId, true), true);
+    }
+
+    /**
+     * 永久删除：笔记 + 标签关联 + 附件记录 + R2/本地对象。
+     */
+    @Transactional
+    public void permanentDelete(Long id) {
+        Long userId = SecurityUtils.requireCurrentUserId();
+        KbNoteEntity e = requireOwned(id, userId, true);
+        if (!Objects.equals(e.getIsDeleted(), 1)) {
+            throw new BusinessException(400, "仅回收站中的笔记可永久删除，请先移入回收站");
+        }
+        purgeNoteFully(userId, e);
+        log.info("kb note permanently deleted userId={} noteId={}", userId, id);
+    }
+
+    /**
+     * 清空回收站：当前用户全部软删笔记永久删除。
+     *
+     * @return 删除条数
+     */
+    @Transactional
+    public int emptyTrash() {
+        Long userId = SecurityUtils.requireCurrentUserId();
+        List<KbNoteEntity> trash = noteMapper.selectList(
+                new LambdaQueryWrapper<KbNoteEntity>()
+                        .eq(KbNoteEntity::getUserId, userId)
+                        .eq(KbNoteEntity::getIsDeleted, 1));
+        for (KbNoteEntity e : trash) {
+            purgeNoteFully(userId, e);
+        }
+        log.info("kb trash emptied userId={} count={}", userId, trash.size());
+        return trash.size();
+    }
+
+    public long countTrash() {
+        Long userId = SecurityUtils.requireCurrentUserId();
+        Long c = noteMapper.selectCount(
+                new LambdaQueryWrapper<KbNoteEntity>()
+                        .eq(KbNoteEntity::getUserId, userId)
+                        .eq(KbNoteEntity::getIsDeleted, 1));
+        return c == null ? 0 : c;
+    }
+
+    private void purgeNoteFully(Long userId, KbNoteEntity e) {
+        Long noteId = e.getId();
+        // 1) 正文里引用的媒体
+        Set<Long> fromContent = extractFileIdsFromContent(e.getContent());
+        if (!fromContent.isEmpty()) {
+            fileService.deleteByIds(userId, fromContent);
+        }
+        // 2) note_id 关联附件
+        fileService.deleteAllForNote(userId, noteId);
+        // 3) 标签关联
+        noteTagMapper.delete(new LambdaQueryWrapper<KbNoteTagEntity>()
+                .eq(KbNoteTagEntity::getNoteId, noteId));
+        // 4) 笔记行
+        noteMapper.deleteById(noteId);
+    }
+
+    static Set<Long> extractFileIdsFromContent(String content) {
+        Set<Long> ids = new HashSet<>();
+        if (!StringUtils.hasText(content)) {
+            return ids;
+        }
+        Matcher m = FILE_ID_IN_CONTENT.matcher(content);
+        while (m.find()) {
+            try {
+                ids.add(Long.parseLong(m.group(1)));
+            } catch (NumberFormatException ignored) {
+                // skip
+            }
+        }
+        return ids;
+    }
+
+    private KbNoteEntity requireOwned(Long id, Long userId, boolean allowDeleted) {
+        KbNoteEntity e = noteMapper.selectById(id);
+        if (e == null || !Objects.equals(e.getUserId(), userId)) {
+            throw new BusinessException(404, "笔记不存在");
+        }
+        if (!allowDeleted && Objects.equals(e.getIsDeleted(), 1)) {
+            throw new BusinessException(404, "笔记不存在");
+        }
+        return e;
+    }
+
+    private Long resolveCategoryId(Long userId, Long categoryId) {
+        if (categoryId == null) {
+            return null;
+        }
+        categoryService.requireOwned(categoryId, userId);
+        return categoryId;
+    }
+
+    private String resolveTitle(String title) {
+        if (!StringUtils.hasText(title)) {
+            return kbProperties.getNote().getDefaultTitle();
+        }
+        String t = title.trim();
+        if (t.isEmpty()) {
+            return kbProperties.getNote().getDefaultTitle();
+        }
+        if (t.length() > 200) {
+            throw new BusinessException(400, "标题不能超过200字");
+        }
+        return t;
+    }
+
+    private String normalizeContent(String content) {
+        if (content == null) {
+            return "";
+        }
+        int max = kbProperties.getNote().getMaxContentChars();
+        if (content.length() > max) {
+            throw new BusinessException(400, "正文不能超过 " + max + " 字符");
+        }
+        return content;
+    }
+
+    private String resolveFormat(String format) {
+        if (!StringUtils.hasText(format)) {
+            String def = kbProperties.getNote().getDefaultFormat();
+            return StringUtils.hasText(def) ? def.trim().toLowerCase() : "html";
+        }
+        String f = format.trim().toLowerCase();
+        if (!"html".equals(f) && !"markdown".equals(f)) {
+            throw new BusinessException(400, "contentFormat 仅支持 html 或 markdown");
+        }
+        return f;
+    }
+
+    private NoteResponse toResponse(KbNoteEntity e, boolean includeContent) {
+        Long userId = e.getUserId();
+        Map<Long, List<KbTagEntity>> tagsMap = tagService.tagsByNoteIds(userId, List.of(e.getId()));
+        String catName = null;
+        if (e.getCategoryId() != null) {
+            catName = categoryService.nameMap(userId, List.of(e.getCategoryId())).get(e.getCategoryId());
+        }
+        return toResponse(e, includeContent, tagsMap.getOrDefault(e.getId(), List.of()), catName);
+    }
+
+    private NoteResponse toResponse(KbNoteEntity e, boolean includeContent,
+                                    List<KbTagEntity> tags, String categoryName) {
+        List<TagBrief> tagBriefs = tags == null ? Collections.emptyList() : tags.stream()
+                .map(t -> TagBrief.builder().id(t.getId()).name(t.getName()).build())
+                .collect(Collectors.toList());
+
+        String format = StringUtils.hasText(e.getContentFormat()) ? e.getContentFormat() : "markdown";
+        String snippet = null;
+        if (!includeContent) {
+            // 优先用库里的 snippet，避免 list 再解析整篇 content
+            if (StringUtils.hasText(e.getSnippet())) {
+                snippet = e.getSnippet();
+            } else if (StringUtils.hasText(e.getContent())) {
+                snippet = buildSnippet(e.getContent(), format);
+            } else {
+                snippet = "";
+            }
+        }
+
+        return NoteResponse.builder()
+                .id(e.getId())
+                .title(e.getTitle())
+                .content(includeContent ? e.getContent() : null)
+                .contentFormat(format)
+                .snippet(snippet)
+                .categoryId(e.getCategoryId())
+                .categoryName(categoryName)
+                .tags(tagBriefs)
+                .pinned(Objects.equals(e.getIsPinned(), 1))
+                .deleted(Objects.equals(e.getIsDeleted(), 1))
+                .createdAt(e.getCreatedAt())
+                .updatedAt(e.getUpdatedAt())
+                .build();
+    }
+
+    static String buildSnippet(String content) {
+        return buildSnippet(content, "markdown");
+    }
+
+    static String buildSnippet(String content, String format) {
+        if (!StringUtils.hasText(content)) {
+            return "";
+        }
+        String plain = content;
+        if ("html".equalsIgnoreCase(format) || looksLikeHtml(content)) {
+            plain = content
+                    .replaceAll("(?is)<script[^>]*>.*?</script>", " ")
+                    .replaceAll("(?is)<style[^>]*>.*?</style>", " ")
+                    .replaceAll("(?i)<br\\s*/?>", " ")
+                    .replaceAll("(?i)</p>", " ")
+                    .replaceAll("(?i)</div>", " ")
+                    .replaceAll("<[^>]+>", " ");
+        } else {
+            plain = content
+                    .replaceAll("(?m)^#+\\s*", "")
+                    .replaceAll("[*`_>~\\[\\]()!]", "");
+        }
+        plain = plain.replaceAll("\\s+", " ").trim();
+        int max = 160;
+        if (plain.length() <= max) {
+            return plain;
+        }
+        return plain.substring(0, max) + "…";
+    }
+
+    private static boolean looksLikeHtml(String content) {
+        String t = content.trim();
+        return t.startsWith("<") && t.contains(">");
+    }
+}

@@ -21,6 +21,15 @@ export default defineConfig({
       }
     }
   },
+  optimizeDeps: {
+    include: [
+      'markdown-it',
+      '@wangeditor/editor',
+      '@wangeditor/editor-for-vue',
+      'docx-preview',
+      'xlsx'
+    ]
+  },
   css: {
     preprocessorOptions: {
       scss: {

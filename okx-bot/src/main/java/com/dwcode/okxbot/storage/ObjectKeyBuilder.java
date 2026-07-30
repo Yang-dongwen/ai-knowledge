@@ -85,7 +85,7 @@ public class ObjectKeyBuilder {
         }
         String m = module.trim().toLowerCase(Locale.ROOT);
         return switch (m) {
-            case "video", "aigen", "imggen", "article" -> m;
+            case "video", "aigen", "imggen", "article", "kb" -> m;
             default -> throw new BusinessException(400, "不支持的 storage module: " + module);
         };
     }

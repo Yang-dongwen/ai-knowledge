@@ -10,7 +10,7 @@
         <em>变成作品</em>
       </h1>
       <p class="hero-sub">
-        对话、视频提取、文章提取、视频生成、文生图 — 一站式工具台。圆润科技感界面，专注创作流。
+        对话、视频提取、文章提取、视频生成、文生图 — 一站式 AI 工具台。知识库见顶栏独立入口。
       </p>
       <div class="hero-actions">
         <a-button type="primary" size="large" class="cta-main" @click="go('ai-chat')">

@@ -27,10 +27,10 @@ import AppHeader from './AppHeader.vue'
 const route = useRoute()
 /** 沉浸式页面（如 AI 对话）：无页脚、无外层滚动，高度锁死在视口内 */
 const isImmersive = computed(() => route.meta?.immersive === true)
-/** AI 工具相关页：启用极简控件样式 */
+/** AI 工具 / 知识库等业务页：启用极简控件样式 */
 const isToolsPage = computed(() => {
   const group = route.meta?.group as string | undefined
-  return group === 'tools' || group === 'home' || route.path === '/home'
+  return group === 'tools' || group === 'kb' || group === 'home' || route.path === '/home'
 })
 
 // 弹窗挂到 body，同步 class 以便按钮/checkbox 样式一致
