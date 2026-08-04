@@ -93,6 +93,24 @@ async function onLogin() {
   padding: 20px 18px 24px;
 }
 
+.field {
+  margin-bottom: 14px;
+}
+
+.field label {
+  display: block;
+  font-size: 13px;
+  color: #64748b;
+  margin-bottom: 6px;
+  font-weight: 550;
+}
+
+.field input {
+  width: 100%;
+  color: #0f172a;
+  background: #f8fafc;
+}
+
 .error {
   color: var(--danger);
   font-size: 13px;

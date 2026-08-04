@@ -1,37 +1,73 @@
 <view class="login-page">
   <view class="hero">
-    <view class="logo">KB</view>
+    <view class="logo-wrap">
+      <view class="logo">KB</view>
+    </view>
     <view class="title">个人知识库</view>
-    <view class="sub muted">与 PC 端共用账号 · 碎片时间快记查阅</view>
+    <view class="sub">记得到 · 找得到 · 整理得顺</view>
   </view>
 
   <view class="form card">
+    <view class="bind-tip" wx:if="{{needBind}}">
+      <text class="bind-tip-text">首次微信登录需绑定已有邮箱账号，之后可一键进入</text>
+    </view>
+
+    <button
+      class="btn btn-primary btn-block btn-wx"
+      loading="{{wxLoading}}"
+      disabled="{{wxLoading || loading}}"
+      bindtap="onWxLogin"
+    >
+      {{needBind ? '重新获取微信凭证' : '微信一键登录'}}
+    </button>
+
+    <view class="divider-row">
+      <view class="divider-line"></view>
+      <text class="divider-text">或使用邮箱</text>
+      <view class="divider-line"></view>
+    </view>
+
     <view class="field">
-      <text class="label">邮箱</text>
+      <text class="field-label">邮箱</text>
       <input
         class="input"
         type="text"
         placeholder="注册邮箱"
+        placeholder-class="ph"
+        placeholder-style="color:#94a3b8;"
         value="{{email}}"
         bindinput="onEmail"
         confirm-type="next"
       />
     </view>
     <view class="field">
-      <text class="label">密码</text>
+      <text class="field-label">密码</text>
       <input
         class="input"
         password
         placeholder="登录密码"
+        placeholder-class="ph"
+        placeholder-style="color:#94a3b8;"
         value="{{password}}"
         bindinput="onPassword"
         confirm-type="done"
         bindconfirm="onLogin"
       />
     </view>
-    <button class="btn-primary submit" loading="{{loading}}" disabled="{{loading}}" bindtap="onLogin">
-      登录
+
+    <button
+      class="btn btn-secondary btn-block submit"
+      loading="{{loading}}"
+      disabled="{{loading || wxLoading}}"
+      bindtap="onLogin"
+    >
+      {{needBind ? '绑定并登录' : '邮箱登录'}}
     </button>
-    <view class="hint muted">使用与 PC 工具台相同的邮箱账号</view>
+
+    <view class="hint muted" wx:if="{{needBind}}">
+      <text class="link" bindtap="switchEmailMode">仅用邮箱登录</text>
+    </view>
+    <view class="hint muted" wx:else>与 PC 工具台使用同一邮箱账号</view>
+    <view class="hint muted-3" wx:if="{{mockHint}}">开发模式 · 模拟微信 openid</view>
   </view>
 </view>

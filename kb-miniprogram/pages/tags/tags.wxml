@@ -1,0 +1,57 @@
+<view class="page safe-bottom">
+  <view class="head">
+    <view class="meta muted">共 {{tags.length}} 个标签</view>
+    <view class="btn-text-new" bindtap="openCreate">新建</view>
+  </view>
+
+  <view class="empty-state" wx:if="{{!loading && !tags.length}}">
+    <view class="empty-icon">🏷</view>
+    <view class="empty-title">还没有标签</view>
+    <view class="empty-desc">用标签给笔记打上主题</view>
+    <button class="btn btn-primary empty-cta" bindtap="openCreate">创建标签</button>
+  </view>
+
+  <view class="list" wx:elif="{{!loading}}">
+    <view
+      class="tag-row card"
+      wx:for="{{tags}}"
+      wx:key="id"
+      data-id="{{item.id}}"
+      data-name="{{item.name}}"
+      bindtap="onTagTap"
+    >
+      <view class="left">
+        <text class="hash">#</text>
+        <text class="name">{{item.name}}</text>
+      </view>
+      <view class="right muted">
+        <text>{{item.noteCount}} 篇</text>
+        <text class="chevron">›</text>
+      </view>
+    </view>
+  </view>
+
+  <view class="loading-text" wx:if="{{loading}}">加载中…</view>
+</view>
+
+<view class="mask" wx:if="{{showSheet}}" bindtap="closeSheet"></view>
+<view class="sheet" wx:if="{{showSheet}}">
+  <view class="sheet-handle"></view>
+  <view class="sheet-title">{{sheetMode === 'create' ? '新建标签' : '重命名标签'}}</view>
+  <input
+    class="input sheet-input"
+    placeholder="标签名称"
+    placeholder-class="ph"
+    placeholder-style="color:#94a3b8;"
+    value="{{inputName}}"
+    maxlength="64"
+    focus
+    bindinput="onInputName"
+    confirm-type="done"
+    bindconfirm="submitSheet"
+  />
+  <view class="sheet-actions">
+    <button class="btn btn-ghost btn-half" bindtap="closeSheet" disabled="{{busy}}">取消</button>
+    <button class="btn btn-primary btn-half" loading="{{busy}}" disabled="{{busy}}" bindtap="submitSheet">确定</button>
+  </view>
+</view>

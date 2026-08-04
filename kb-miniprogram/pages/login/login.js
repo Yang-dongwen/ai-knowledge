@@ -1,17 +1,24 @@
 const { api } = require('../../utils/request')
 const { setSession, isLoggedIn } = require('../../utils/auth')
+const { getWxLoginCode, isWxMockLogin } = require('../../utils/config')
 
 Page({
   data: {
     email: '',
     password: '',
-    loading: false
+    loading: false,
+    wxLoading: false,
+    needBind: false,
+    mode: 'login', // login | bind
+    mockHint: false
   },
 
   onShow() {
     if (isLoggedIn()) {
       wx.switchTab({ url: '/pages/notes/notes' })
+      return
     }
+    this.setData({ mockHint: isWxMockLogin() })
   },
 
   onEmail(e) {
@@ -20,6 +27,14 @@ Page({
 
   onPassword(e) {
     this.setData({ password: e.detail.value })
+  },
+
+  finishLogin(data) {
+    setSession(data.token, data.user)
+    wx.showToast({ title: '登录成功', icon: 'success' })
+    setTimeout(() => {
+      wx.switchTab({ url: '/pages/notes/notes' })
+    }, 300)
   },
 
   async onLogin() {
@@ -31,16 +46,51 @@ Page({
     }
     this.setData({ loading: true })
     try {
-      const data = await api.login(email, password)
-      setSession(data.token, data.user)
-      wx.showToast({ title: '登录成功', icon: 'success' })
-      setTimeout(() => {
-        wx.switchTab({ url: '/pages/notes/notes' })
-      }, 300)
+      if (this.data.needBind || this.data.mode === 'bind') {
+        const code = await getWxLoginCode()
+        const data = await api.wxMiniBind(code, email, password)
+        if (data.needBind) {
+          wx.showToast({ title: '绑定失败，请重试', icon: 'none' })
+          return
+        }
+        this.finishLogin(data)
+      } else {
+        const data = await api.login(email, password)
+        this.finishLogin(data)
+      }
     } catch (e) {
       wx.showToast({ title: e.message || '登录失败', icon: 'none' })
     } finally {
       this.setData({ loading: false })
     }
+  },
+
+  async onWxLogin() {
+    this.setData({ wxLoading: true })
+    try {
+      const code = await getWxLoginCode()
+      const data = await api.wxMiniLogin(code)
+      if (data && data.needBind) {
+        this.setData({
+          needBind: true,
+          mode: 'bind'
+        })
+        wx.showToast({ title: '请绑定已有邮箱账号', icon: 'none' })
+        return
+      }
+      if (data && data.token) {
+        this.finishLogin(data)
+        return
+      }
+      wx.showToast({ title: '登录失败', icon: 'none' })
+    } catch (e) {
+      wx.showToast({ title: e.message || '微信登录失败', icon: 'none' })
+    } finally {
+      this.setData({ wxLoading: false })
+    }
+  },
+
+  switchEmailMode() {
+    this.setData({ needBind: false, mode: 'login' })
   }
 })

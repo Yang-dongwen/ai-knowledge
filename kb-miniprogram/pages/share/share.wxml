@@ -1,0 +1,28 @@
+<view class="page safe-bottom share-page">
+  <view class="brand muted">知识库 · 分享阅读</view>
+
+  <view class="loading-text" wx:if="{{loading}}">加载中…</view>
+
+  <view class="empty-state" wx:elif="{{error}}">
+    <view class="empty-icon">🔗</view>
+    <view class="empty-title">无法打开</view>
+    <view class="empty-desc">{{error}}</view>
+    <view class="empty-desc muted-3">链接可能已关闭，或文档已被删除</view>
+  </view>
+
+  <view class="card article" wx:elif="{{note}}">
+    <view class="meta muted">
+      <text wx:if="{{note.authorName}}">{{note.authorName}}</text>
+      <text wx:if="{{note.authorName && note.dateText}}"> · </text>
+      <text wx:if="{{note.dateText}}">{{note.dateText}}</text>
+      <text> · 只读</text>
+    </view>
+    <view class="tags" wx:if="{{note.tags.length}}">
+      <text class="tag" wx:for="{{note.tags}}" wx:key="*this">#{{item}}</text>
+    </view>
+    <view class="title">{{note.title || '未命名笔记'}}</view>
+    <view class="rule" />
+    <rich-text class="body" nodes="{{contentHtml}}" />
+    <view class="foot muted-3">由知识库生成 · 仅供阅读</view>
+  </view>
+</view>

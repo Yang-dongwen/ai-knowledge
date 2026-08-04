@@ -60,6 +60,13 @@ auth:
   admin:
     seed-enabled: true
     nickname: 超级管理员
+  wechat:
+    mini:
+      # true + 填写 app-id/secret 后走真实 jscode2session；本地默认 mock
+      # 密钥放环境变量 / deploy/env/app.env，勿写进仓库
+      enabled: ${WX_MINI_ENABLED:false}
+      app-id: ${WX_MINI_APP_ID:}
+      app-secret: ${WX_MINI_APP_SECRET:}
 
 # 会员支付
 pay:

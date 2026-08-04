@@ -32,6 +32,12 @@ auth:
     seed-enabled: ${AUTH_ADMIN_SEED_ENABLED:true}
     email: ${AUTH_ADMIN_EMAIL:admin@okx-bot.local}
     password: ${AUTH_ADMIN_PASSWORD}
+  wechat:
+    mini:
+      # 生产默认开启真实微信登录；无密钥时可设 WX_MINI_ENABLED=false
+      enabled: ${WX_MINI_ENABLED:true}
+      app-id: ${WX_MINI_APP_ID:}
+      app-secret: ${WX_MINI_APP_SECRET:}
 
 pay:
   public-base-url: ${PAY_PUBLIC_BASE_URL}

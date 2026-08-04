@@ -25,14 +25,21 @@
       <button class="btn btn-primary sm" type="button" @click="reload">搜索</button>
     </div>
 
+    <div v-if="!trashMode" class="tool-links">
+      <button type="button" class="link" @click="$router.push('/folders')">文件夹</button>
+      <button type="button" class="link" @click="$router.push('/tags')">标签</button>
+    </div>
+
     <div class="filter-row">
+      <button type="button" class="chip" :class="{ on: isAll }" @click="clearFilters">全部</button>
       <button
+        v-if="!trashMode"
         type="button"
         class="chip"
-        :class="{ on: !trashMode && !filterCategoryId }"
-        @click="clearFilters"
+        :class="{ on: filterUncategorized }"
+        @click="filterUncat"
       >
-        全部
+        未分类
       </button>
       <button
         v-for="c in flatCats"
@@ -44,36 +51,58 @@
       >
         {{ c.label }}
       </button>
+      <button
+        v-for="t in tags"
+        :key="'t' + t.id"
+        type="button"
+        class="chip tag-chip"
+        :class="{ on: !trashMode && filterTagId === t.id }"
+        @click="filterByTag(t.id)"
+      >
+        #{{ t.name }}
+      </button>
       <button type="button" class="chip trash" :class="{ on: trashMode }" @click="toggleTrash">
         回收站{{ trashCount ? ` ${trashCount}` : '' }}
       </button>
     </div>
 
-    <p class="meta muted">共 {{ total }} 条</p>
+    <p class="meta muted">{{ filterLabel }} · {{ total }} 条</p>
 
     <div v-if="loading && !notes.length" class="empty">加载中…</div>
     <div v-else-if="!notes.length" class="empty">
-      {{ trashMode ? '回收站为空' : '还没有笔记' }}
+      <p>{{ trashMode ? '回收站为空' : '还没有笔记' }}</p>
+      <button v-if="!trashMode" class="btn btn-primary" type="button" @click="goCreate">写一条</button>
     </div>
     <div v-else class="list">
       <article
         v-for="n in notes"
         :key="n.id"
         class="card note"
-        :class="{ deleted: n.deleted || trashMode }"
+        :class="{ deleted: n.deleted || trashMode, open: openId === n.id }"
         @click="goDetail(n.id)"
+        @touchstart.passive="onTouchStart($event, n.id)"
+        @touchend.passive="onTouchEnd($event, n.id)"
+        @contextmenu.prevent="onLongPress(n)"
       >
-        <div class="title">
-          <span v-if="n.pinned">📌 </span>{{ n.title || '未命名笔记' }}
-          <span class="fmt" :class="n.contentFormat === 'markdown' ? 'md' : 'html'">
-            {{ n.contentFormat === 'markdown' ? 'MD' : '富文本' }}
-          </span>
+        <div class="swipe-hint" v-if="!trashMode && openId === n.id">
+          <button type="button" class="act pin" @click.stop="togglePin(n)">
+            {{ n.pinned ? '取消置顶' : '置顶' }}
+          </button>
+          <button type="button" class="act del" @click.stop="softDelete(n.id)">删除</button>
         </div>
-        <div class="snippet muted">{{ n.snippet || '暂无摘要' }}</div>
-        <div class="foot">
-          <span v-if="n.categoryName" class="cat">{{ n.categoryName }}</span>
-          <span v-for="t in n.tags || []" :key="t.id" class="tag">#{{ t.name }}</span>
-          <span class="time muted">{{ formatTime(n.updatedAt) }}</span>
+        <div class="note-body">
+          <div class="title">
+            <span v-if="n.pinned">📌 </span>{{ n.title || '未命名笔记' }}
+            <span class="fmt" :class="n.contentFormat === 'markdown' ? 'md' : 'html'">
+              {{ n.contentFormat === 'markdown' ? 'MD' : '富文本' }}
+            </span>
+          </div>
+          <div class="snippet muted">{{ n.snippet || '暂无摘要' }}</div>
+          <div class="foot">
+            <span v-if="n.categoryName" class="cat">{{ n.categoryName }}</span>
+            <span v-for="t in n.tags || []" :key="t.id" class="tag">#{{ t.name }}</span>
+            <span class="time muted">{{ formatTime(n.updatedAt) }}</span>
+          </div>
         </div>
       </article>
     </div>
@@ -108,18 +137,41 @@ const trashMode = ref(false)
 const trashCount = ref(0)
 const emptying = ref(false)
 const categories = ref([])
+const tags = ref([])
 const filterCategoryId = ref('')
+const filterTagId = ref('')
+const filterUncategorized = ref(false)
+const openId = ref('')
+let touchX = 0
 
 const flatCats = computed(() => {
   const out = []
   const walk = (nodes, depth) => {
     for (const n of nodes || []) {
-      out.push({ id: n.id, label: `${'— '.repeat(depth)}${n.name}`.trim() })
+      out.push({ id: String(n.id), label: `${'··'.repeat(depth)}${n.name}` })
       if (n.children?.length) walk(n.children, depth + 1)
     }
   }
   walk(categories.value, 0)
-  return out.slice(0, 12)
+  return out
+})
+
+const isAll = computed(
+  () => !trashMode.value && !filterCategoryId.value && !filterTagId.value && !filterUncategorized.value
+)
+
+const filterLabel = computed(() => {
+  if (trashMode.value) return '回收站'
+  if (filterTagId.value) {
+    const t = tags.value.find((x) => x.id === filterTagId.value)
+    return t ? `#${t.name}` : '标签'
+  }
+  if (filterUncategorized.value) return '未分类'
+  if (filterCategoryId.value) {
+    const c = flatCats.value.find((x) => x.id === filterCategoryId.value)
+    return c ? c.label : '分类'
+  }
+  return '全部'
 })
 
 async function wrapAuth(fn) {
@@ -135,9 +187,28 @@ async function wrapAuth(fn) {
   }
 }
 
+function listQuery(p) {
+  const q = {
+    page: p,
+    size,
+    keyword: keyword.value.trim() || undefined,
+    onlyDeleted: trashMode.value || undefined
+  }
+  if (!trashMode.value) {
+    if (filterTagId.value) q.tagId = filterTagId.value
+    else if (filterUncategorized.value) q.uncategorized = true
+    else if (filterCategoryId.value) q.categoryId = filterCategoryId.value
+  }
+  return q
+}
+
 async function loadMeta() {
   await wrapAuth(async () => {
     categories.value = (await api.listCategories()) || []
+    tags.value = ((await api.listTags()) || []).map((t) => ({
+      id: String(t.id),
+      name: t.name
+    }))
     const tc = await api.trashCount()
     trashCount.value = Number(tc?.count || 0)
   })
@@ -146,14 +217,9 @@ async function loadMeta() {
 async function reload() {
   loading.value = true
   page.value = 0
+  openId.value = ''
   await wrapAuth(async () => {
-    const data = await api.listNotes({
-      page: 0,
-      size,
-      keyword: keyword.value.trim() || undefined,
-      onlyDeleted: trashMode.value || undefined,
-      categoryId: !trashMode.value && filterCategoryId.value ? filterCategoryId.value : undefined
-    })
+    const data = await api.listNotes(listQuery(0))
     notes.value = data.items || []
     total.value = data.total || 0
     hasMore.value = notes.value.length < total.value
@@ -171,13 +237,7 @@ async function loadMore() {
   loadingMore.value = true
   const next = page.value + 1
   await wrapAuth(async () => {
-    const data = await api.listNotes({
-      page: next,
-      size,
-      keyword: keyword.value.trim() || undefined,
-      onlyDeleted: trashMode.value || undefined,
-      categoryId: !trashMode.value && filterCategoryId.value ? filterCategoryId.value : undefined
-    })
+    const data = await api.listNotes(listQuery(next))
     notes.value = notes.value.concat(data.items || [])
     page.value = next
     total.value = data.total || 0
@@ -186,16 +246,20 @@ async function loadMore() {
   loadingMore.value = false
 }
 
-function toggleTrash() {
-  trashMode.value = !trashMode.value
+function clearFilters() {
+  trashMode.value = false
   filterCategoryId.value = ''
+  filterTagId.value = ''
+  filterUncategorized.value = false
   page.value = 0
   reload()
 }
 
-function clearFilters() {
+function filterUncat() {
   trashMode.value = false
   filterCategoryId.value = ''
+  filterTagId.value = ''
+  filterUncategorized.value = true
   page.value = 0
   reload()
 }
@@ -203,11 +267,73 @@ function clearFilters() {
 function filterByCat(id) {
   trashMode.value = false
   filterCategoryId.value = id
+  filterTagId.value = ''
+  filterUncategorized.value = false
   page.value = 0
   reload()
 }
 
+function filterByTag(id) {
+  trashMode.value = false
+  filterTagId.value = id
+  filterCategoryId.value = ''
+  filterUncategorized.value = false
+  page.value = 0
+  reload()
+}
+
+function toggleTrash() {
+  const next = !trashMode.value
+  trashMode.value = next
+  filterCategoryId.value = ''
+  filterTagId.value = ''
+  filterUncategorized.value = false
+  page.value = 0
+  reload()
+}
+
+function onTouchStart(e, id) {
+  touchX = e.changedTouches?.[0]?.clientX || 0
+}
+
+function onTouchEnd(e, id) {
+  if (trashMode.value) return
+  const x = e.changedTouches?.[0]?.clientX || 0
+  const dx = x - touchX
+  if (dx < -48) openId.value = id
+  else if (dx > 40 && openId.value === id) openId.value = ''
+}
+
+function onLongPress(n) {
+  if (trashMode.value) return
+  const act = prompt(`「${n.title || '未命名'}」\n1 置顶切换  2 删除`, '1')
+  if (act === '1') togglePin(n)
+  else if (act === '2') softDelete(n.id)
+}
+
+async function togglePin(n) {
+  await wrapAuth(async () => {
+    await api.updateNote(n.id, { pinned: !n.pinned })
+    openId.value = ''
+    await reload()
+  })
+}
+
+async function softDelete(id) {
+  if (!confirm('移入回收站？')) return
+  await wrapAuth(async () => {
+    await api.deleteNote(id)
+    openId.value = ''
+    await reload()
+  })
+}
+
 function goDetail(id) {
+  if (openId.value === id) {
+    openId.value = ''
+    return
+  }
+  if (openId.value) openId.value = ''
   router.push(`/detail/${id}`)
 }
 
@@ -227,6 +353,21 @@ async function onEmptyTrash() {
 }
 
 onMounted(async () => {
+  try {
+    const raw = sessionStorage.getItem('kb_list_filter')
+    if (raw) {
+      sessionStorage.removeItem('kb_list_filter')
+      const f = JSON.parse(raw)
+      if (f.tagId) {
+        filterTagId.value = String(f.tagId)
+        filterCategoryId.value = ''
+        filterUncategorized.value = false
+        trashMode.value = false
+      }
+    }
+  } catch {
+    /* ignore */
+  }
   await loadMeta()
   await reload()
 })
@@ -255,7 +396,7 @@ onMounted(async () => {
 .search {
   display: flex;
   gap: 8px;
-  margin-bottom: 10px;
+  margin-bottom: 8px;
 }
 .search input {
   flex: 1;
@@ -263,6 +404,20 @@ onMounted(async () => {
   border-radius: 12px;
   padding: 10px 12px;
   background: #fff;
+}
+.tool-links {
+  display: flex;
+  gap: 14px;
+  margin-bottom: 8px;
+}
+.link {
+  border: none;
+  background: transparent;
+  color: var(--primary);
+  font-weight: 650;
+  font-size: 13px;
+  padding: 0;
+  cursor: pointer;
 }
 .filter-row {
   display: flex;
@@ -283,6 +438,11 @@ onMounted(async () => {
   color: var(--primary);
   background: color-mix(in srgb, var(--primary) 12%, #fff);
 }
+.chip.tag-chip.on {
+  border-color: #6366f1;
+  color: #3730a3;
+  background: #e0e7ff;
+}
 .chip.trash.on {
   border-color: #ef4444;
   color: #ef4444;
@@ -298,11 +458,45 @@ onMounted(async () => {
   gap: 10px;
 }
 .note {
-  padding: 14px;
+  padding: 0;
   cursor: pointer;
+  position: relative;
+  overflow: hidden;
 }
 .note.deleted {
   opacity: 0.75;
+}
+.note-body {
+  padding: 14px;
+  background: #fff;
+  position: relative;
+  z-index: 1;
+  transition: transform 0.2s ease;
+}
+.note.open .note-body {
+  transform: translateX(-120px);
+}
+.swipe-hint {
+  position: absolute;
+  right: 0;
+  top: 0;
+  bottom: 0;
+  display: flex;
+  z-index: 0;
+}
+.act {
+  width: 60px;
+  border: none;
+  color: #fff;
+  font-size: 12px;
+  font-weight: 650;
+  cursor: pointer;
+}
+.act.pin {
+  background: #2563eb;
+}
+.act.del {
+  background: #ef4444;
 }
 .title {
   font-weight: 700;

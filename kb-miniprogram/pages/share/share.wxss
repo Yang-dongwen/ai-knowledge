@@ -1,0 +1,68 @@
+.share-page {
+  background:
+    radial-gradient(ellipse 100% 60% at 50% 0%, rgba(79, 70, 229, 0.08), transparent 50%),
+    var(--bg, #f6f7f9);
+  min-height: 100vh;
+}
+
+.brand {
+  font-size: 24rpx;
+  font-weight: 650;
+  margin-bottom: 24rpx;
+  color: var(--text-2, #64748b);
+  letter-spacing: 0.5rpx;
+}
+
+.article {
+  padding: 36rpx 32rpx 40rpx;
+}
+
+.meta {
+  font-size: 22rpx;
+  margin-bottom: 14rpx;
+}
+
+.tags {
+  margin-bottom: 16rpx;
+}
+
+.title {
+  font-size: 42rpx;
+  font-weight: 750;
+  line-height: 1.35;
+  color: var(--text, #0f172a);
+  margin-bottom: 20rpx;
+}
+
+.rule {
+  height: 1rpx;
+  background: var(--border, #eef2f7);
+  margin-bottom: 28rpx;
+}
+
+.body {
+  display: block;
+  width: 100%;
+  overflow-x: auto;
+  word-break: break-word;
+  font-size: 30rpx;
+  line-height: 1.8;
+  color: #1e293b;
+  -webkit-overflow-scrolling: touch;
+}
+
+.foot {
+  margin-top: 48rpx;
+  padding-top: 24rpx;
+  border-top: 1rpx solid var(--border, #eef2f7);
+  font-size: 22rpx;
+  text-align: center;
+}
+
+.muted-3 {
+  color: var(--text-3, #94a3b8);
+}
+
+.empty-desc {
+  margin-top: 8rpx;
+}

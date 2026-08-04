@@ -66,7 +66,9 @@ public class SecurityConfig {
                                 "/api/auth/login",
                                 "/api/auth/register",
                                 "/api/auth/register/**",
-                                "/api/auth/password/**"
+                                "/api/auth/password/**",
+                                "/api/auth/wx-mini/login",
+                                "/api/auth/wx-mini/bind"
                         ).permitAll()
                         // 支付异步回调 / 同步回跳：渠道无 JWT，须验签（PayNotifyController）
                         .requestMatchers(

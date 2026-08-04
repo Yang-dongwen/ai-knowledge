@@ -84,6 +84,34 @@ const api = {
   me() {
     return request({ url: '/api/auth/me' })
   },
+  /** 微信小程序 code 登录；needBind=true 时需 bind */
+  wxMiniLogin(code) {
+    return request({
+      url: '/api/auth/wx-mini/login',
+      method: 'POST',
+      auth: false,
+      data: { code }
+    })
+  },
+  wxMiniBind(code, email, password) {
+    return request({
+      url: '/api/auth/wx-mini/bind',
+      method: 'POST',
+      auth: false,
+      data: { code, email, password }
+    })
+  },
+  wxMiniBindCurrent(code) {
+    return request({
+      url: '/api/auth/wx-mini/bind-current',
+      method: 'POST',
+      data: { code }
+    })
+  },
+  wxMiniUnbind() {
+    return request({ url: '/api/auth/wx-mini/unbind', method: 'POST' })
+  },
+
   listNotes(params = {}) {
     const data = {
       page: params.page != null ? params.page : 0,
@@ -91,7 +119,10 @@ const api = {
     }
     if (params.keyword) data.keyword = params.keyword
     if (params.onlyDeleted) data.onlyDeleted = true
+    if (params.includeDeleted) data.includeDeleted = true
     if (params.categoryId) data.categoryId = params.categoryId
+    if (params.tagId) data.tagId = params.tagId
+    if (params.uncategorized) data.uncategorized = true
     return request({ url: '/api/v1/kb/notes', method: 'GET', data })
   },
   getNote(id) {
@@ -118,12 +149,51 @@ const api = {
   emptyTrash() {
     return request({ url: '/api/v1/kb/notes/trash', method: 'DELETE' })
   },
+
   listCategories() {
     return request({ url: '/api/v1/kb/categories' })
   },
+  createCategory(body) {
+    return request({ url: '/api/v1/kb/categories', method: 'POST', data: body })
+  },
+  updateCategory(id, body) {
+    return request({ url: `/api/v1/kb/categories/${id}`, method: 'PUT', data: body })
+  },
+  /** mode: reject | orphan | trash */
+  deleteCategory(id, mode = 'reject') {
+    const m = encodeURIComponent(mode || 'reject')
+    return request({
+      url: `/api/v1/kb/categories/${id}?mode=${m}`,
+      method: 'DELETE'
+    })
+  },
+
   listTags() {
     return request({ url: '/api/v1/kb/tags' })
   },
+  createTag(name) {
+    return request({ url: '/api/v1/kb/tags', method: 'POST', data: { name } })
+  },
+  updateTag(id, name) {
+    return request({ url: `/api/v1/kb/tags/${id}`, method: 'PUT', data: { name } })
+  },
+  deleteTag(id) {
+    return request({ url: `/api/v1/kb/tags/${id}`, method: 'DELETE' })
+  },
+
+  getExplorerTree() {
+    return request({ url: '/api/v1/kb/tree' })
+  },
+  treeMove(body) {
+    return request({ url: '/api/v1/kb/tree/move', method: 'POST', data: body })
+  },
+  treeReorder(body) {
+    return request({ url: '/api/v1/kb/tree/reorder', method: 'POST', data: body })
+  },
+  batchMoveNotes(body) {
+    return request({ url: '/api/v1/kb/notes/batch-move', method: 'POST', data: body })
+  },
+
   listFiles(noteId) {
     return request({ url: '/api/v1/kb/files', data: { noteId } })
   },
@@ -133,6 +203,7 @@ const api = {
   bindFile(id, noteId) {
     return request({ url: `/api/v1/kb/files/${id}/bind`, method: 'POST', data: { noteId } })
   },
+
   getShareStatus(noteId) {
     return request({ url: `/api/v1/kb/notes/${noteId}/share` })
   },
@@ -145,6 +216,15 @@ const api = {
   rotateShare(noteId) {
     return request({ url: `/api/v1/kb/notes/${noteId}/share/rotate`, method: 'POST' })
   },
+
+  /** 公开分享，无需登录 */
+  fetchPublicNote(token) {
+    return request({
+      url: `/api/v1/kb/public/s/${encodeURIComponent(token)}`,
+      auth: false
+    })
+  },
+
   uploadFile
 }
 
@@ -157,8 +237,40 @@ function mediaUrl(contentPath) {
   if (!path.startsWith('/')) path = `/${path}`
   const token = getToken()
   const base = getBaseUrl()
+  // 公开路径无需 access_token
+  if (/\/api\/v1\/kb\/public\//i.test(path)) {
+    return base + path
+  }
   if (!token) return base + path
   return `${base}${path}${path.includes('?') ? '&' : '?'}access_token=${encodeURIComponent(token)}`
+}
+
+/** 给正文中的媒体路径补全 host（及私有路径的 token） */
+function absolutizeMediaInHtml(html) {
+  if (!html || !html.includes('/api/v1/kb/')) return html || ''
+  const base = getBaseUrl()
+  const token = getToken()
+  return html.replace(
+    /((?:src|href)=["'])([^"']*\/api\/v1\/kb\/[^"']+)(["'])/gi,
+    (_m, pre, path, post) => {
+      let clean = path.trim()
+      try {
+        if (/^https?:\/\//i.test(clean)) {
+          const u = new URL(clean)
+          clean = u.pathname + (u.search || '')
+        }
+      } catch (e) {
+        /* ignore */
+      }
+      clean = clean.replace(/[?&](access_token|token)=[^&]*/gi, '').replace(/\?&/, '?').replace(/[?&]$/, '')
+      if (!clean.startsWith('/')) clean = '/' + clean
+      let full = base + clean
+      if (!/\/api\/v1\/kb\/public\//i.test(clean) && token) {
+        full += (full.includes('?') ? '&' : '?') + 'access_token=' + encodeURIComponent(token)
+      }
+      return pre + full + post
+    }
+  )
 }
 
 function stripMediaTokens(text) {
@@ -194,6 +306,7 @@ module.exports = {
   request,
   api,
   mediaUrl,
+  absolutizeMediaInHtml,
   stripMediaTokens,
   mdImageSyntax
 }

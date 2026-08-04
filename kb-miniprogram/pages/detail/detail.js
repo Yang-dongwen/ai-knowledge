@@ -1,29 +1,11 @@
-const { api, mediaUrl } = require('../../utils/request')
+const { api, mediaUrl, absolutizeMediaInHtml } = require('../../utils/request')
 const { isLoggedIn } = require('../../utils/auth')
-const { renderMarkdown } = require('../../utils/markdown')
+const { renderMarkdown, enhanceHtmlForRichText } = require('../../utils/markdown')
 const { getShareWebOrigin } = require('../../utils/config')
 
 function formatTime(t) {
   if (!t) return ''
   return String(t).replace('T', ' ').slice(0, 19)
-}
-
-function injectToken(html) {
-  if (!html || !html.includes('/api/v1/kb/files/')) return html || ''
-  const { getToken } = require('../../utils/auth')
-  const { getBaseUrl } = require('../../utils/config')
-  const token = getToken()
-  if (!token) return html
-  const base = getBaseUrl()
-  return html.replace(
-    /((?:src|href)=["'])([^"']*\/api\/v1\/kb\/files\/\d+\/content)[^"']*(["'])/gi,
-    (_m, pre, path, post) => {
-      const m = path.match(/^(.*?\/api\/v1\/kb\/files\/\d+\/content)/i)
-      let clean = m ? m[1] : path.split('?')[0]
-      if (!clean.startsWith('/')) clean = '/' + clean
-      return `${pre}${base}${clean}?access_token=${encodeURIComponent(token)}${post}`
-    }
-  )
 }
 
 Page({
@@ -36,6 +18,7 @@ Page({
     shareOpen: false,
     shareEnabled: false,
     shareUrl: '',
+    shareToken: '',
     shareLoading: false
   },
 
@@ -57,9 +40,9 @@ Page({
       const note = await api.getNote(this.data.id)
       let contentHtml = ''
       if (note.contentFormat === 'html') {
-        contentHtml = injectToken(note.content || '')
+        contentHtml = enhanceHtmlForRichText(absolutizeMediaInHtml(note.content || ''))
       } else {
-        contentHtml = injectToken(renderMarkdown(note.content || ''))
+        contentHtml = absolutizeMediaInHtml(renderMarkdown(note.content || ''))
       }
       let files = []
       try {
@@ -87,19 +70,22 @@ Page({
     }
   },
 
+  buildShareState(st) {
+    const enabled = !!(st && st.enabled)
+    // 仅开启时暴露 token，避免关闭后仍预览/转发
+    const shareToken = enabled && st.shareToken ? st.shareToken : ''
+    let shareUrl = ''
+    if (enabled && st.sharePath) {
+      const origin = (getShareWebOrigin() || '').replace(/\/$/, '')
+      shareUrl = origin ? origin + st.sharePath : st.sharePath
+    }
+    return { shareEnabled: enabled, shareUrl, shareToken }
+  },
+
   async loadShare() {
     try {
       const st = await api.getShareStatus(this.data.id)
-      const enabled = !!(st && st.enabled)
-      let shareUrl = ''
-      if (enabled && st.sharePath) {
-        const origin = (getShareWebOrigin() || '').replace(/\/$/, '')
-        shareUrl = origin ? origin + st.sharePath : st.sharePath
-      }
-      this.setData({
-        shareEnabled: enabled,
-        shareUrl
-      })
+      this.setData(this.buildShareState(st))
     } catch (e) {
       /* ignore */
     }
@@ -116,20 +102,10 @@ Page({
       const st = on
         ? await api.enableShare(this.data.id)
         : await api.disableShare(this.data.id)
-      const enabled = !!(st && st.enabled)
-      let shareUrl = ''
-      if (enabled && st.sharePath) {
-        const origin = (getShareWebOrigin() || '').replace(/\/$/, '')
-        shareUrl = origin ? origin + st.sharePath : st.sharePath
-      }
-      this.setData({ shareEnabled: enabled, shareUrl })
-      if (enabled && shareUrl) {
-        wx.setClipboardData({
-          data: shareUrl,
-          success: () => wx.showToast({ title: '链接已复制', icon: 'success' })
-        })
-      } else if (enabled && !shareUrl) {
-        wx.showToast({ title: '已开启，请配置分享域名', icon: 'none' })
+      const state = this.buildShareState(st)
+      this.setData(state)
+      if (on && state.shareToken) {
+        wx.showToast({ title: '已开启分享', icon: 'success' })
       }
     } catch (err) {
       wx.showToast({ title: err.message || '操作失败', icon: 'none' })
@@ -140,13 +116,28 @@ Page({
   },
 
   copyShare() {
-    if (!this.data.shareUrl) {
-      wx.showToast({ title: '请先在「我的」配置分享域名', icon: 'none' })
+    if (this.data.shareUrl) {
+      wx.setClipboardData({
+        data: this.data.shareUrl,
+        success: () => wx.showToast({ title: '已复制网页链接', icon: 'success' })
+      })
       return
     }
-    wx.setClipboardData({
-      data: this.data.shareUrl,
-      success: () => wx.showToast({ title: '已复制', icon: 'success' })
+    if (this.data.shareToken) {
+      // 无 H5 域名时提示用户使用小程序分享
+      wx.showToast({ title: '请用下方「转发给好友」', icon: 'none' })
+      return
+    }
+    wx.showToast({ title: '请先开启分享', icon: 'none' })
+  },
+
+  previewShare() {
+    if (!this.data.shareToken) {
+      wx.showToast({ title: '请先开启分享', icon: 'none' })
+      return
+    }
+    wx.navigateTo({
+      url: `/pages/share/share?token=${encodeURIComponent(this.data.shareToken)}`
     })
   },
 
@@ -159,15 +150,11 @@ Page({
         this.setData({ shareLoading: true })
         try {
           const st = await api.rotateShare(this.data.id)
-          const origin = (getShareWebOrigin() || '').replace(/\/$/, '')
-          const shareUrl =
-            st && st.sharePath ? (origin ? origin + st.sharePath : st.sharePath) : ''
-          this.setData({
-            shareEnabled: !!(st && st.enabled),
-            shareUrl
-          })
-          if (shareUrl) {
-            wx.setClipboardData({ data: shareUrl })
+          this.setData(this.buildShareState(st))
+          if (this.data.shareUrl) {
+            wx.setClipboardData({ data: this.data.shareUrl })
+          } else {
+            wx.showToast({ title: '已重置', icon: 'success' })
           }
         } catch (e) {
           wx.showToast({ title: e.message || '失败', icon: 'none' })
@@ -176,6 +163,23 @@ Page({
         }
       }
     })
+  },
+
+  onShareAppMessage() {
+    const title = (this.data.note && this.data.note.title) || '知识库笔记'
+    if (this.data.shareEnabled && this.data.shareToken) {
+      return {
+        title,
+        path: `/pages/share/share?token=${encodeURIComponent(this.data.shareToken)}`
+      }
+    }
+    // 未开启公开分享时仅分享给自己打开详情（需登录）
+    return {
+      title,
+      path: this.data.id
+        ? `/pages/detail/detail?id=${this.data.id}`
+        : '/pages/notes/notes'
+    }
   },
 
   onEdit() {

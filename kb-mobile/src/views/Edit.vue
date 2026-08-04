@@ -35,9 +35,17 @@
           插图
           <input type="file" accept="image/*" hidden @change="onPickImage" />
         </label>
-        <span class="muted tip">
-          {{ format === 'html' ? '移动端富文本为简易编辑；复杂排版请用 PC' : 'Markdown 插图写入 ![alt](path)' }}
-        </span>
+        <template v-if="format === 'html'">
+          <button type="button" class="tool-btn" @click="applyFmt('bold')">粗体</button>
+          <button type="button" class="tool-btn" @click="applyFmt('ul')">列表</button>
+          <button type="button" class="tool-btn" @click="applyFmt('quote')">引用</button>
+          <button type="button" class="tool-btn" @click="applyFmt('h2')">小标题</button>
+        </template>
+        <template v-else>
+          <button type="button" class="tool-btn" @click="applyFmt('md-bold')">**粗**</button>
+          <button type="button" class="tool-btn" @click="applyFmt('md-ul')">列表</button>
+          <button type="button" class="tool-btn" @click="applyFmt('md-quote')">引用</button>
+        </template>
       </div>
 
       <!-- 富文本：contenteditable 简易编辑 -->
@@ -70,7 +78,10 @@
         </select>
       </label>
       <div class="tag-block">
-        <div class="tag-label">标签</div>
+        <div class="tag-head">
+          <span class="tag-label">标签</span>
+          <button type="button" class="link-add" @click="createTag">+ 新建</button>
+        </div>
         <div class="tag-chips">
           <button
             v-for="t in allTags"
@@ -82,7 +93,7 @@
           >
             #{{ t.name }}
           </button>
-          <span v-if="!allTags.length" class="muted tip">暂无标签（可在 PC 创建）</span>
+          <span v-if="!allTags.length" class="muted tip">暂无标签，点右上角新建</span>
         </div>
       </div>
       <label class="pin">
@@ -222,6 +233,40 @@ function toggleTag(tid) {
   if (set.has(s)) set.delete(s)
   else set.add(s)
   selectedTagIds.value = Array.from(set)
+}
+
+function applyFmt(cmd) {
+  if (format.value === 'markdown') {
+    let body = mdBody.value || ''
+    const nl = body && !body.endsWith('\n') ? '\n' : ''
+    if (cmd === 'md-bold') body += `${nl}**粗体文字**`
+    else if (cmd === 'md-ul') body += `${nl}- 列表项\n`
+    else if (cmd === 'md-quote') body += `${nl}> 引用\n`
+    mdBody.value = body
+    return
+  }
+  if (!htmlBox.value) return
+  htmlBox.value.focus()
+  if (cmd === 'bold') document.execCommand('bold')
+  else if (cmd === 'ul') document.execCommand('insertUnorderedList')
+  else if (cmd === 'quote') document.execCommand('formatBlock', false, 'blockquote')
+  else if (cmd === 'h2') document.execCommand('formatBlock', false, 'h2')
+  onHtmlInput()
+}
+
+async function createTag() {
+  const name = (prompt('新标签名称') || '').trim()
+  if (!name) return
+  try {
+    const tag = await api.createTag(name)
+    const tid = String(tag.id)
+    if (!selectedTagIds.value.includes(tid)) {
+      selectedTagIds.value = selectedTagIds.value.concat([tid])
+    }
+    allTags.value = (await api.listTags()) || []
+  } catch (e) {
+    alert(e.message || '创建失败')
+  }
 }
 
 async function uploadOneImage(file) {
@@ -463,7 +508,8 @@ watch(format, (f) => {
   font-size: 1.55em;
   font-weight: 700;
   padding: 12px 0 10px;
-  background: transparent;
+  background: transparent !important;
+  color: #0f172a;
 }
 .rule {
   border-top: 1px solid var(--border);
@@ -494,6 +540,8 @@ watch(format, (f) => {
   font-size: 15px;
   line-height: 1.65;
   word-break: break-word;
+  color: #0f172a;
+  background: #fff;
 }
 .html-edit:empty:before {
   content: attr(data-placeholder);
@@ -510,13 +558,15 @@ watch(format, (f) => {
 .md-body {
   width: 100%;
   min-height: 240px;
-  border: none;
+  border: none !important;
   outline: none;
   resize: vertical;
   font-family: ui-monospace, Menlo, Consolas, monospace;
   font-size: 14px;
   line-height: 1.6;
-  background: transparent;
+  background: #ffffff !important;
+  color: #0f172a;
+  padding: 4px 0;
 }
 .meta {
   padding: 12px 14px;
@@ -545,6 +595,20 @@ watch(format, (f) => {
   display: flex;
   flex-direction: column;
   gap: 8px;
+}
+.tag-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8px;
+}
+.link-add {
+  border: none;
+  background: transparent;
+  color: var(--primary);
+  font-weight: 650;
+  font-size: 13px;
+  cursor: pointer;
 }
 .tag-label {
   font-size: 13px;

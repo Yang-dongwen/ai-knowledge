@@ -7,45 +7,85 @@
     </view>
   </view>
 
-  <view class="card section">
-    <view class="section-title">服务端地址</view>
+  <view class="card menu">
+    <view class="menu-item" bindtap="goFolders">
+      <view class="menu-left">
+        <text class="menu-emoji">📁</text>
+        <text>文件夹</text>
+      </view>
+      <text class="chevron">›</text>
+    </view>
+    <view class="menu-item" bindtap="goTags">
+      <view class="menu-left">
+        <text class="menu-emoji">🏷</text>
+        <text>标签管理</text>
+      </view>
+      <text class="chevron">›</text>
+    </view>
+    <view class="menu-item" wx:if="{{!wxBound}}" bindtap="onBindWx">
+      <view class="menu-left">
+        <text class="menu-emoji">💬</text>
+        <text>绑定微信登录</text>
+      </view>
+      <text class="chevron">{{wxBusy ? '…' : '›'}}</text>
+    </view>
+    <view class="menu-item" wx:else bindtap="onUnbindWx">
+      <view class="menu-left">
+        <text class="menu-emoji">💬</text>
+        <text>解绑微信</text>
+      </view>
+      <text class="ok">已绑定</text>
+    </view>
+  </view>
+
+  <view class="card section debug" wx:if="{{showDebug}}">
+    <view class="section-title">开发调试</view>
+    <view class="debug-row">
+      <text>模拟微信 openid</text>
+      <switch checked="{{wxMock}}" bindchange="onMockChange" color="#4f46e5" />
+    </view>
+    <view class="field-label">服务端地址</view>
     <input
-      class="base-input"
+      class="input"
       value="{{baseUrl}}"
-      placeholder="http://127.0.0.1:8080"
+      placeholder="https://www.dwcode.cloud"
+      placeholder-class="ph"
+      placeholder-style="color:#94a3b8;"
       bindinput="onBaseUrl"
     />
     <view class="row-actions">
-      <button class="btn-ghost sm" size="mini" bindtap="resetBaseUrl">恢复默认</button>
-      <button class="btn-primary sm" size="mini" bindtap="saveBaseUrl">保存地址</button>
+      <button class="btn btn-ghost btn-sm" bindtap="resetBaseUrl">恢复默认</button>
+      <button class="btn btn-secondary btn-sm" bindtap="saveBaseUrl">保存地址</button>
     </view>
-    <view class="hint muted">本地调试请关闭开发者工具「校验合法域名」。真机请填局域网 IP 或 HTTPS 域名。</view>
-  </view>
-
-  <view class="card section">
-    <view class="section-title">分享链接域名</view>
+    <view class="field-label mt">分享网页域名</view>
     <input
-      class="base-input"
+      class="input"
       value="{{shareWebOrigin}}"
-      placeholder="http://192.168.x.x:5174 或 PC 站点"
+      placeholder="可选 H5/PC 域名"
+      placeholder-class="ph"
+      placeholder-style="color:#94a3b8;"
       bindinput="onShareOrigin"
     />
     <view class="row-actions">
-      <button class="btn-primary sm" size="mini" bindtap="saveShareOrigin">保存</button>
+      <button class="btn btn-secondary btn-sm" bindtap="saveShareOrigin">保存</button>
     </view>
-    <view class="hint muted">用于拼接公开阅读链接（kb-mobile 或 PC /s/token）。留空则仅复制路径。</view>
+    <view class="hint muted">正式 release 不显示本区</view>
   </view>
 
-  <view class="card section">
-    <view class="row">
-      <text>版本</text>
-      <text class="muted">{{version}}</text>
+  <view class="card section info">
+    <view class="info-row">
+      <text class="muted">版本</text>
+      <text>{{version}}</text>
     </view>
-    <view class="row">
-      <text>当前环境</text>
-      <text class="muted mono">{{baseUrl}}</text>
+    <view class="info-row">
+      <text class="muted">环境</text>
+      <text>{{envVersion}}</text>
+    </view>
+    <view class="info-row" wx:if="{{showDebug}}">
+      <text class="muted">API</text>
+      <text class="mono">{{baseUrl}}</text>
     </view>
   </view>
 
-  <button class="btn-logout" bindtap="onLogout">退出登录</button>
+  <button class="btn btn-outline btn-block logout" bindtap="onLogout">退出登录</button>
 </view>

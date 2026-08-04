@@ -9,8 +9,8 @@
 | **[okx-bot](./okx-bot/)** | 主后端（Spring Boot 3 / Java 17）。认证、聊天、视频提取、AI 视频生成、文生图 | **[完整操作指南](./okx-bot/README.md)** · [详细设计 doc/](./okx-bot/doc/) |
 | **[aigen-remotion](./aigen-remotion/)** | Remotion 模板与 HTTP 渲染服务（默认 `:3100`，可由 okx-bot 托管） | [README](./aigen-remotion/README.md) |
 | **[okx-trading-web](./okx-trading-web/)** | Vue 3 前端（AI 工具台 + 知识库 PC 端） | 见该目录 `package.json` 脚本 |
-| **[kb-mobile](./kb-mobile/)** | 知识库移动端 H5（浏览器预览，无需微信工具） | [README](./kb-mobile/README.md) |
-| **[kb-miniprogram](./kb-miniprogram/)** | 知识库微信小程序（正式上架用） | [README](./kb-miniprogram/README.md) |
+| **[kb-mobile](./kb-mobile/)** | 知识库移动端 H5（与小程序 M1/M2 能力对齐） | [README](./kb-mobile/README.md) |
+| **[kb-miniprogram](./kb-miniprogram/)** | 知识库微信小程序（M2：微信登录/文件夹/标签/分享） | [README](./kb-miniprogram/README.md) |
 | **[polymarket-ai-trader](./polymarket-ai-trader/)** | 独立 Python 交易脚本（与 okx-bot 无强耦合） | [docs/](./polymarket-ai-trader/docs/) |
 | [desgin/](./desgin/) · [first/](./first/) · [doc/](./doc/) | 早期设计稿、方案与运营类文档 | 按需查阅 |
 

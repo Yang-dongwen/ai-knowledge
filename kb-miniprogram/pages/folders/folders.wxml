@@ -1,0 +1,101 @@
+<view class="page safe-bottom">
+  <view class="head">
+    <view class="meta muted">{{folderCount}} 文件夹 · {{noteCount}} 文档</view>
+    <view class="btn-text-new" bindtap="openCreateRoot">新建</view>
+  </view>
+
+  <view class="empty-state" wx:if="{{!loading && !rows.length}}">
+    <view class="empty-icon">📁</view>
+    <view class="empty-title">还没有内容</view>
+    <view class="empty-desc">用文件夹整理笔记，与 PC 同步</view>
+    <button class="btn btn-primary empty-cta" bindtap="openCreateRoot">创建文件夹</button>
+  </view>
+
+  <view class="tree card" wx:elif="{{!loading}}">
+    <view
+      class="row"
+      wx:for="{{rows}}"
+      wx:key="typeId"
+      style="padding-left: {{item.pad}}rpx;"
+    >
+      <view class="row-main" wx:if="{{item.type === 'folder'}}">
+        <view class="twist" data-id="{{item.id}}" bindtap="toggleExpand">
+          <text wx:if="{{item.hasChildren}}">{{item.expanded ? '▾' : '▸'}}</text>
+          <text wx:else class="spacer">·</text>
+        </view>
+        <text class="icon">📁</text>
+        <text class="label" data-id="{{item.id}}" bindtap="toggleExpand">{{item.name}}</text>
+        <text class="more" data-id="{{item.id}}" data-name="{{item.name}}" catchtap="onFolderMore">···</text>
+      </view>
+      <view class="row-main" wx:else>
+        <view class="twist spacer">·</view>
+        <text class="icon">{{item.pinned ? '📌' : '📄'}}</text>
+        <text class="label note" data-id="{{item.id}}" bindtap="openNote">{{item.name}}</text>
+        <text class="fmt-pill" wx:if="{{item.formatLabel}}">{{item.formatLabel}}</text>
+        <text class="more" data-id="{{item.id}}" data-name="{{item.name}}" catchtap="onNoteMore">···</text>
+      </view>
+    </view>
+  </view>
+
+  <view class="loading-text" wx:if="{{loading}}">加载中…</view>
+</view>
+
+<view class="mask" wx:if="{{showSheet}}" bindtap="closeSheet"></view>
+<view class="sheet" wx:if="{{showSheet}}">
+  <view class="sheet-handle"></view>
+  <view class="sheet-title">{{sheetTitle}}</view>
+
+  <block wx:if="{{sheetMode === 'create' || sheetMode === 'rename'}}">
+    <input
+      class="input sheet-input"
+      placeholder="文件夹名称"
+      placeholder-class="ph"
+      placeholder-style="color:#94a3b8;"
+      value="{{inputName}}"
+      maxlength="64"
+      focus
+      bindinput="onInputName"
+    />
+  </block>
+
+  <block wx:if="{{sheetMode === 'create' && parentOptions.length}}">
+    <picker mode="selector" range="{{parentOptions}}" range-key="name" value="{{parentIndex}}" bindchange="onParentPick">
+      <view class="picker-row">
+        <text>上级</text>
+        <text class="muted">{{parentOptions[parentIndex].name}} ›</text>
+      </view>
+    </picker>
+  </block>
+
+  <block wx:if="{{(sheetMode === 'moveNote' || sheetMode === 'moveFolder') && parentOptions.length}}">
+    <view class="hint muted">将「{{targetName}}」移动到</view>
+    <picker mode="selector" range="{{parentOptions}}" range-key="name" value="{{parentIndex}}" bindchange="onParentPick">
+      <view class="picker-row">
+        <text>目标</text>
+        <text class="muted">{{parentOptions[parentIndex].name}} ›</text>
+      </view>
+    </picker>
+  </block>
+
+  <block wx:if="{{sheetMode === 'delete'}}">
+    <view class="hint muted">删除「{{targetName}}」</view>
+    <picker mode="selector" range="{{deleteModes}}" range-key="label" value="{{deleteModeIndex}}" bindchange="onDeleteModePick">
+      <view class="picker-row">
+        <text>方式</text>
+        <text class="muted">{{deleteModes[deleteModeIndex].label}} ›</text>
+      </view>
+    </picker>
+  </block>
+
+  <view class="sheet-actions">
+    <button class="btn btn-ghost btn-half" bindtap="closeSheet" disabled="{{busy}}">取消</button>
+    <button
+      class="btn {{sheetMode === 'delete' ? 'btn-danger' : 'btn-primary'}} btn-half"
+      loading="{{busy}}"
+      disabled="{{busy}}"
+      bindtap="submitSheet"
+    >
+      {{sheetMode === 'delete' ? '确认删除' : '确定'}}
+    </button>
+  </view>
+</view>

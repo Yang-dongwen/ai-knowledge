@@ -3,21 +3,24 @@
     "pages/notes/notes",
     "pages/edit/edit",
     "pages/detail/detail",
+    "pages/folders/folders",
+    "pages/tags/tags",
+    "pages/share/share",
     "pages/me/me",
     "pages/login/login"
   ],
   "window": {
     "navigationBarTitleText": "知识库",
-    "navigationBarBackgroundColor": "#0f172a",
-    "navigationBarTextStyle": "white",
-    "backgroundColor": "#f1f5f9",
+    "navigationBarBackgroundColor": "#f6f7f9",
+    "navigationBarTextStyle": "black",
+    "backgroundColor": "#f6f7f9",
     "backgroundTextStyle": "dark"
   },
   "tabBar": {
-    "color": "#64748b",
-    "selectedColor": "#2563eb",
+    "color": "#94a3b8",
+    "selectedColor": "#4f46e5",
     "backgroundColor": "#ffffff",
-    "borderStyle": "black",
+    "borderStyle": "white",
     "list": [
       {
         "pagePath": "pages/notes/notes",

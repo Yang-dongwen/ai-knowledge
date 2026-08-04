@@ -31,4 +31,6 @@ public class AuthUserResponse {
     private LocalDateTime memberExpireAt;
     /** 是否有效会员（SUPER_ADMIN 恒 true；MEMBER 需未过期） */
     private Boolean memberActive;
+    /** 是否已绑定微信小程序 */
+    private Boolean wxMiniBound;
 }

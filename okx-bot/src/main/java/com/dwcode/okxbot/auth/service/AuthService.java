@@ -10,6 +10,7 @@ import com.dwcode.okxbot.auth.mapper.SysUserMapper;
 import com.dwcode.okxbot.auth.security.AuthUserPrincipal;
 import com.dwcode.okxbot.auth.security.JwtService;
 import com.dwcode.okxbot.auth.security.SecurityUtils;
+import com.dwcode.okxbot.auth.wechat.WxMiniSessionClient;
 import com.dwcode.okxbot.common.exception.BusinessException;
 import com.dwcode.okxbot.member.service.MemberStatusService;
 import lombok.RequiredArgsConstructor;
@@ -17,6 +18,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.util.StringUtils;
 
 import java.time.LocalDateTime;
 
@@ -31,6 +33,7 @@ public class AuthService {
     private final JwtService jwtService;
     private final AuthProperties authProperties;
     private final MemberStatusService memberStatusService;
+    private final WxMiniSessionClient wxMiniSessionClient;
 
     public void sendRegisterCode(String email) {
         String normalized = EmailCodeService.normalizeEmail(email);
@@ -131,6 +134,128 @@ public class AuthService {
         return toAuthUserResponse(user);
     }
 
+    /**
+     * 微信小程序登录：已绑定 openid 则发 JWT，否则 needBind。
+     */
+    public WxMiniLoginResponse wxMiniLogin(String code) {
+        String openid = wxMiniSessionClient.resolveOpenid(code);
+        SysUserEntity user = findByWxMiniOpenid(openid);
+        if (user == null) {
+            log.info("wx mini login need bind openid={}", maskOpenid(openid));
+            return WxMiniLoginResponse.builder().needBind(true).build();
+        }
+        assertUserCanLogin(user);
+        touchLogin(user);
+        log.info("wx mini login ok userId={} openid={}", user.getId(), maskOpenid(openid));
+        return toWxMiniLoginResponse(user);
+    }
+
+    /**
+     * 用邮箱密码绑定 openid 并登录（首次微信登录）。
+     */
+    @Transactional
+    public WxMiniLoginResponse wxMiniBind(WxMiniBindRequest request) {
+        String openid = wxMiniSessionClient.resolveOpenid(request.getCode());
+        SysUserEntity byOpenid = findByWxMiniOpenid(openid);
+        if (byOpenid != null) {
+            // 已绑定：直接登录（幂等）
+            assertUserCanLogin(byOpenid);
+            touchLogin(byOpenid);
+            return toWxMiniLoginResponse(byOpenid);
+        }
+
+        String email = EmailCodeService.normalizeEmail(request.getEmail());
+        SysUserEntity user = findByEmail(email);
+        if (user == null || !passwordEncoder.matches(request.getPassword(), user.getPasswordHash())) {
+            throw new BusinessException(400, "邮箱或密码错误");
+        }
+        assertUserCanLogin(user);
+
+        if (StringUtils.hasText(user.getWxMiniOpenid())
+                && !openid.equals(user.getWxMiniOpenid())) {
+            throw new BusinessException(409, "该账号已绑定其他微信，请先在「我的」解绑");
+        }
+
+        user.setWxMiniOpenid(openid);
+        touchLogin(user);
+        log.info("wx mini bound userId={} openid={}", user.getId(), maskOpenid(openid));
+        return toWxMiniLoginResponse(user);
+    }
+
+    /**
+     * 已登录用户绑定当前微信（可选二次绑定入口）。
+     */
+    @Transactional
+    public AuthUserResponse wxMiniBindCurrent(String code) {
+        Long userId = SecurityUtils.requireCurrentUserId();
+        String openid = wxMiniSessionClient.resolveOpenid(code);
+        SysUserEntity occupied = findByWxMiniOpenid(openid);
+        if (occupied != null && !occupied.getId().equals(userId)) {
+            throw new BusinessException(409, "该微信已绑定其他账号");
+        }
+        SysUserEntity user = sysUserMapper.selectById(userId);
+        if (user == null) {
+            throw new BusinessException(401, "用户不存在或已删除");
+        }
+        if (StringUtils.hasText(user.getWxMiniOpenid())
+                && !openid.equals(user.getWxMiniOpenid())) {
+            throw new BusinessException(409, "当前账号已绑定其他微信，请先解绑");
+        }
+        user.setWxMiniOpenid(openid);
+        user.setUpdatedAt(LocalDateTime.now());
+        sysUserMapper.updateById(user);
+        log.info("wx mini bind-current userId={} openid={}", userId, maskOpenid(openid));
+        return toAuthUserResponse(user);
+    }
+
+    /**
+     * 解绑微信小程序。
+     */
+    @Transactional
+    public AuthUserResponse wxMiniUnbind() {
+        Long userId = SecurityUtils.requireCurrentUserId();
+        SysUserEntity user = sysUserMapper.selectById(userId);
+        if (user == null) {
+            throw new BusinessException(401, "用户不存在或已删除");
+        }
+        user.setWxMiniOpenid(null);
+        user.setUpdatedAt(LocalDateTime.now());
+        // MyBatis-Plus 默认忽略 null 字段，需显式 update wrapper
+        sysUserMapper.update(null, new com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper<SysUserEntity>()
+                .eq(SysUserEntity::getId, userId)
+                .set(SysUserEntity::getWxMiniOpenid, null)
+                .set(SysUserEntity::getUpdatedAt, LocalDateTime.now()));
+        user.setWxMiniOpenid(null);
+        log.info("wx mini unbound userId={}", userId);
+        return toAuthUserResponse(user);
+    }
+
+    private void assertUserCanLogin(SysUserEntity user) {
+        if (user.getStatus() == null || user.getStatus() != 1) {
+            throw new BusinessException(403, "账号已被禁用");
+        }
+        if (user.getEmailVerified() == null || user.getEmailVerified() != 1) {
+            throw new BusinessException(403, "邮箱未验证，请完成验证后再登录");
+        }
+    }
+
+    private void touchLogin(SysUserEntity user) {
+        user.setLastLoginAt(LocalDateTime.now());
+        user.setUpdatedAt(LocalDateTime.now());
+        sysUserMapper.updateById(user);
+    }
+
+    private WxMiniLoginResponse toWxMiniLoginResponse(SysUserEntity user) {
+        LoginResponse lr = buildLoginResponse(user);
+        return WxMiniLoginResponse.builder()
+                .needBind(false)
+                .token(lr.getToken())
+                .tokenType(lr.getTokenType())
+                .expiresIn(lr.getExpiresIn())
+                .user(lr.getUser())
+                .build();
+    }
+
     private LoginResponse buildLoginResponse(SysUserEntity user) {
         String token = jwtService.generateToken(user.getId(), user.getEmail());
         return LoginResponse.builder()
@@ -155,6 +280,7 @@ public class AuthService {
                 .createdAt(user.getCreatedAt())
                 .memberExpireAt(user.getMemberExpireAt())
                 .memberActive(memberStatusService.isActive(user))
+                .wxMiniBound(StringUtils.hasText(user.getWxMiniOpenid()))
                 .build();
     }
 
@@ -162,5 +288,21 @@ public class AuthService {
         return sysUserMapper.selectOne(
                 new LambdaQueryWrapper<SysUserEntity>().eq(SysUserEntity::getEmail, email)
         );
+    }
+
+    private SysUserEntity findByWxMiniOpenid(String openid) {
+        if (!StringUtils.hasText(openid)) {
+            return null;
+        }
+        return sysUserMapper.selectOne(
+                new LambdaQueryWrapper<SysUserEntity>().eq(SysUserEntity::getWxMiniOpenid, openid)
+        );
+    }
+
+    private static String maskOpenid(String openid) {
+        if (!StringUtils.hasText(openid) || openid.length() < 8) {
+            return "***";
+        }
+        return openid.substring(0, 4) + "…" + openid.substring(openid.length() - 4);
     }
 }

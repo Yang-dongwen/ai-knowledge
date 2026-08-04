@@ -6,6 +6,8 @@ import Edit from './views/Edit.vue'
 import Detail from './views/Detail.vue'
 import Me from './views/Me.vue'
 import PublicShare from './views/PublicShare.vue'
+import Folders from './views/Folders.vue'
+import Tags from './views/Tags.vue'
 
 const router = createRouter({
   history: createWebHistory(),
@@ -16,6 +18,8 @@ const router = createRouter({
     { path: '/notes', name: 'notes', component: Notes },
     { path: '/edit', name: 'edit', component: Edit, meta: { noTab: true } },
     { path: '/detail/:id', name: 'detail', component: Detail, meta: { noTab: true } },
+    { path: '/folders', name: 'folders', component: Folders, meta: { noTab: true } },
+    { path: '/tags', name: 'tags', component: Tags, meta: { noTab: true } },
     { path: '/me', name: 'me', component: Me }
   ]
 })

@@ -6,6 +6,14 @@ const md = new MarkdownIt({
   linkify: true,
   breaks: true
 })
+// 确保 GFM 表格可用
+if (typeof md.enable === 'function') {
+  try {
+    md.enable(['table'])
+  } catch (e) {
+    /* ignore */
+  }
+}
 
 /** 渲染笔记正文：markdown 或 html */
 export function renderNoteContent(content, format = 'markdown') {

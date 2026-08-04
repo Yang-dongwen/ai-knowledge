@@ -20,6 +20,7 @@ Page({
     htmlContent: '',
     categoryId: '',
     categoryLabel: '未分类',
+    categoryIndex: 0,
     categories: [],
     allTags: [],
     selectedTagIds: [],
@@ -131,7 +132,7 @@ Page({
   async loadMeta() {
     try {
       const [cats, tags] = await Promise.all([api.listCategories(), api.listTags()])
-      const flat = []
+      const flat = [{ id: '', name: '未分类' }]
       const walk = (nodes, depth) => {
         ;(nodes || []).forEach((n) => {
           flat.push({
@@ -151,8 +152,15 @@ Page({
   },
 
   refreshCategoryLabel() {
-    const c = (this.data.categories || []).find((x) => x.id === this.data.categoryId)
-    this.setData({ categoryLabel: c ? c.name : '未分类' })
+    const list = this.data.categories || []
+    let idx = list.findIndex((x) => x.id === (this.data.categoryId || ''))
+    if (idx < 0) idx = 0
+    const c = list[idx]
+    this.setData({
+      categoryIndex: idx,
+      categoryLabel: c ? c.name : '未分类',
+      categoryId: c ? c.id : ''
+    })
   },
 
   markTagSelected() {
@@ -198,10 +206,30 @@ Page({
     this.setData({ htmlContent: e.detail.value })
   },
 
+  /** 轻量格式工具：在正文末尾插入片段（移动端无选区时最稳） */
+  applyFmt(e) {
+    const cmd = e.currentTarget.dataset.cmd
+    if (this.data.format === 'markdown') {
+      let body = this.data.mdBody || ''
+      if (cmd === 'md-bold') body += (body && !body.endsWith('\n') ? '\n' : '') + '**粗体文字**'
+      else if (cmd === 'md-ul') body += (body && !body.endsWith('\n') ? '\n' : '') + '- 列表项\n'
+      else if (cmd === 'md-quote') body += (body && !body.endsWith('\n') ? '\n' : '') + '> 引用\n'
+      this.setData({ mdBody: body })
+      return
+    }
+    let html = this.data.htmlContent || ''
+    if (cmd === 'bold') html += '<p><strong>粗体文字</strong></p>'
+    else if (cmd === 'ul') html += '<ul><li>列表项</li></ul>'
+    else if (cmd === 'quote') html += '<blockquote>引用</blockquote>'
+    else if (cmd === 'h2') html += '<h2>小标题</h2>'
+    this.setData({ htmlContent: html })
+  },
+
   onCategory(e) {
     const idx = Number(e.detail.value)
     const c = this.data.categories[idx]
     this.setData({
+      categoryIndex: idx,
       categoryId: c ? c.id : '',
       categoryLabel: c ? c.name : '未分类'
     })
@@ -214,6 +242,33 @@ Page({
     else set.add(id)
     this.setData({ selectedTagIds: Array.from(set) })
     this.markTagSelected()
+  },
+
+  createTag() {
+    wx.showModal({
+      title: '新建标签',
+      editable: true,
+      placeholderText: '标签名称',
+      success: async (res) => {
+        if (!res.confirm) return
+        const name = (res.content || '').trim()
+        if (!name) {
+          wx.showToast({ title: '名称不能为空', icon: 'none' })
+          return
+        }
+        try {
+          const tag = await api.createTag(name)
+          const id = String(tag.id)
+          const selected = new Set((this.data.selectedTagIds || []).map(String))
+          selected.add(id)
+          this.setData({ selectedTagIds: Array.from(selected) })
+          await this.loadMeta()
+          wx.showToast({ title: '已创建并选中', icon: 'success' })
+        } catch (e) {
+          wx.showToast({ title: e.message || '创建失败', icon: 'none' })
+        }
+      }
+    })
   },
 
   onPinned(e) {

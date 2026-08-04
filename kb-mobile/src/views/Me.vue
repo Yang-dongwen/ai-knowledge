@@ -10,6 +10,15 @@
       </div>
     </div>
 
+    <div class="card menu">
+      <button type="button" class="menu-item" @click="$router.push('/folders')">
+        <span>文件夹</span><span class="muted">›</span>
+      </button>
+      <button type="button" class="menu-item" @click="$router.push('/tags')">
+        <span>标签管理</span><span class="muted">›</span>
+      </button>
+    </div>
+
     <div class="card section">
       <div class="section-title">API 根地址</div>
       <p class="muted hint">
@@ -26,11 +35,11 @@
     <div class="card section">
       <div class="row">
         <span>版本</span>
-        <span class="muted">0.4.0 H5</span>
+        <span class="muted">0.7.0 H5</span>
       </div>
       <div class="row">
         <span>说明</span>
-        <span class="muted">浏览器预览，无需微信开发者工具</span>
+        <span class="muted">与小程序 Phase M1/M2 能力对齐</span>
       </div>
     </div>
 
@@ -125,6 +134,29 @@ onMounted(refreshMe)
 
 .email {
   font-size: 13px;
+}
+
+.menu {
+  margin-bottom: 12px;
+  overflow: hidden;
+}
+
+.menu-item {
+  width: 100%;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 14px 16px;
+  border: none;
+  border-bottom: 1px solid #f1f5f9;
+  background: #fff;
+  font-size: 15px;
+  font-weight: 550;
+  cursor: pointer;
+}
+
+.menu-item:last-child {
+  border-bottom: none;
 }
 
 .section {

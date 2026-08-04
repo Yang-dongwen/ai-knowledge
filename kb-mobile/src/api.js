@@ -66,7 +66,6 @@ async function request(path, { method = 'GET', body, auth = true, formData = nul
       signal: ctrl.signal
     })
 
-    // 文件流
     const ct = res.headers.get('content-type') || ''
     if (ct && !ct.includes('application/json') && res.ok) {
       return res
@@ -113,41 +112,19 @@ export function kbMediaUrl(contentPath) {
   }
   path = path.replace(/[?&](access_token|token)=[^&]*/gi, '').replace(/[?&]$/, '')
   if (!path.startsWith('/')) path = `/${path}`
-  const token = getToken()
-  if (!token) return (getBaseUrl() || '') + path
   const base = getBaseUrl() || ''
+  if (/\/api\/v1\/kb\/public\//i.test(path)) {
+    return base + path
+  }
+  const token = getToken()
+  if (!token) return base + path
   return `${base}${path}${path.includes('?') ? '&' : '?'}access_token=${encodeURIComponent(token)}`
 }
 
-export function injectKbMediaTokens(html) {
-  if (!html || !html.includes('/api/v1/kb/files/')) return html || ''
-  const token = getToken()
-  if (!token) return html
-  const base = getBaseUrl() || ''
-  return html.replace(
-    /((?:src|href)=["'])([^"']*\/api\/v1\/kb\/files\/\d+\/content)([^"']*)(["'])/gi,
-    (_m, pre, path) => {
-      let clean = path.split('?')[0]
-      if (!clean.startsWith('/')) clean = `/${clean}`
-      try {
-        if (/^https?:\/\//i.test(clean)) clean = new URL(clean).pathname
-      } catch {
-        /* ignore */
-      }
-      return `${pre}${base}${clean}?access_token=${encodeURIComponent(token)}${_m.endsWith('"') ? '"' : "'"}`.replace(
-        /"$/,
-        '"'
-      )
-    }
-  )
-}
-
-// 更稳妥的 inject
 export function injectMediaInHtml(html) {
   if (!html) return html || ''
   const base = getBaseUrl() || ''
   let out = html
-  // 私有媒体：注入 JWT
   if (out.includes('/api/v1/kb/files/')) {
     const token = getToken()
     if (token) {
@@ -167,11 +144,13 @@ export function injectMediaInHtml(html) {
       )
     }
   }
-  // 公开分享媒体或其它相对 /api 路径：补 base（代理模式下 base 为空即可）
   if (base && out.includes('/api/v1/kb/')) {
     out = out.replace(
       /((?:src|href)=["'])(\/api\/v1\/kb\/[^"']+)(["'])/gi,
-      (_m, pre, path, post) => `${pre}${base}${path}${post}`
+      (_m, pre, path, post) => {
+        if (path.startsWith('http')) return _m
+        return `${pre}${base}${path}${post}`
+      }
     )
   }
   return out
@@ -257,12 +236,48 @@ export const api = {
   emptyTrash() {
     return request('/api/v1/kb/notes/trash', { method: 'DELETE' })
   },
+
   listCategories() {
     return request('/api/v1/kb/categories')
   },
+  createCategory(body) {
+    return request('/api/v1/kb/categories', { method: 'POST', body })
+  },
+  updateCategory(id, body) {
+    return request(`/api/v1/kb/categories/${id}`, { method: 'PUT', body })
+  },
+  deleteCategory(id, mode = 'reject') {
+    return request(`/api/v1/kb/categories/${id}?mode=${encodeURIComponent(mode)}`, {
+      method: 'DELETE'
+    })
+  },
+
   listTags() {
     return request('/api/v1/kb/tags')
   },
+  createTag(name) {
+    return request('/api/v1/kb/tags', { method: 'POST', body: { name } })
+  },
+  updateTag(id, name) {
+    return request(`/api/v1/kb/tags/${id}`, { method: 'PUT', body: { name } })
+  },
+  deleteTag(id) {
+    return request(`/api/v1/kb/tags/${id}`, { method: 'DELETE' })
+  },
+
+  getExplorerTree() {
+    return request('/api/v1/kb/tree')
+  },
+  treeMove(body) {
+    return request('/api/v1/kb/tree/move', { method: 'POST', body })
+  },
+  treeReorder(body) {
+    return request('/api/v1/kb/tree/reorder', { method: 'POST', body })
+  },
+  batchMoveNotes(body) {
+    return request('/api/v1/kb/notes/batch-move', { method: 'POST', body })
+  },
+
   listFiles(noteId) {
     return request(`/api/v1/kb/files?noteId=${encodeURIComponent(noteId)}`)
   },
@@ -278,6 +293,7 @@ export const api = {
   bindFile(id, noteId) {
     return request(`/api/v1/kb/files/${id}/bind`, { method: 'POST', body: { noteId } })
   },
+
   getShareStatus(noteId) {
     return request(`/api/v1/kb/notes/${noteId}/share`)
   },
@@ -290,7 +306,7 @@ export const api = {
   rotateShare(noteId) {
     return request(`/api/v1/kb/notes/${noteId}/share/rotate`, { method: 'POST' })
   },
-  /** 公开分享（无需登录） */
+
   async fetchPublicNote(token) {
     const base = getBaseUrl()
     const res = await fetch(`${base}/api/v1/kb/public/s/${encodeURIComponent(token)}`)

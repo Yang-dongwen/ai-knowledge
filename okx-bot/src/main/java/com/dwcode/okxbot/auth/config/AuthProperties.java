@@ -14,6 +14,8 @@ public class AuthProperties {
     private Code code = new Code();
     /** 首次启动若不存在超管则自动种子 */
     private Admin admin = new Admin();
+    /** 微信小程序登录 */
+    private Wechat wechat = new Wechat();
 
     @Data
     public static class Jwt {
@@ -86,5 +88,23 @@ public class AuthProperties {
         private String email = "admin@okx-bot.local";
         private String password = "Admin@123456";
         private String nickname = "超级管理员";
+    }
+
+    @Data
+    public static class Wechat {
+        private Mini mini = new Mini();
+
+        @Data
+        public static class Mini {
+            /**
+             * 是否启用真实 jscode2session。
+             * false 时进入 mock：code 本身（或 mock:xxx）作为 openid，便于本地/touristappid 联调。
+             */
+            private boolean enabled = false;
+            /** 小程序 AppID */
+            private String appId = "";
+            /** 小程序 AppSecret */
+            private String appSecret = "";
+        }
     }
 }

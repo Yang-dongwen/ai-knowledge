@@ -27,10 +27,11 @@
           </label>
         </div>
         <p class="muted tip">开启后生成链接，任何人无需登录即可阅读。</p>
-        <template v-if="shareEnabled && shareUrl">
-          <div class="share-url">{{ shareUrl }}</div>
+        <template v-if="shareEnabled">
+          <div class="share-url">{{ shareUrl || '（已开启）' }}</div>
           <div class="share-actions">
             <button class="btn sm btn-primary" type="button" @click="copyShare">复制链接</button>
+            <button class="btn sm" type="button" @click="openShare">预览</button>
             <button class="btn sm" type="button" :disabled="shareLoading" @click="onRotateShare">重置链接</button>
           </div>
         </template>
@@ -46,7 +47,7 @@
         <div v-if="note.tags?.length" class="tags">
           <span v-for="t in note.tags" :key="t.id" class="tag">#{{ t.name }}</span>
         </div>
-        <div class="content doc-content" v-html="contentHtml" />
+        <div class="doc-content" v-html="contentHtml" />
       </div>
 
       <div class="card files" v-if="files.length">
@@ -161,6 +162,20 @@ async function copyShare() {
   }
 }
 
+function openShare() {
+  const path = shareStatus.value?.sharePath
+  if (!path) {
+    alert('请先开启分享')
+    return
+  }
+  const token = shareStatus.value?.shareToken
+  if (token) {
+    window.open(`/s/${encodeURIComponent(token)}`, '_blank')
+    return
+  }
+  window.open(path, '_blank')
+}
+
 async function onRotateShare() {
   if (!confirm('重置后旧链接立即失效，确定？')) return
   shareLoading.value = true
@@ -262,28 +277,7 @@ onMounted(load)
 .tags {
   margin-bottom: 8px;
 }
-.content {
-  font-size: 15px;
-  line-height: 1.7;
-  word-break: break-word;
-}
-.content :deep(h1) {
-  font-size: 1.6em;
-  font-weight: 700;
-  margin: 0.1em 0 0;
-  padding-bottom: 0.45em;
-}
-.content :deep(h1 + *) {
-  margin-top: 0.75em !important;
-  padding-top: 0.75em;
-  border-top: 1px solid var(--border);
-}
-.content :deep(img),
-.content :deep(video) {
-  max-width: 100%;
-  height: auto;
-  border-radius: 8px;
-}
+/* 正文样式见全局 .doc-content */
 .files {
   padding: 12px 14px;
 }

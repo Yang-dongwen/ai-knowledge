@@ -22,7 +22,7 @@
       </div>
       <h1 class="title">{{ note.title || '未命名笔记' }}</h1>
       <div class="rule" />
-      <div class="content" v-html="bodyHtml" />
+      <div class="doc-content" v-html="bodyHtml" />
       <footer class="foot muted">由知识库生成 · 仅供阅读</footer>
     </article>
   </div>
@@ -108,20 +108,7 @@ onMounted(async () => {
   border-top: 1px solid var(--border);
   margin: 12px 0 16px;
 }
-.content {
-  font-size: 15px;
-  line-height: 1.7;
-  word-break: break-word;
-}
-.content :deep(img),
-.content :deep(video) {
-  max-width: 100%;
-  height: auto;
-  border-radius: 8px;
-}
-.content :deep(h1) {
-  font-size: 1.25em;
-}
+/* 正文样式见全局 .doc-content */
 .foot {
   margin-top: 28px;
   font-size: 12px;

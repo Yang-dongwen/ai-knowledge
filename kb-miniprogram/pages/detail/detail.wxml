@@ -1,43 +1,45 @@
-<view class="page safe-bottom" wx:if="{{note}}">
-  <view class="actions-top">
-    <block wx:if="{{note.deleted}}">
-      <button class="btn-ghost half" bindtap="onRestore">恢复</button>
-      <button class="btn-danger half" bindtap="onPermanent">永久删除</button>
-    </block>
-    <block wx:else>
-      <button class="btn-ghost third" bindtap="toggleSharePanel">分享</button>
-      <button class="btn-ghost third" bindtap="onEdit">编辑</button>
-      <button class="btn-danger third" bindtap="onDelete">删除</button>
-    </block>
-  </view>
-
-  <view class="card share-panel" wx:if="{{shareOpen && !note.deleted}}">
-    <view class="share-head">
-      <text>公开分享（只读）</text>
-      <switch checked="{{shareEnabled}}" disabled="{{shareLoading}}" bindchange="onShareSwitch" color="#2563eb" />
-    </view>
-    <view class="hint muted">开启后生成链接，任何人无需登录即可阅读。</view>
-    <block wx:if="{{shareEnabled}}">
-      <view class="share-url">{{shareUrl || '（请配置分享域名）'}}</view>
-      <view class="share-actions">
-        <button class="btn-primary sm" size="mini" bindtap="copyShare">复制链接</button>
-        <button class="btn-ghost sm" size="mini" bindtap="onRotateShare" loading="{{shareLoading}}">重置</button>
-      </view>
-    </block>
-  </view>
-
+<view class="page page-detail" wx:if="{{note}}">
+  <!-- 正文优先 -->
   <view class="card body">
+    <view class="doc-title">{{note.title || '未命名笔记'}}</view>
     <view class="meta muted">
-      {{note.formatLabel}} · {{note.updatedAtText}}
+      <text class="fmt-pill inline">{{note.formatLabel}}</text>
       <text wx:if="{{note.categoryName}}"> · {{note.categoryName}}</text>
+      <text> · {{note.updatedAtText}}</text>
       <text wx:if="{{note.deleted}}"> · 回收站</text>
     </view>
     <view class="tags" wx:if="{{note.tags && note.tags.length}}">
       <text class="tag" wx:for="{{note.tags}}" wx:key="id">#{{item.name}}</text>
     </view>
-    <rich-text class="md-body" nodes="{{contentHtml}}" />
+    <view class="rule" />
+    <view class="prose">
+      <rich-text class="md-body" nodes="{{contentHtml}}" />
+    </view>
   </view>
 
+  <!-- 分享面板 -->
+  <view class="card share-panel" wx:if="{{shareOpen && !note.deleted}}">
+    <view class="share-head">
+      <view>
+        <view class="share-title">公开分享</view>
+        <view class="hint muted">开启后好友可阅读，无需登录</view>
+      </view>
+      <switch checked="{{shareEnabled}}" disabled="{{shareLoading}}" bindchange="onShareSwitch" color="#4f46e5" />
+    </view>
+    <block wx:if="{{shareEnabled}}">
+      <view class="share-url muted-3">{{shareUrl || '小程序内分享无需网页域名'}}</view>
+      <view class="share-actions">
+        <button class="btn btn-primary btn-sm share-main" open-type="share">转发给好友</button>
+        <view class="share-links">
+          <text class="link-btn" bindtap="previewShare">预览</text>
+          <text class="link-btn" bindtap="copyShare">复制链接</text>
+          <text class="link-btn muted" bindtap="onRotateShare">重置</text>
+        </view>
+      </view>
+    </block>
+  </view>
+
+  <!-- 附件 -->
   <view class="card files" wx:if="{{files.length}}">
     <view class="files-title">附件</view>
     <view
@@ -48,11 +50,26 @@
       bindtap="openFile"
     >
       <text class="fname">{{item.originalName}}</text>
-      <text class="farrow">›</text>
+      <text class="chevron">›</text>
     </view>
+  </view>
+
+  <!-- 吸底操作 -->
+  <view class="bottom-bar" wx:if="{{note.deleted}}">
+    <button class="btn btn-secondary btn-half" bindtap="onRestore">恢复</button>
+    <button class="btn btn-danger-soft btn-half" bindtap="onPermanent">永久删除</button>
+  </view>
+  <view class="bottom-bar" wx:else>
+    <button class="btn btn-ghost btn-icon" bindtap="toggleSharePanel">{{shareOpen ? '收起' : '分享'}}</button>
+    <button class="btn btn-primary btn-grow" bindtap="onEdit">编辑</button>
+    <button class="btn btn-ghost btn-icon danger-text" bindtap="onDelete">删除</button>
   </view>
 </view>
 
-<view class="empty" wx:elif="{{!loading}}">
+<view class="empty-state" wx:elif="{{!loading}}">
+  <view class="empty-icon">📄</view>
   <view class="empty-title">笔记不存在</view>
+  <view class="empty-desc">可能已被删除，或链接无效</view>
 </view>
+
+<view class="loading-text" wx:if="{{loading}}">加载中…</view>

@@ -43,6 +43,9 @@ public class SysUserEntity {
     /** 1 邮箱已验证 */
     private Integer emailVerified;
 
+    /** 微信小程序 openid（可空，唯一） */
+    private String wxMiniOpenid;
+
     private LocalDateTime lastLoginAt;
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
