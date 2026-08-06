@@ -18,6 +18,7 @@ import com.dwcode.okxbot.auth.security.SecurityUtils;
 import com.dwcode.okxbot.chat.config.AiProperties;
 import com.dwcode.okxbot.chat.config.AiProperties.ProviderConfig;
 import com.dwcode.okxbot.common.exception.BusinessException;
+import com.dwcode.okxbot.member.service.MemberStatusService;
 import com.dwcode.okxbot.imggen.util.AspectRatioMapper;
 import com.dwcode.okxbot.storage.ObjectKeyBuilder;
 import com.dwcode.okxbot.common.ai.AiModelConfigService;
@@ -69,8 +70,15 @@ public class AigenTaskService {
     private final VisualShotAssetService visualShotAssetService;
     private final VideoRenderPort videoRenderPort;
     private final com.dwcode.okxbot.storage.MediaUrlService mediaUrlService;
+    private final MemberStatusService memberStatusService;
 
     public AigenTaskResponse create(AigenCreateRequest request) {
+        memberStatusService.requireActiveMember();
+        Long userId = SecurityUtils.requireCurrentUserId();
+        int perUser = Math.max(1, aigenProperties.getMaxConcurrentTasksPerUser());
+        if (countUserInFlight(userId) >= perUser) {
+            throw new BusinessException(429, "并发 AI 视频任务数已达上限（" + perUser + "），请等待完成后再提交");
+        }
         String prompt = request.getPrompt().trim();
         if (prompt.isEmpty()) {
             throw new BusinessException(400, "prompt 不能为空");
@@ -394,6 +402,7 @@ public class AigenTaskService {
      * 可覆盖 LLM；清空分镜与成片产物后重新排队。
      */
     public AigenTaskResponse retryTask(Long taskId, AigenRetryRequest request) {
+        memberStatusService.requireActiveMember();
         AigenTaskEntity entity = requireOwnedTask(taskId);
         String status = entity.getStatus() == null ? "" : entity.getStatus().trim().toUpperCase();
         if (!AIGEN_RETRYABLE_STATUSES.contains(status)) {
@@ -1026,13 +1035,29 @@ public class AigenTaskService {
         return n.endsWith(".jpg") || n.endsWith(".jpeg") || n.endsWith(".png") || n.endsWith(".webp");
     }
 
+    private int countUserInFlight(Long userId) {
+        if (userId == null) {
+            return 0;
+        }
+        Long cnt = aigenTaskMapper.selectCount(
+                new LambdaQueryWrapper<AigenTaskEntity>()
+                        .eq(AigenTaskEntity::getUserId, userId)
+                        .in(AigenTaskEntity::getStatus,
+                                AigenTaskStatus.PENDING.name(),
+                                AigenTaskStatus.PLANNING.name(),
+                                AigenTaskStatus.ASSET_GENERATING.name(),
+                                AigenTaskStatus.RENDERING.name())
+        );
+        return cnt == null ? 0 : cnt.intValue();
+    }
+
     private AigenTaskEntity requireOwnedTask(Long taskId) {
         AigenTaskEntity entity = aigenTaskMapper.selectById(taskId);
         if (entity == null) {
             throw new BusinessException(404, "任务不存在: " + taskId);
         }
         Long userId = SecurityUtils.requireCurrentUserId();
-        if (entity.getUserId() != null && !entity.getUserId().equals(userId)) {
+        if (entity.getUserId() == null || !entity.getUserId().equals(userId)) {
             throw new BusinessException(403, "无权访问该任务");
         }
         return entity;

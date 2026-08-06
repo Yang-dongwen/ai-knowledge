@@ -19,7 +19,8 @@ import java.util.Locale;
 
 /**
  * 微信小程序 code → openid（jscode2session）。
- * mock：auth.wechat.mini.enabled=false 时不调微信，直接用 code 派生 openid。
+ * <p>mock 仅在 {@code enabled=false} 且 {@code mock=true} 时可用；
+ * enabled=true 但密钥不全时拒绝，不再静默 mock。
  */
 @Slf4j
 @Component
@@ -50,12 +51,20 @@ public class WxMiniSessionClient {
         }
         String c = code.trim();
         AuthProperties.Wechat.Mini mini = authProperties.getWechat().getMini();
-        if (mini == null || !mini.isEnabled()
-                || !StringUtils.hasText(mini.getAppId())
-                || !StringUtils.hasText(mini.getAppSecret())) {
-            return mockOpenid(c);
+        if (mini == null) {
+            throw new BusinessException(503, "微信登录未配置");
         }
-        return realOpenid(mini.getAppId().trim(), mini.getAppSecret().trim(), c);
+        if (mini.isEnabled()) {
+            if (!StringUtils.hasText(mini.getAppId()) || !StringUtils.hasText(mini.getAppSecret())) {
+                throw new BusinessException(503,
+                        "微信登录已启用但未配置 AppId/AppSecret，请联系管理员");
+            }
+            return realOpenid(mini.getAppId().trim(), mini.getAppSecret().trim(), c);
+        }
+        if (!mini.isMock()) {
+            throw new BusinessException(503, "微信登录未启用");
+        }
+        return mockOpenid(c);
     }
 
     private String mockOpenid(String code) {
@@ -71,7 +80,7 @@ public class WxMiniSessionClient {
             raw = raw.substring(0, 48);
         }
         String openid = "mock_" + raw;
-        log.info("wx mini mock openid (enabled=false or missing secrets): openid={}", openid);
+        log.info("wx mini mock openid: openid={}", openid);
         return openid;
     }
 

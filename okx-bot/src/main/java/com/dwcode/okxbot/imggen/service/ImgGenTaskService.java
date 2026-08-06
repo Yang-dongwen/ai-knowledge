@@ -6,6 +6,7 @@ import com.dwcode.okxbot.auth.security.SecurityUtils;
 import com.dwcode.okxbot.chat.config.AiProperties;
 import com.dwcode.okxbot.chat.config.AiProperties.ProviderConfig;
 import com.dwcode.okxbot.common.exception.BusinessException;
+import com.dwcode.okxbot.member.service.MemberStatusService;
 import com.dwcode.okxbot.imggen.agent.ImgGenTaskScheduler;
 import com.dwcode.okxbot.imggen.config.ImgGenProperties;
 import com.dwcode.okxbot.imggen.dto.*;
@@ -61,11 +62,13 @@ public class ImgGenTaskService {
     private final com.dwcode.okxbot.storage.MediaUrlService mediaUrlService;
     private final PromptEnhancePort promptEnhancePort;
     private final ObjectMapper objectMapper;
+    private final MemberStatusService memberStatusService;
 
     /**
      * 独立润色：即时返回结果，不创建任务。由用户确认后再提交生图。
      */
     public ImgGenEnhanceResponse enhancePrompt(ImgGenEnhanceRequest request) {
+        memberStatusService.requireActiveMember();
         if (!properties.isEnabled()) {
             throw new BusinessException(400, "文生图功能未启用");
         }
@@ -138,8 +141,14 @@ public class ImgGenTaskService {
     }
 
     public ImgGenTaskResponse create(ImgGenCreateRequest request) {
+        memberStatusService.requireActiveMember();
         if (!properties.isEnabled()) {
             throw new BusinessException(400, "文生图功能未启用");
+        }
+        Long userId = SecurityUtils.requireCurrentUserId();
+        int perUser = Math.max(1, properties.getMaxConcurrentTasksPerUser());
+        if (countUserInFlight(userId) >= perUser) {
+            throw new BusinessException(429, "并发文生图任务数已达上限（" + perUser + "），请等待完成后再提交");
         }
         String prompt = request.getPrompt().trim();
         if (prompt.isEmpty()) {
@@ -372,6 +381,7 @@ public class ImgGenTaskService {
     }
 
     public ImgGenTaskResponse retryTask(Long taskId, ImgGenRetryRequest request) {
+        memberStatusService.requireActiveMember();
         ImgGenTaskEntity entity = requireOwnedTask(taskId);
         String status = entity.getStatus() == null ? "" : entity.getStatus().trim().toUpperCase();
         if (!RETRYABLE.contains(status)) {
@@ -524,13 +534,28 @@ public class ImgGenTaskService {
         return bb.body(resource);
     }
 
+    private int countUserInFlight(Long userId) {
+        if (userId == null) {
+            return 0;
+        }
+        Long cnt = taskMapper.selectCount(
+                new LambdaQueryWrapper<ImgGenTaskEntity>()
+                        .eq(ImgGenTaskEntity::getUserId, userId)
+                        .in(ImgGenTaskEntity::getStatus,
+                                ImgGenTaskStatus.PENDING.name(),
+                                ImgGenTaskStatus.PROMPT_ENHANCING.name(),
+                                ImgGenTaskStatus.GENERATING.name())
+        );
+        return cnt == null ? 0 : cnt.intValue();
+    }
+
     private ImgGenTaskEntity requireOwnedTask(Long taskId) {
         ImgGenTaskEntity entity = taskMapper.selectById(taskId);
         if (entity == null) {
             throw new BusinessException(404, "任务不存在: " + taskId);
         }
         Long userId = SecurityUtils.requireCurrentUserId();
-        if (entity.getUserId() != null && !entity.getUserId().equals(userId)) {
+        if (entity.getUserId() == null || !entity.getUserId().equals(userId)) {
             throw new BusinessException(403, "无权访问该任务");
         }
         return entity;

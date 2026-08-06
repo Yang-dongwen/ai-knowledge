@@ -60,7 +60,8 @@ function getShareWebOrigin() {
   } catch (e) {
     // ignore
   }
-  return ''
+  // 默认 PC/H5 分享阅读域名，避免复制出相对路径无法打开
+  return 'https://www.dwcode.cloud'
 }
 
 function setShareWebOrigin(url) {

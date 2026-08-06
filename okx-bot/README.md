@@ -13,7 +13,7 @@
 | 能力 | 说明 | 代码包 |
 |------|------|--------|
 | **OKX 交易助手** | 模拟盘/实盘配置、均线策略、持仓/订单、回测、系统启停 | `okx` / `strategy` / `trading` / `backtest` |
-| **认证与权限** | 邮箱注册登录、JWT、角色（USER / MEMBER / SUPER_ADMIN） | `auth` |
+| **认证与权限** | 邮箱注册登录、JWT、Google/GitHub OAuth（PC）、微信小程序；角色 USER / MEMBER / SUPER_ADMIN | `auth` |
 | **会员支付** | 套餐、Mock 支付开通 MEMBER、有效期叠加（支付宝/微信待进件） | `member` / `pay` |
 | **AI 聊天** | 多供应商 OpenAI 兼容对话（流式） | `chat` |
 | **视频核心提取** | 链接 → 下载 → 音频 → Whisper 转录 → LLM 总结（可选画面理解） | `video` |
@@ -497,6 +497,12 @@ Base URL：`http://127.0.0.1:8080`
 | POST | `/password/*` | 重置密码 |
 | GET | `/me` | 当前用户 |
 | POST | `/logout` | 登出（前端丢弃 Token 即可） |
+| GET | `/oauth/providers` | 已启用 Google/GitHub（及 mock 标记） |
+| GET | `/oauth/{google\|github}/authorize` | PC 三方登录跳转 |
+| GET | `/oauth/{provider}/callback` | 平台回调 → 前端 ticket |
+| POST | `/oauth/exchange` | ticket 换 JWT |
+
+OAuth 配置：本地见 `application-local.yml`（真实 client，无 env）；生产见 `AUTH_OAUTH_*`（`deploy/env/app.env.example`）。
 
 ### 9.2 交易与系统（SUPER_ADMIN）
 

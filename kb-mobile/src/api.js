@@ -82,6 +82,16 @@ async function request(path, { method = 'GET', body, auth = true, formData = nul
       clearSession()
       const err = new Error((data && data.message) || '未登录或登录已过期')
       err.code = 401
+      // 集中跳转登录，避免各页遗漏 catch 后半坏状态
+      try {
+        const path = window.location?.pathname || ''
+        if (!path.startsWith('/login') && !path.startsWith('/s/')) {
+          const redirect = encodeURIComponent(path + (window.location?.search || ''))
+          window.location.href = `/login?redirect=${redirect}`
+        }
+      } catch {
+        /* ignore */
+      }
       throw err
     }
 

@@ -1,5 +1,5 @@
 const { api } = require('../../utils/request')
-const { isLoggedIn } = require('../../utils/auth')
+const { requireLoginOrRedirect } = require('../../utils/auth')
 
 Page({
   data: {
@@ -14,10 +14,7 @@ Page({
   },
 
   onShow() {
-    if (!isLoggedIn()) {
-      wx.reLaunch({ url: '/pages/login/login' })
-      return
-    }
+    if (!requireLoginOrRedirect()) return
     this.load()
   },
 

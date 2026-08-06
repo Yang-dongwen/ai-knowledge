@@ -51,6 +51,12 @@ export const useAuthStore = defineStore('auth', () => {
     return res.data
   }
 
+  async function loginWithOAuthTicket(ticket: string) {
+    const res = await authApi.exchangeOAuthTicket(ticket)
+    persist(res.data)
+    return res.data
+  }
+
   async function register(payload: {
     email: string
     password: string
@@ -69,8 +75,12 @@ export const useAuthStore = defineStore('auth', () => {
       user.value = res.data
       localStorage.setItem(USER_KEY, JSON.stringify(res.data))
       return res.data
-    } catch {
-      clear()
+    } catch (e: any) {
+      // 仅认证失败清会话；网络/5xx 保留本地缓存，避免抖动强制登出
+      const status = e?.response?.status
+      if (status === 401 || status === 403) {
+        clear()
+      }
       return null
     }
   }
@@ -93,6 +103,7 @@ export const useAuthStore = defineStore('auth', () => {
     isMember,
     isMemberActive,
     login,
+    loginWithOAuthTicket,
     register,
     fetchMe,
     logout,

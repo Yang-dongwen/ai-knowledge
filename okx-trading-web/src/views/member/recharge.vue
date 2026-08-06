@@ -42,6 +42,7 @@
         <div class="step-title mt-20">2. 支付方式</div>
         <div class="channel-list">
           <button
+            v-if="mockPayAllowed"
             type="button"
             class="channel-option"
             :class="{ active: channel === 'mock' }"
@@ -49,7 +50,7 @@
             @click="channel = 'mock'"
           >
             <div class="ch-title">Mock 模拟支付</div>
-            <div class="ch-desc">开发联调 · 无需真实扣款（推荐当前使用）</div>
+            <div class="ch-desc">仅开发环境 · 需服务端 pay.mock-enabled=true</div>
           </button>
           <button
             type="button"
@@ -61,18 +62,15 @@
             <div class="ch-title">支付宝</div>
             <div class="ch-desc">直连已接入 · 需服务端 pay.alipay.enabled=true 与密钥</div>
           </button>
-          <button type="button" class="channel-option disabled" disabled>
-            <div class="ch-title">微信支付</div>
-            <div class="ch-desc">待实现（PR6）</div>
-          </button>
+          <!-- 微信支付渠道未就绪：不展示入口，避免误导 -->
         </div>
         <a-alert
           v-if="channel === 'alipay'"
           type="info"
           show-icon
           class="mt-12"
-          message="支付宝当前默认关闭"
-          description="未进件或未配置密钥时，创建订单会失败；请继续使用 Mock，或进件后配置环境变量再开启。"
+          message="支付宝需服务端开启并配置密钥"
+          description="未进件或未配置密钥时，创建订单会失败。生产环境已默认关闭 Mock 模拟支付。"
         />
 
         <a-button
@@ -173,10 +171,12 @@
               </div>
               <div v-else-if="currentOrder.qrCodeUrl" class="qr-box">
                 <img
+                  v-if="qrDataUrl"
                   class="qr-img"
-                  :src="qrImageSrc(currentOrder.qrCodeUrl)"
+                  :src="qrDataUrl"
                   alt="支付二维码"
                 />
+                <a-spin v-else />
                 <p>请使用对应 App 扫码支付</p>
               </div>
               <a-empty v-else description="等待支付凭证" />
@@ -216,8 +216,11 @@ const refreshing = ref(false)
 const polling = ref(false)
 const plans = ref<MemberPlan[]>([])
 const selectedPlanId = ref<string>('')
-const channel = ref('mock')
+/** 生产构建不展示 Mock；本地 dev 仍可联调（后端 local profile 默认 mock=true） */
+const mockPayAllowed = import.meta.env.DEV === true
+const channel = ref(mockPayAllowed ? 'mock' : 'alipay')
 const currentOrder = ref<PayOrder | null>(null)
+const qrDataUrl = ref('')
 
 let pollTimer: ReturnType<typeof setTimeout> | null = null
 let pollStartedAt = 0
@@ -226,7 +229,10 @@ const POLL_MAX_MS = 5 * 60 * 1000
 const pollHint = computed(() => {
   if (!currentOrder.value || !isOpen(currentOrder.value)) return ''
   if (polling.value) return '正在轮询支付结果…'
-  return '可点击「确认模拟支付」或等待自动轮询'
+  if (currentOrder.value.channel === 'mock' && mockPayAllowed) {
+    return '可点击「确认模拟支付」或等待自动轮询'
+  }
+  return '请完成扫码/跳转支付，或点击「刷新状态」'
 })
 
 function isOpen(o: PayOrder) {
@@ -243,10 +249,29 @@ function clientType(): string {
   return 'PC'
 }
 
-function qrImageSrc(content: string) {
-  // 无需额外依赖：使用公开 QR 图服务（仅展示；真生产可换前端库）
-  return `https://api.qrserver.com/v1/create-qr-code/?size=220x220&data=${encodeURIComponent(content)}`
+async function buildLocalQr(content: string) {
+  qrDataUrl.value = ''
+  if (!content) return
+  try {
+    const QRCode = (await import('qrcode')).default
+    qrDataUrl.value = await QRCode.toDataURL(content, {
+      width: 220,
+      margin: 2,
+      errorCorrectionLevel: 'M'
+    })
+  } catch (e) {
+    console.warn('本地生成二维码失败', e)
+    message.error('二维码生成失败，请刷新状态或复制支付链接')
+  }
 }
+
+watch(
+  () => currentOrder.value?.qrCodeUrl,
+  (url) => {
+    if (url) void buildLocalQr(url)
+    else qrDataUrl.value = ''
+  }
+)
 
 async function loadPlans() {
   plansLoading.value = true

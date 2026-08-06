@@ -23,6 +23,12 @@ const routes: RouteRecordRaw[] = [
     meta: { title: '找回密码', public: true }
   },
   {
+    path: '/oauth/callback',
+    name: 'OAuthCallback',
+    component: () => import('@/views/auth/OAuthCallback.vue'),
+    meta: { title: '第三方登录', public: true }
+  },
+  {
     path: '/s/:token',
     name: 'KbPublicShare',
     component: () => import('@/views/kb/PublicShare.vue'),
@@ -113,12 +119,19 @@ router.beforeEach(async (to) => {
       query: { redirect: to.fullPath }
     }
   }
-  if (isPublic && auth.isLoggedIn && (to.path === '/login' || to.path === '/register')) {
+  if (
+    isPublic
+    && auth.isLoggedIn
+    && (to.path === '/login' || to.path === '/register')
+  ) {
     return { path: '/home' }
   }
-  if (to.meta?.requiresSuperAdmin && auth.isLoggedIn && !auth.isSuperAdmin) {
-    if (!auth.user?.role) {
+  if (to.meta?.requiresSuperAdmin && auth.isLoggedIn) {
+    // 始终向服务端校验角色，不信任 localStorage 缓存
+    try {
       await auth.fetchMe()
+    } catch {
+      return { path: '/login', query: { redirect: to.fullPath } }
     }
     if (!auth.isSuperAdmin) {
       return { path: '/home' }

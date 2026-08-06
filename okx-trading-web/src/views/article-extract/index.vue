@@ -138,6 +138,14 @@
             </div>
             <div class="detail-actions">
               <a-button
+                v-if="detail.status === 'SUCCESS'"
+                size="small"
+                type="primary"
+                ghost
+                :loading="savingToKb"
+                @click="saveToKnowledgeBase"
+              >存入知识库</a-button>
+              <a-button
                 v-if="canPause(detail)"
                 size="small"
                 @click="doPause"
@@ -279,6 +287,7 @@ import { message, Modal } from 'ant-design-vue'
 import EmptyState from '@/components/EmptyState.vue'
 import { articleApi } from '@/api/article.api'
 import { connectArticleTaskEvents } from '@/api/article.events'
+import { kbApi } from '@/api/kb.api'
 import type {
   AiProvider,
   ArticleCore,
@@ -313,6 +322,7 @@ const selectedLlmKey = ref<string>()
 const submitting = ref(false)
 const listLoading = ref(false)
 const pasting = ref(false)
+const savingToKb = ref(false)
 const tasks = ref<ArticleTaskItem[]>([])
 const selectedId = ref<string>()
 const detail = ref<ArticleTaskItem | null>(null)
@@ -604,6 +614,74 @@ async function doRetry() {
     await loadList()
   } catch (e: any) {
     message.error(e?.response?.data?.message || e?.message || '重试失败')
+  }
+}
+
+/** 将摘要 + 要点 + 来源写入知识库（Markdown） */
+async function saveToKnowledgeBase() {
+  if (!detail.value || detail.value.status !== 'SUCCESS') return
+  savingToKb.value = true
+  try {
+    const title = (detail.value.title || '文章提取').slice(0, 200)
+    const parts: string[] = [`# ${title}`, '']
+    if (detail.value.sourceUrl) {
+      parts.push(`> 来源：${detail.value.sourceUrl}`, '')
+    }
+    if (coreSummary.value) {
+      parts.push('## 摘要', '', coreSummary.value, '')
+    }
+    if (keyPoints.value.length) {
+      parts.push('## 要点', '')
+      keyPoints.value.forEach((kp, i) => {
+        parts.push(`${i + 1}. ${kp.point || ''}`)
+      })
+      parts.push('')
+    }
+    if (timeline.value.length) {
+      parts.push('## 时间线', '')
+      timeline.value.forEach((ev) => {
+        parts.push(`- **${ev.time || '—'}** ${ev.event || ''}`)
+      })
+      parts.push('')
+    }
+    if (rewriteVariants.value.length) {
+      parts.push('## 二创', '')
+      rewriteVariants.value.forEach((v, i) => {
+        parts.push(`### ${v.label || v.id || `形态 ${i + 1}`}`, '')
+        if (v.hook) parts.push(`Hook：${v.hook}`, '')
+        if (v.content) parts.push(v.content, '')
+        if (v.cta) parts.push(`CTA：${v.cta}`, '')
+      })
+    }
+    if (mindMap.value) {
+      parts.push('## 思维导图', '', mindMap.value, '')
+    }
+    const content = parts.join('\n').trim()
+    // 标签：尽量复用「文章提取」
+    let tagIds: string[] = []
+    try {
+      const tagsRes = await kbApi.listTags()
+      const existing = (tagsRes.data || []).find((t) => t.name === '文章提取')
+      if (existing) {
+        tagIds = [existing.id]
+      } else {
+        const created = await kbApi.createTag('文章提取')
+        if (created.data?.id) tagIds = [created.data.id]
+      }
+    } catch {
+      /* 标签失败不阻塞入库 */
+    }
+    await kbApi.createNote({
+      title,
+      content,
+      contentFormat: 'markdown',
+      tagIds: tagIds.length ? tagIds : undefined
+    })
+    message.success('已存入知识库')
+  } catch (e: any) {
+    message.error(e?.response?.data?.message || e?.message || '存入知识库失败')
+  } finally {
+    savingToKb.value = false
   }
 }
 

@@ -33,6 +33,7 @@
 import { ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { api, setSession } from '../api'
+import { safeAppRedirect } from '../utils/sanitizeHtml'
 
 const router = useRouter()
 const route = useRoute()
@@ -51,8 +52,8 @@ async function onLogin() {
   try {
     const data = await api.login(email.value.trim(), password.value)
     setSession(data.token, data.user)
-    const redirect = typeof route.query.redirect === 'string' ? route.query.redirect : '/notes'
-    router.replace(redirect || '/notes')
+    const redirect = safeAppRedirect(route.query.redirect, '/notes')
+    router.replace(redirect)
   } catch (e) {
     error.value = e.message || '登录失败'
   } finally {

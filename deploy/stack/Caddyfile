@@ -1,11 +1,45 @@
 # 自动 HTTPS（Let's Encrypt）+ 反代到 web 容器
 # 域名: dwcode.cloud / www.dwcode.cloud
+# PDF: pdf.dwcode.cloud -> stirling-pdf（独立 compose，需 docker network connect 到 appnet）
 
 dwcode.cloud, www.dwcode.cloud {
 	encode gzip
 
+	# 安全响应头
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains; preload"
+		X-Content-Type-Options "nosniff"
+		X-Frame-Options "SAMEORIGIN"
+		Referrer-Policy "strict-origin-when-cross-origin"
+		# 基础 CSP：允许同源脚本/样式与 blob 媒体；按需收紧
+		Content-Security-Policy "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https:; media-src 'self' blob: https:; connect-src 'self' https: wss:; font-src 'self' data:; frame-ancestors 'self'; base-uri 'self'; form-action 'self'"
+		# 去掉 Server 细节
+		-Server
+	}
+
 	# SSE / 长连接
 	reverse_proxy web:80 {
+		flush_interval -1
+		transport http {
+			read_timeout 3600s
+			write_timeout 3600s
+		}
+		header_up X-Forwarded-Proto {scheme}
+		header_up X-Forwarded-Host {host}
+		header_up X-Real-IP {remote_host}
+	}
+}
+
+# Stirling-PDF（容器名 stirling-pdf，需在 auto-exchange-lite_appnet 网络中）
+pdf.dwcode.cloud {
+	encode gzip
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		X-Content-Type-Options "nosniff"
+		X-Frame-Options "SAMEORIGIN"
+		Referrer-Policy "strict-origin-when-cross-origin"
+	}
+	reverse_proxy stirling-pdf:8080 {
 		flush_interval -1
 		transport http {
 			read_timeout 3600s

@@ -5,9 +5,12 @@ import com.dwcode.okxbot.video.entity.VideoTaskEntity;
 import com.dwcode.okxbot.video.enums.VideoTaskStatus;
 import com.dwcode.okxbot.video.mapper.VideoTaskMapper;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.boot.context.event.ApplicationReadyEvent;
 import org.springframework.context.annotation.Lazy;
+import org.springframework.context.event.EventListener;
 import org.springframework.stereotype.Component;
 
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
@@ -41,6 +44,38 @@ public class VideoTaskScheduler {
 
     /** 用户请求暂停的任务 */
     private final Set<Long> pauseRequested = ConcurrentHashMap.newKeySet();
+
+    /**
+     * 进程重启后 DB 可能残留进行中状态，占满并发槽；标记 FAILED 并继续排队。
+     */
+    @EventListener(ApplicationReadyEvent.class)
+    public void recoverOrphanRunningTasks() {
+        List<VideoTaskEntity> orphans = videoTaskMapper.selectList(
+                new LambdaQueryWrapper<VideoTaskEntity>()
+                        .in(VideoTaskEntity::getStatus,
+                                VideoTaskStatus.DOWNLOADING.name(),
+                                VideoTaskStatus.TRANSCRIBING.name(),
+                                VideoTaskStatus.UNDERSTANDING.name(),
+                                VideoTaskStatus.SUMMARIZING.name())
+        );
+        if (orphans.isEmpty()) {
+            tryStartNext();
+            return;
+        }
+        log.warn("发现 {} 个中断的 video 进行中任务，标记 FAILED 并调度排队", orphans.size());
+        LocalDateTime now = LocalDateTime.now();
+        for (VideoTaskEntity t : orphans) {
+            t.setStatus(VideoTaskStatus.FAILED.name());
+            t.setCurrentStep("服务重启，任务中断");
+            t.setErrorMessage("服务重启导致任务中断，请点击重试");
+            t.setFinishedAt(now);
+            t.setUpdatedAt(now);
+            videoTaskMapper.updateById(t);
+            activeTaskIds.remove(t.getId());
+            pauseRequested.remove(t.getId());
+        }
+        tryStartNext();
+    }
 
     /**
      * 任务进入 PENDING 后调用，尝试启动排队中的任务。

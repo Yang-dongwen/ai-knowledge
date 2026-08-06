@@ -19,8 +19,8 @@
       </button>
     </div>
 
-    <div class="card section">
-      <div class="section-title">API 根地址</div>
+    <div v-if="showApiBase" class="card section">
+      <div class="section-title">API 根地址（仅开发）</div>
       <p class="muted hint">
         留空 = 使用开发代理（推荐本地）。填完整地址仅在跨域已放行时使用。
       </p>
@@ -61,6 +61,7 @@ import {
 
 const router = useRouter()
 const user = ref(getUser())
+const showApiBase = import.meta.env.DEV === true
 const baseUrlInput = ref(localStorage.getItem('kb_base_url') || '')
 const baseDisplay = ref(getBaseUrl() || '(同源代理 /api → :8080)')
 

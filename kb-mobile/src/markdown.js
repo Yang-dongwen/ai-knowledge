@@ -1,5 +1,6 @@
 import MarkdownIt from 'markdown-it'
 import { injectMediaInHtml } from './api'
+import { sanitizeHtml } from './utils/sanitizeHtml'
 
 const md = new MarkdownIt({
   html: true,
@@ -15,12 +16,12 @@ if (typeof md.enable === 'function') {
   }
 }
 
-/** 渲染笔记正文：markdown 或 html */
+/** 渲染笔记正文：markdown 或 html（消毒后再注入媒体 token） */
 export function renderNoteContent(content, format = 'markdown') {
   if (!content) return '<p class="md-empty">（无正文）</p>'
   if (format === 'html') {
-    return injectMediaInHtml(content)
+    return sanitizeHtml(injectMediaInHtml(content))
   }
   let html = md.render(String(content))
-  return injectMediaInHtml(html)
+  return sanitizeHtml(injectMediaInHtml(html))
 }

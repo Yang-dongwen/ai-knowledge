@@ -64,6 +64,7 @@ import { computed, onMounted, ref } from 'vue'
 import { useRoute } from 'vue-router'
 import dayjs from 'dayjs'
 import { fetchPublicNote, type KbPublicNote } from '@/api/kb.api'
+import { sanitizeHtml } from '@/utils/sanitizeHtml'
 
 const route = useRoute()
 const loading = ref(true)
@@ -125,9 +126,9 @@ async function buildMarkdownHtml(src: string, token: string) {
     rowspan: true,
     headerless: true
   })
-  // 先改写 MD/HTML 源里的图片路径，再 render
+  // 先改写 MD/HTML 源里的图片路径，再 render，最后消毒
   const rewritten = ensurePublicMediaUrls(src || '', token)
-  return ensurePublicMediaUrls(md.render(rewritten), token)
+  return sanitizeHtml(ensurePublicMediaUrls(md.render(rewritten), token))
 }
 
 onMounted(async () => {
@@ -146,7 +147,7 @@ onMounted(async () => {
     if (data.contentFormat === 'markdown') {
       bodyHtml.value = await buildMarkdownHtml(data.content || '', token)
     } else {
-      bodyHtml.value = ensurePublicMediaUrls(data.content || '<p></p>', token)
+      bodyHtml.value = sanitizeHtml(ensurePublicMediaUrls(data.content || '<p></p>', token))
     }
   } catch (e: any) {
     error.value = e?.message || '加载失败'

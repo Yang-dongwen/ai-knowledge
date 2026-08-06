@@ -4,12 +4,16 @@ import com.dwcode.okxbot.common.response.ApiResult;
 import com.dwcode.okxbot.kb.dto.NoteCreateRequest;
 import com.dwcode.okxbot.kb.dto.NotePageResponse;
 import com.dwcode.okxbot.kb.dto.NoteResponse;
+import com.dwcode.okxbot.kb.dto.NoteRevisionResponse;
 import com.dwcode.okxbot.kb.dto.NoteUpdateRequest;
 import com.dwcode.okxbot.kb.service.KbNoteService;
 import jakarta.servlet.http.HttpServletResponse;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -20,6 +24,9 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
+import java.net.URLEncoder;
+import java.nio.charset.StandardCharsets;
+import java.util.List;
 import java.util.Map;
 
 /**
@@ -42,9 +49,10 @@ public class KbNoteController {
             @RequestParam(required = false) String keyword,
             @RequestParam(defaultValue = "false") boolean includeDeleted,
             @RequestParam(defaultValue = "false") boolean uncategorized,
-            @RequestParam(defaultValue = "false") boolean onlyDeleted) {
+            @RequestParam(defaultValue = "false") boolean onlyDeleted,
+            @RequestParam(defaultValue = "false") boolean onlyPinned) {
         return ApiResult.ok(noteService.list(
-                page, size, categoryId, tagId, keyword, includeDeleted, uncategorized, onlyDeleted));
+                page, size, categoryId, tagId, keyword, includeDeleted, uncategorized, onlyDeleted, onlyPinned));
     }
 
     /** 回收站数量（须在 /{id} 之前声明） */
@@ -114,5 +122,54 @@ public class KbNoteController {
     public ApiResult<Void> permanentDelete(@PathVariable Long id) {
         noteService.permanentDelete(id);
         return ApiResult.ok();
+    }
+
+    /** 复制笔记 */
+    @PostMapping("/{id}/duplicate")
+    public ApiResult<NoteResponse> duplicate(@PathVariable Long id) {
+        return ApiResult.ok(noteService.duplicate(id));
+    }
+
+    /** 导出 Markdown 文件 */
+    @GetMapping("/{id}/export")
+    public ResponseEntity<byte[]> export(
+            @PathVariable Long id,
+            @RequestParam(defaultValue = "md") String format) {
+        String md = noteService.exportMarkdown(id);
+        String filename = "note-" + id + ".md";
+        try {
+            NoteResponse meta = noteService.get(id);
+            if (meta.getTitle() != null && !meta.getTitle().isBlank()) {
+                String safe = meta.getTitle().replaceAll("[\\\\/:*?\"<>|]", "_").trim();
+                if (!safe.isEmpty()) {
+                    filename = safe + ".md";
+                }
+            }
+        } catch (Exception ignored) {
+            // 用默认文件名
+        }
+        byte[] bytes = md.getBytes(StandardCharsets.UTF_8);
+        String encoded = URLEncoder.encode(filename, StandardCharsets.UTF_8).replace("+", "%20");
+        return ResponseEntity.ok()
+                .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename*=UTF-8''" + encoded)
+                .contentType(new MediaType("text", "markdown", StandardCharsets.UTF_8))
+                .body(bytes);
+    }
+
+    @GetMapping("/{id}/revisions")
+    public ApiResult<List<NoteRevisionResponse>> listRevisions(@PathVariable Long id) {
+        return ApiResult.ok(noteService.listRevisions(id));
+    }
+
+    @GetMapping("/{id}/revisions/{revisionId}")
+    public ApiResult<NoteRevisionResponse> getRevision(
+            @PathVariable Long id, @PathVariable Long revisionId) {
+        return ApiResult.ok(noteService.getRevision(id, revisionId));
+    }
+
+    @PostMapping("/{id}/revisions/{revisionId}/restore")
+    public ApiResult<NoteResponse> restoreRevision(
+            @PathVariable Long id, @PathVariable Long revisionId) {
+        return ApiResult.ok(noteService.restoreRevision(id, revisionId));
     }
 }

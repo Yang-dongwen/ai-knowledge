@@ -27,6 +27,8 @@ public class KbProperties {
         private String defaultTitle = "未命名笔记";
         /** 新建默认格式：html | markdown */
         private String defaultFormat = "html";
+        /** 每笔记保留版本数上限 */
+        private int maxRevisions = 50;
     }
 
     @Data
@@ -37,8 +39,13 @@ public class KbProperties {
 
     @Data
     public static class Search {
-        /** like | fulltext（fulltext 需 ngram 索引；失败会降级 like） */
+        /**
+         * like：title + content_text LIKE（默认，零运维）
+         * fulltext：预留；需 ngram 索引时再切
+         */
         private String mode = "like";
+        /** 命中片段左右各取字符数 */
+        private int highlightRadius = 60;
     }
 
     @Data

@@ -38,6 +38,7 @@ public class SecurityConfig {
 
     private final JwtAuthFilter jwtAuthFilter;
     private final ObjectMapper objectMapper;
+    private final AuthProperties authProperties;
 
     @Bean
     public PasswordEncoder passwordEncoder() {
@@ -68,7 +69,8 @@ public class SecurityConfig {
                                 "/api/auth/register/**",
                                 "/api/auth/password/**",
                                 "/api/auth/wx-mini/login",
-                                "/api/auth/wx-mini/bind"
+                                "/api/auth/wx-mini/bind",
+                                "/api/auth/oauth/**"
                         ).permitAll()
                         // 支付异步回调 / 同步回跳：渠道无 JWT，须验签（PayNotifyController）
                         .requestMatchers(
@@ -78,9 +80,11 @@ public class SecurityConfig {
                         // 知识库公开分享阅读（无需登录）
                         .requestMatchers("/api/v1/kb/public/**").permitAll()
                         .requestMatchers("/error").permitAll()
-                        // 用户管理 / 模型配置 CRUD：仅超级管理员
+                        // 用户管理 / 模型配置 CRUD / 全局 yt-dlp Cookie：仅超级管理员
                         .requestMatchers("/api/admin/**").hasRole("SUPER_ADMIN")
                         .requestMatchers("/api/v1/video/model-configs", "/api/v1/video/model-configs/**")
+                        .hasRole("SUPER_ADMIN")
+                        .requestMatchers("/api/v1/video/cookies", "/api/v1/video/cookies/**")
                         .hasRole("SUPER_ADMIN")
                         .anyRequest().authenticated()
                 )
@@ -117,9 +121,25 @@ public class SecurityConfig {
     @Bean
     public CorsConfigurationSource corsConfigurationSource() {
         CorsConfiguration config = new CorsConfiguration();
-        config.setAllowedOriginPatterns(List.of("*"));
+        List<String> origins = authProperties.getCors() != null
+                ? authProperties.getCors().getAllowedOrigins()
+                : null;
+        if (origins == null || origins.isEmpty()) {
+            // 开发默认：本地 SPA；生产请在 yml/env 显式配置 auth.cors.allowed-origins
+            config.setAllowedOrigins(List.of(
+                    "http://localhost:3000",
+                    "http://127.0.0.1:3000",
+                    "http://localhost:5173",
+                    "http://127.0.0.1:5173",
+                    "https://dwcode.cloud",
+                    "https://www.dwcode.cloud"
+            ));
+        } else {
+            config.setAllowedOrigins(origins);
+        }
         config.setAllowedMethods(List.of("GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"));
         config.setAllowedHeaders(List.of("*"));
+        config.setExposedHeaders(List.of("X-Kb-Note-Id", "X-Kb-Timing", "Content-Disposition"));
         config.setAllowCredentials(true);
         config.setMaxAge(3600L);
         UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();

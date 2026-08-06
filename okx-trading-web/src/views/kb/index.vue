@@ -38,6 +38,33 @@
         />
       </div>
 
+      <div v-if="!trashMode" class="quick-views">
+        <button
+          type="button"
+          class="quick-chip"
+          :class="{ on: listViewMode === 'recent' }"
+          @click="openRecentList"
+        >
+          最近
+        </button>
+        <button
+          type="button"
+          class="quick-chip"
+          :class="{ on: listViewMode === 'pinned' }"
+          @click="openPinnedList"
+        >
+          置顶
+        </button>
+        <button
+          v-if="listViewMode"
+          type="button"
+          class="quick-chip ghost"
+          @click="clearListView"
+        >
+          目录
+        </button>
+      </div>
+
       <div
         class="side-scroll"
         :class="{
@@ -45,17 +72,25 @@
           'is-list': !isExplorerTreeMode
         }"
       >
-        <!-- 回收站 / 搜索 / 标签：统一结果列表 -->
+        <!-- 回收站 / 搜索 / 标签 / 最近 / 置顶：统一结果列表 -->
         <template v-if="!isExplorerTreeMode">
           <div v-if="!trashMode" class="result-list-head">
             <span class="result-list-title">
               <template v-if="searchMode">搜索 · {{ total }}</template>
+              <template v-else-if="listViewMode === 'recent'">最近 · {{ total }}</template>
+              <template v-else-if="listViewMode === 'pinned'">置顶 · {{ total }}</template>
               <template v-else>标签 · {{ total }}</template>
             </span>
             <button
               type="button"
               class="link-btn"
-              @click="searchMode ? clearSearch() : clearTagFilter()"
+              @click="
+                searchMode
+                  ? clearSearch()
+                  : listViewMode
+                    ? clearListView()
+                    : clearTagFilter()
+              "
             >
               返回目录
             </button>
@@ -95,7 +130,10 @@
                   {{ n.contentFormat === 'markdown' ? 'MD' : '富' }}
                 </a-tag>
               </div>
-              <div v-if="n.snippet" class="result-item-snippet">{{ n.snippet }}</div>
+              <div
+                v-if="n.matchSnippet || n.snippet"
+                class="result-item-snippet"
+              >{{ n.matchSnippet || n.snippet }}</div>
               <div class="result-item-foot">
                 <span v-if="n.categoryName" class="result-cat">{{ n.categoryName }}</span>
                 <span
@@ -462,10 +500,27 @@
               >
                 分享
               </a-button>
+              <a-dropdown
+                v-if="selectedId && !isCreating"
+                class="desktop-only-action"
+                :trigger="['click']"
+              >
+                <a-button>更多</a-button>
+                <template #overlay>
+                  <a-menu @click="onDocMoreMenu">
+                    <a-menu-item key="export">导出 Markdown</a-menu-item>
+                    <a-menu-item key="duplicate">复制文档</a-menu-item>
+                    <a-menu-item key="revisions">版本历史</a-menu-item>
+                    <a-menu-item key="convert">
+                      转为{{ editFormat === 'html' ? 'Markdown' : '富文本' }}
+                    </a-menu-item>
+                  </a-menu>
+                </template>
+              </a-dropdown>
               <a-button class="desktop-only-action" @click="confirmConvertFormat">
                 转为{{ editFormat === 'html' ? 'Markdown' : '富文本' }}
               </a-button>
-              <a-button type="primary" :loading="saving" @click="saveNote">保存</a-button>
+              <a-button type="primary" :loading="saving" @click="saveNote(false)">保存</a-button>
               <a-button
                 v-if="selectedId"
                 danger
@@ -492,6 +547,9 @@
                       >
                         分享
                       </a-menu-item>
+                      <a-menu-item key="export">导出 Markdown</a-menu-item>
+                      <a-menu-item key="duplicate">复制文档</a-menu-item>
+                      <a-menu-item key="revisions">版本历史</a-menu-item>
                       <a-menu-item key="convert">
                         转为{{ editFormat === 'html' ? 'Markdown' : '富文本' }}
                       </a-menu-item>
@@ -711,11 +769,60 @@
           @pending-uploaded="onPendingFile"
         />
         <div class="editor-status">
-          <span v-if="saveHint">{{ saveHint }}</span>
+          <span v-if="saveHint" :class="{ 'save-ok': saveHint === '已保存', 'save-warn': saveHint === '未保存' || saveHint.startsWith('保存失败') }">
+            {{ saveHint }}
+            <template v-if="saveHint === '未保存'"> · Ctrl+S 保存</template>
+          </span>
           <span v-else-if="editUpdatedAt">更新于 {{ formatTime(editUpdatedAt) }}</span>
+          <span v-if="outlineHeadings.length" class="outline-inline muted">
+            大纲 {{ outlineHeadings.length }} 节
+          </span>
+        </div>
+        <div v-if="outlineHeadings.length && !editDeleted" class="doc-outline">
+          <div class="outline-title">大纲</div>
+          <button
+            v-for="(h, i) in outlineHeadings"
+            :key="i"
+            type="button"
+            class="outline-item"
+            :style="{ paddingLeft: `${8 + (h.level - 1) * 12}px` }"
+            :title="h.text"
+            @click="scrollToOutline(h)"
+          >
+            {{ h.text }}
+          </button>
         </div>
       </template>
     </section>
+
+    <a-modal
+      v-model:open="revisionModalOpen"
+      title="版本历史"
+      :footer="null"
+      width="560px"
+      destroy-on-close
+    >
+      <div v-if="revisionLoading" class="muted">加载中…</div>
+      <div v-else-if="!revisions.length" class="muted">暂无历史版本（保存正文变更后会出现）</div>
+      <ul v-else class="rev-list">
+        <li v-for="r in revisions" :key="r.id" class="rev-item">
+          <div class="rev-meta">
+            <strong>{{ r.title || '未命名' }}</strong>
+            <span class="muted">{{ formatTimeFull(r.createdAt) }} · {{ r.source || 'save' }}</span>
+          </div>
+          <p v-if="r.snippet" class="rev-snip muted">{{ r.snippet }}</p>
+          <a-button
+            size="small"
+            type="primary"
+            ghost
+            :loading="revisionRestoring === r.id"
+            @click="restoreRevision(r.id)"
+          >
+            恢复此版本
+          </a-button>
+        </li>
+      </ul>
+    </a-modal>
 
     <!-- 删除文件夹策略（横向卡片，不用 radio 竖排） -->
     <a-modal
@@ -883,6 +990,7 @@ import {
   type KbContentFormat,
   type KbExplorerNode,
   type KbNoteItem,
+  type KbNoteRevision,
   type KbTag
 } from '@/api/kb.api'
 import {
@@ -907,6 +1015,7 @@ import {
   cleanupDragGhost,
   scrollIndexIntoView
 } from './kbTreeVirtual'
+import { sanitizeHtml } from '@/utils/sanitizeHtml'
 
 /** 异步加载，避免 turndown/wangeditor/docx 阻塞首屏路由 */
 const RichEditor = defineAsyncComponent(() => import('./RichEditor.vue'))
@@ -920,7 +1029,7 @@ async function ensureMd() {
   const multimd = await import('markdown-it-multimd-table')
   const MarkdownIt = mod.default
   const tablePlugin = (multimd as any).default || multimd
-  // html:true — 允许 <img style="width:.."> 做缩放（笔记为本人内容）
+  // html:true — 允许 <img style="width:.."> 做缩放；渲染后 sanitize
   const md = new MarkdownIt({ html: true, linkify: true, breaks: true }).use(tablePlugin, {
     multiline: true,
     rowspan: true,
@@ -928,11 +1037,10 @@ async function ensureMd() {
   })
   mdRender = (src: string) => {
     const raw = src || ''
-    // 预览时给图片补 token，并加上可点提示 class
     let html = md.render(raw)
     html = injectKbMediaTokens(html)
     html = html.replace(/<img\b/gi, '<img class="kb-md-img" title="点击调整大小"')
-    return html
+    return sanitizeHtml(html)
   }
   return mdRender
 }
@@ -1008,11 +1116,29 @@ const moveTargetId = ref<string | null>(null)
 const trashMode = ref(false)
 const trashCount = ref(0)
 const emptying = ref(false)
+/** 最近 / 置顶快捷列表 */
+const listViewMode = ref<'recent' | 'pinned' | null>(null)
 
-/** 是否为目录树主视图（非回收站/搜索/标签列表） */
+/** 是否为目录树主视图（非回收站/搜索/标签/快捷列表） */
 const isExplorerTreeMode = computed(
-  () => !trashMode.value && !searchMode.value && !filterTagId.value
+  () =>
+    !trashMode.value &&
+    !searchMode.value &&
+    !filterTagId.value &&
+    !listViewMode.value
 )
+
+const revisionModalOpen = ref(false)
+const revisionLoading = ref(false)
+const revisions = ref<KbNoteRevision[]>([])
+const revisionRestoring = ref<string | null>(null)
+
+/** 防抖自动保存 */
+let autoSaveTimer: ReturnType<typeof setTimeout> | null = null
+const AUTO_SAVE_MS = 1800
+
+type OutlineHeading = { level: number; text: string; anchor: string }
+const outlineHeadings = computed(() => buildOutline(editContent.value, editFormat.value))
 
 const selectedId = ref<string | null>(null)
 const isCreating = ref(false)
@@ -1062,12 +1188,30 @@ function onMobileMoreMenu({ key }: { key: string }) {
     shareOpen.value = true
     return
   }
-  if (key === 'convert') {
-    confirmConvertFormat()
+  if (key === 'export' || key === 'duplicate' || key === 'revisions' || key === 'convert') {
+    onDocMoreMenu({ key })
     return
   }
   if (key === 'delete' && selectedId.value) {
     confirmDeleteNote({ id: selectedId.value, name: editTitle.value || '未命名笔记' })
+  }
+}
+
+function onDocMoreMenu({ key }: { key: string }) {
+  if (key === 'export') {
+    void exportCurrentNote()
+    return
+  }
+  if (key === 'duplicate') {
+    void duplicateCurrentNote()
+    return
+  }
+  if (key === 'revisions') {
+    void openRevisions()
+    return
+  }
+  if (key === 'convert') {
+    confirmConvertFormat()
   }
 }
 const editTitle = ref('')
@@ -1183,7 +1327,7 @@ function onRichEditorReady() {
 
 function updateFastShell(content: string, format: KbContentFormat) {
   if (format === 'html') {
-    fastShellHtml.value = injectKbMediaTokens(content || '')
+    fastShellHtml.value = sanitizeHtml(injectKbMediaTokens(content || ''))
   } else {
     fastShellHtml.value = ''
   }
@@ -1579,9 +1723,8 @@ function onMdDrop(e: DragEvent) {
 async function renderMarkdownPreview(src: string) {
   try {
     const render = await ensureMd()
-    // markdown-it 产出 <img src="/api/v1/kb/files/..."> 后再注入 JWT
-    const raw = render(src || '')
-    previewHtml.value = injectKbMediaTokens(raw)
+    // ensureMd 内已 inject + sanitize；此处再补一次 token（幂等）
+    previewHtml.value = injectKbMediaTokens(render(src || ''))
   } catch {
     previewHtml.value = `<pre>${(src || '')
       .replace(/&/g, '&amp;')
@@ -1635,6 +1778,7 @@ function onContentTyped() {
   saveHint.value = '未保存'
   // 首行/H1 同步为列表标题
   syncTitleFromContent()
+  scheduleDebouncedAutoSave()
 }
 
 function onMarkdownTitleInput() {
@@ -1643,6 +1787,7 @@ function onMarkdownTitleInput() {
   dirty.value = true
   saveHint.value = '未保存'
   scheduleMarkdownPreview()
+  scheduleDebouncedAutoSave()
 }
 
 function onMarkdownBodyInput() {
@@ -1651,6 +1796,60 @@ function onMarkdownBodyInput() {
   dirty.value = true
   saveHint.value = '未保存'
   scheduleMarkdownPreview()
+  scheduleDebouncedAutoSave()
+}
+
+function scheduleDebouncedAutoSave() {
+  if (autoSaveTimer) clearTimeout(autoSaveTimer)
+  autoSaveTimer = setTimeout(() => {
+    autoSaveTimer = null
+    autoSave()
+  }, AUTO_SAVE_MS)
+}
+
+function clearDebouncedAutoSave() {
+  if (autoSaveTimer) {
+    clearTimeout(autoSaveTimer)
+    autoSaveTimer = null
+  }
+}
+
+function buildOutline(content: string, format: KbContentFormat): OutlineHeading[] {
+  if (!content) return []
+  const items: OutlineHeading[] = []
+  if (format === 'markdown') {
+    const lines = content.split('\n')
+    for (const line of lines) {
+      const m = /^(#{1,3})\s+(.+?)\s*$/.exec(line)
+      if (!m) continue
+      const text = m[2].replace(/[#*`_[\]]/g, '').trim()
+      if (!text) continue
+      items.push({ level: m[1].length, text, anchor: text })
+      if (items.length >= 40) break
+    }
+  } else {
+    const re = /<h([1-3])[^>]*>([\s\S]*?)<\/h\1>/gi
+    let m: RegExpExecArray | null
+    while ((m = re.exec(content)) && items.length < 40) {
+      const text = m[2].replace(/<[^>]+>/g, '').trim()
+      if (!text) continue
+      items.push({ level: Number(m[1]), text, anchor: text })
+    }
+  }
+  return items
+}
+
+function scrollToOutline(h: OutlineHeading) {
+  // Markdown 预览区 / 富文本：按标题文本粗定位
+  const pane = document.querySelector('.kb-editor-pane .md-preview, .kb-editor-pane .w-e-text-container')
+  if (!pane) return
+  const nodes = pane.querySelectorAll('h1,h2,h3')
+  for (const node of Array.from(nodes)) {
+    if ((node.textContent || '').trim() === h.text) {
+      node.scrollIntoView({ behavior: 'smooth', block: 'start' })
+      return
+    }
+  }
 }
 
 function onMarkdownBlur() {
@@ -2136,25 +2335,34 @@ async function reloadTrashCount() {
   }
 }
 
-/** 列表查询：回收站 / 搜索 / 标签筛选 */
+/** 列表查询：回收站 / 搜索 / 标签 / 最近 / 置顶 */
 async function reloadNotes() {
   listLoading.value = true
   try {
+    const inListShortcut = !!listViewMode.value
     const res = await kbApi.listNotes({
       page: page.value,
       size: pageSize,
       categoryId:
         !trashMode.value &&
         !searchMode.value &&
+        !inListShortcut &&
         filterCategoryId.value &&
         filterCategoryId.value !== '__none__'
           ? filterCategoryId.value
           : undefined,
       uncategorized:
-        !trashMode.value && !searchMode.value && filterCategoryId.value === '__none__',
-      tagId: !trashMode.value ? filterTagId.value || undefined : undefined,
+        !trashMode.value &&
+        !searchMode.value &&
+        !inListShortcut &&
+        filterCategoryId.value === '__none__',
+      tagId:
+        !trashMode.value && !inListShortcut
+          ? filterTagId.value || undefined
+          : undefined,
       keyword: keyword.value || undefined,
-      onlyDeleted: trashMode.value
+      onlyDeleted: trashMode.value,
+      onlyPinned: !trashMode.value && listViewMode.value === 'pinned'
     })
     notes.value = sortNotesForList(res.data?.items || [])
     total.value = res.data?.total ?? 0
@@ -2169,7 +2377,7 @@ async function reloadNotes() {
 }
 
 async function refreshExplorer() {
-  if (trashMode.value || searchMode.value || filterTagId.value) {
+  if (trashMode.value || searchMode.value || filterTagId.value || listViewMode.value) {
     await reloadNotes()
   } else {
     await loadTree({ keepExpanded: true })
@@ -2192,6 +2400,7 @@ function onSearch() {
   // 回收站内搜索：保持 trashMode，只按关键词过滤已删文档
   if (!trashMode.value) {
     filterTagId.value = null
+    listViewMode.value = null
     searchMode.value = true
   }
   page.value = 0
@@ -2207,8 +2416,96 @@ function clearSearch() {
   total.value = 0
   if (trashMode.value) {
     void reloadNotes()
+  } else if (listViewMode.value) {
+    void reloadNotes()
   } else {
     void loadTree({ keepExpanded: true })
+  }
+}
+
+function openRecentList() {
+  trashMode.value = false
+  searchMode.value = false
+  filterTagId.value = null
+  filterCategoryId.value = null
+  listViewMode.value = 'recent'
+  page.value = 0
+  selectedId.value = null
+  isCreating.value = false
+  void reloadNotes()
+}
+
+function openPinnedList() {
+  trashMode.value = false
+  searchMode.value = false
+  filterTagId.value = null
+  filterCategoryId.value = null
+  listViewMode.value = 'pinned'
+  page.value = 0
+  selectedId.value = null
+  isCreating.value = false
+  void reloadNotes()
+}
+
+function clearListView() {
+  listViewMode.value = null
+  notes.value = []
+  total.value = 0
+  void loadTree({ keepExpanded: true })
+}
+
+async function exportCurrentNote() {
+  if (!selectedId.value || isCreating.value) return
+  try {
+    await kbApi.exportNoteMarkdown(selectedId.value, editTitle.value)
+    message.success('已导出 Markdown')
+  } catch (e: any) {
+    message.error(e?.message || '导出失败')
+  }
+}
+
+async function duplicateCurrentNote() {
+  if (!selectedId.value || isCreating.value) return
+  try {
+    const res = await kbApi.duplicateNote(selectedId.value)
+    message.success('已复制')
+    await refreshExplorer()
+    if (res.data?.id) {
+      await selectNote(res.data.id)
+    }
+  } catch (e: any) {
+    message.error(e?.message || '复制失败')
+  }
+}
+
+async function openRevisions() {
+  if (!selectedId.value || isCreating.value) return
+  revisionModalOpen.value = true
+  revisionLoading.value = true
+  revisions.value = []
+  try {
+    const res = await kbApi.listRevisions(selectedId.value)
+    revisions.value = res.data || []
+  } catch (e: any) {
+    message.error(e?.message || '加载版本失败')
+  } finally {
+    revisionLoading.value = false
+  }
+}
+
+async function restoreRevision(revisionId: string) {
+  if (!selectedId.value) return
+  revisionRestoring.value = revisionId
+  try {
+    const res = await kbApi.restoreRevision(selectedId.value, revisionId)
+    message.success('已恢复该版本')
+    revisionModalOpen.value = false
+    await selectNote(res.data.id)
+    await refreshExplorer()
+  } catch (e: any) {
+    message.error(e?.message || '恢复失败')
+  } finally {
+    revisionRestoring.value = null
   }
 }
 
@@ -2238,6 +2535,7 @@ function toggleTrashMode() {
   isCreating.value = false
   filterCategoryId.value = null
   filterTagId.value = null
+  listViewMode.value = null
   searchMode.value = false
   page.value = 0
   keyword.value = ''
@@ -2251,6 +2549,7 @@ function toggleTrashMode() {
 function toggleTagFilter(id: string) {
   exitTrashMode()
   searchMode.value = false
+  listViewMode.value = null
   keyword.value = ''
   if (filterTagId.value === id) {
     clearTagFilter()
@@ -2510,6 +2809,7 @@ async function saveNote(silent = false) {
     return
   }
 
+  clearDebouncedAutoSave()
   saving.value = true
   saveHint.value = '保存中…'
   try {
@@ -2611,8 +2911,25 @@ async function saveNote(silent = false) {
       patchTreeNoteTitle(note.id, note.title || '未命名笔记')
       void (filePanelRef.value?.reload?.() ?? Promise.resolve())
     }
+  } catch (e: any) {
+    saveHint.value = '保存失败，可 Ctrl+S 重试'
+    if (!silent) message.error(e?.message || '保存失败')
   } finally {
     saving.value = false
+  }
+}
+
+function onKbKeydown(e: KeyboardEvent) {
+  if ((e.ctrlKey || e.metaKey) && (e.key === 's' || e.key === 'S')) {
+    e.preventDefault()
+    void saveNote(false)
+  }
+}
+
+function onBeforeUnload(e: BeforeUnloadEvent) {
+  if (dirty.value && !editDeleted.value) {
+    e.preventDefault()
+    e.returnValue = ''
   }
 }
 
@@ -2636,7 +2953,7 @@ function patchTreeNoteTitle(noteId: string, title: string) {
 }
 
 function autoSave() {
-  if (applying.value || editDeleted.value) return
+  if (applying.value || editDeleted.value || saving.value) return
   if (!dirty.value) return
   // 仅更新已有文档；新建空草稿不在 blur 时入库
   if (selectedId.value && !isCreating.value) {
@@ -2963,14 +3280,19 @@ onMounted(async () => {
   applyMobileViewMode()
   mobileMq = window.matchMedia('(max-width: 768px)')
   mobileMq.addEventListener('change', applyMobileViewMode)
+  window.addEventListener('keydown', onKbKeydown)
+  window.addEventListener('beforeunload', onBeforeUnload)
 })
 
 onBeforeUnmount(() => {
+  clearDebouncedAutoSave()
   unbindTreeViewport()
   dragGhostCleanup?.()
   cleanupDragGhost()
   mobileMq?.removeEventListener('change', applyMobileViewMode)
   mobileMq = null
+  window.removeEventListener('keydown', onKbKeydown)
+  window.removeEventListener('beforeunload', onBeforeUnload)
 })
 
 // 树模式显示时绑定视口（从搜索/回收站切回）
@@ -3011,10 +3333,114 @@ watch(viewMode, (mode) => {
   position: relative;
 }
 
+.quick-views {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 0 12px 8px;
+}
+
+.quick-chip {
+  border: 1px solid var(--border-color);
+  background: var(--surface-2, transparent);
+  color: var(--text-secondary, inherit);
+  border-radius: 999px;
+  font-size: 12px;
+  padding: 2px 10px;
+  cursor: pointer;
+  line-height: 1.6;
+}
+
+.quick-chip.on {
+  border-color: var(--primary-color, #1677ff);
+  color: var(--primary-color, #1677ff);
+  background: color-mix(in srgb, var(--primary-color, #1677ff) 12%, transparent);
+}
+
+.quick-chip.ghost {
+  opacity: 0.85;
+}
+
 .side-head-actions {
   display: flex;
   align-items: center;
   gap: 2px;
+}
+
+.editor-status {
+  .save-ok {
+    color: var(--success-color, #52c41a);
+  }
+  .save-warn {
+    color: var(--warning-color, #faad14);
+  }
+  .outline-inline {
+    margin-left: 12px;
+  }
+}
+
+.doc-outline {
+  border-top: 1px solid var(--border-color);
+  max-height: 140px;
+  overflow: auto;
+  padding: 6px 10px 10px;
+  flex-shrink: 0;
+}
+
+.outline-title {
+  font-size: 11px;
+  font-weight: 600;
+  opacity: 0.7;
+  margin-bottom: 4px;
+}
+
+.outline-item {
+  display: block;
+  width: 100%;
+  text-align: left;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font-size: 12px;
+  padding: 3px 4px;
+  border-radius: 4px;
+  cursor: pointer;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.outline-item:hover {
+  background: var(--surface-2, rgba(0, 0, 0, 0.04));
+}
+
+.rev-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  max-height: 420px;
+  overflow: auto;
+}
+
+.rev-item {
+  padding: 10px 0;
+  border-bottom: 1px solid var(--border-color);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.rev-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: 13px;
+}
+
+.rev-snip {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.4;
 }
 
 .back-dir-btn {

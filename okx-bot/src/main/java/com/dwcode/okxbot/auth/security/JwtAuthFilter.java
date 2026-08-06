@@ -15,15 +15,29 @@ import org.springframework.stereotype.Component;
 import org.springframework.web.filter.OncePerRequestFilter;
 
 import java.io.IOException;
+import java.util.regex.Pattern;
 
 /**
- * 从 Authorization: Bearer 或查询参数 {@code access_token}/{@code token} 解析 JWT。
- * <p>查询参数用于 &lt;video src&gt; / 浏览器原生 Range 请求（无法带 Authorization 头）。
+ * 从 Authorization: Bearer 或（仅媒体 GET）查询参数 {@code access_token}/{@code token} 解析 JWT。
+ * <p>校验 token_version（改密吊销旧会话）。
  */
 @Slf4j
 @Component
 @RequiredArgsConstructor
 public class JwtAuthFilter extends OncePerRequestFilter {
+
+    /**
+     * 允许 query JWT 的路径（浏览器 &lt;video&gt;/&lt;img&gt; 无法带 Authorization）。
+     * 其它接口必须用 Header，避免日志/Referer 泄漏整站会话。
+     */
+    private static final Pattern MEDIA_QUERY_TOKEN_PATH = Pattern.compile(
+            "^/api/v1/(kb/files/\\d+/content"
+                    + "|video/tasks/\\d+/video"
+                    + "|aigen/tasks/\\d+/media/output"
+                    + "|aigen/tasks/\\d+/shots/\\d+/image"
+                    + "|imggen/tasks/\\d+/media/[^/]+)$",
+            Pattern.CASE_INSENSITIVE
+    );
 
     private final JwtService jwtService;
     private final CustomUserDetailsService userDetailsService;
@@ -40,7 +54,12 @@ public class JwtAuthFilter extends OncePerRequestFilter {
                     Claims claims = jwtService.parseClaims(token);
                     Long userId = Long.parseLong(claims.getSubject());
                     AuthUserPrincipal principal = userDetailsService.loadById(userId);
-                    if (principal.isEnabled()) {
+                    int claimTv = jwtService.getTokenVersion(claims);
+                    if (claimTv != principal.getTokenVersion()) {
+                        log.debug("JWT token_version 不匹配 userId={} claim={} db={}",
+                                userId, claimTv, principal.getTokenVersion());
+                        SecurityContextHolder.clearContext();
+                    } else if (principal.isEnabled()) {
                         UsernamePasswordAuthenticationToken auth =
                                 new UsernamePasswordAuthenticationToken(principal, null, principal.getAuthorities());
                         auth.setDetails(new WebAuthenticationDetailsSource().buildDetails(request));
@@ -63,7 +82,22 @@ public class JwtAuthFilter extends OncePerRequestFilter {
                 return t;
             }
         }
-        // 媒体直链：?access_token= 或 ?token=
+        // 仅媒体 GET 允许 query token
+        if (!"GET".equalsIgnoreCase(request.getMethod())) {
+            return null;
+        }
+        String path = request.getRequestURI();
+        if (path == null) {
+            return null;
+        }
+        // 去掉 context-path
+        String ctx = request.getContextPath();
+        if (ctx != null && !ctx.isEmpty() && path.startsWith(ctx)) {
+            path = path.substring(ctx.length());
+        }
+        if (!MEDIA_QUERY_TOKEN_PATH.matcher(path).matches()) {
+            return null;
+        }
         String q = request.getParameter("access_token");
         if (q == null || q.isBlank()) {
             q = request.getParameter("token");

@@ -69,6 +69,7 @@ public class SuperAdminInitializer implements ApplicationRunner {
             SysUserEntity user = new SysUserEntity();
             user.setEmail(email);
             user.setPasswordHash(passwordEncoder.encode(admin.getPassword()));
+            user.setTokenVersion(0);
             user.setNickname(admin.getNickname() != null ? admin.getNickname() : "超级管理员");
             user.setRole(UserRole.SUPER_ADMIN.name());
             user.setStatus(1);

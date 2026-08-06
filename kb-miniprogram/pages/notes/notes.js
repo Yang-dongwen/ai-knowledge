@@ -1,5 +1,5 @@
 const { api } = require('../../utils/request')
-const { isLoggedIn } = require('../../utils/auth')
+const { requireLoginOrRedirect } = require('../../utils/auth')
 
 function formatTime(t) {
   if (!t) return ''
@@ -40,8 +40,7 @@ Page({
   },
 
   onShow() {
-    if (!isLoggedIn()) {
-      wx.reLaunch({ url: '/pages/login/login' })
+    if (!requireLoginOrRedirect()) {
       return
     }
     // 标签页「筛选笔记」中转

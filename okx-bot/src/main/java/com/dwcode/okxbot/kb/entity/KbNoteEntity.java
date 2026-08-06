@@ -31,6 +31,8 @@ public class KbNoteEntity {
     private String contentFormat;
     /** 列表摘要（纯文本，保存时维护；list 接口不加载 content） */
     private String snippet;
+    /** 纯文本检索副本（保存时维护，供关键词搜索/高亮） */
+    private String contentText;
 
     @JsonSerialize(using = ToStringSerializer.class)
     private Long categoryId;

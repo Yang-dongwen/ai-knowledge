@@ -1,6 +1,6 @@
 import axios from 'axios'
 import type { AxiosInstance, AxiosResponse } from 'axios'
-import { message } from 'ant-design-vue'
+import { message, Modal } from 'ant-design-vue'
 
 export interface ApiResponse<T = any> {
   code: number
@@ -11,6 +11,40 @@ export interface ApiResponse<T = any> {
 }
 
 const TOKEN_KEY = 'okx_auth_token'
+const USER_KEY = 'okx_auth_user'
+
+let authRedirecting = false
+
+/** 统一 401 处理：axios / fetch / SSE / 上传共用 */
+export function handleAuthFailure(status?: number, msg?: string) {
+  if (status != null && status !== 401) return false
+  localStorage.removeItem(TOKEN_KEY)
+  localStorage.removeItem(USER_KEY)
+  if (authRedirecting) return true
+  const path = location.pathname
+  if (
+    path.startsWith('/login')
+    || path.startsWith('/register')
+    || path.startsWith('/forgot-password')
+    || path.startsWith('/s/')
+  ) {
+    return true
+  }
+  authRedirecting = true
+  message.error(msg || '未登录或登录已过期')
+  const redirect = encodeURIComponent(path + location.search)
+  location.href = `/login?redirect=${redirect}`
+  return true
+}
+
+/** 仅允许站内相对路径，防开放重定向 */
+export function safeAppRedirect(raw: unknown, fallback = '/home'): string {
+  if (typeof raw !== 'string' || !raw) return fallback
+  const s = raw.trim()
+  if (!s.startsWith('/') || s.startsWith('//') || s.includes('://')) return fallback
+  if (s.includes('\\') || s.includes('\n') || s.includes('\r')) return fallback
+  return s
+}
 
 const request: AxiosInstance = axios.create({
   baseURL: '/api',
@@ -57,19 +91,24 @@ request.interceptors.response.use(
       const msg = error.response.data?.message
       switch (status) {
         case 401:
-          localStorage.removeItem(TOKEN_KEY)
-          localStorage.removeItem('okx_auth_user')
-          message.error(msg || '未登录或登录已过期')
-          if (!location.pathname.startsWith('/login')
-            && !location.pathname.startsWith('/register')
-            && !location.pathname.startsWith('/forgot-password')) {
-            const redirect = encodeURIComponent(location.pathname + location.search)
-            location.href = `/login?redirect=${redirect}`
+          handleAuthFailure(401, msg)
+          break
+        case 403: {
+          const m = msg || '无权限'
+          message.error(m)
+          if (/会员/.test(m) && !location.pathname.startsWith('/member')) {
+            Modal.confirm({
+              title: '需要会员',
+              content: m,
+              okText: '去开通',
+              cancelText: '稍后再说',
+              onOk: () => {
+                location.href = '/member/recharge'
+              }
+            })
           }
           break
-        case 403:
-          message.error(msg || '无权限')
-          break
+        }
         case 500:
           message.error(msg || '服务器内部错误')
           break

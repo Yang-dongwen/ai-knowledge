@@ -1,4 +1,4 @@
-import request from './request'
+import request, { handleAuthFailure } from './request'
 import type {
   ChatConversation,
   ChatRequest,
@@ -106,7 +106,20 @@ function streamFetch(
       if (!response.ok) {
         finished = true
         clearIdleTimer()
-        callbacks.onError?.({ message: `请求失败: ${response.status}` })
+        let errMsg = `请求失败: ${response.status}`
+        try {
+          const ct = response.headers.get('content-type') || ''
+          if (ct.includes('application/json')) {
+            const body = await response.json()
+            if (body?.message) errMsg = body.message
+          }
+        } catch {
+          /* ignore */
+        }
+        if (response.status === 401) {
+          handleAuthFailure(401, errMsg)
+        }
+        callbacks.onError?.({ message: errMsg })
         return
       }
 

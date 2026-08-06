@@ -60,13 +60,53 @@ auth:
   admin:
     seed-enabled: true
     nickname: 超级管理员
+  login-limit:
+    enabled: true
+    window-seconds: 900
+    max-fails: 8
+    lock-seconds: 600
+  cors:
+    # 生产请用环境变量覆盖；空则用 SecurityConfig 内置本地 + dwcode.cloud
+    allowed-origins: []
   wechat:
     mini:
-      # true + 填写 app-id/secret 后走真实 jscode2session；本地默认 mock
+      # true + 填写 app-id/secret 后走真实 jscode2session
       # 密钥放环境变量 / deploy/env/app.env，勿写进仓库
+      # enabled=false 且 mock=true 时才本地 mock openid（禁止 enabled 时静默 mock）
       enabled: ${WX_MINI_ENABLED:false}
+      mock: ${WX_MINI_MOCK:true}
       app-id: ${WX_MINI_APP_ID:}
       app-secret: ${WX_MINI_APP_SECRET:}
+  # PC Google / GitHub OAuth（JustAuth）；密钥见环境变量
+  oauth:
+    mock: ${AUTH_OAUTH_MOCK:false}
+    # 禁止按邮箱自动绑定已有账号（防账号接管）
+    auto-link-by-email: ${AUTH_OAUTH_AUTO_LINK_BY_EMAIL:false}
+    frontend-base-url: ${AUTH_OAUTH_FRONTEND_BASE_URL:http://localhost:3000}
+    callback-base-url: ${AUTH_OAUTH_CALLBACK_BASE_URL:http://localhost:8080}
+    ticket-ttl-seconds: ${AUTH_OAUTH_TICKET_TTL_SECONDS:60}
+    # 本机访问 GitHub/Google 可设代理（Clash 混合端口常见 7897）
+    proxy-host: ${AUTH_OAUTH_PROXY_HOST:}
+    proxy-port: ${AUTH_OAUTH_PROXY_PORT:0}
+    proxy-type: ${AUTH_OAUTH_PROXY_TYPE:HTTP}
+    allowed-redirect-paths:
+      - /home
+      - /member
+      - /kb
+      - /video-extract
+      - /video-generate
+      - /image-generate
+      - /article-extract
+      - /ai-chat
+    google:
+      enabled: ${AUTH_OAUTH_GOOGLE_ENABLED:false}
+      client-id: ${AUTH_OAUTH_GOOGLE_CLIENT_ID:}
+      client-secret: ${AUTH_OAUTH_GOOGLE_CLIENT_SECRET:}
+    github:
+      # 密钥务必用环境变量，勿写进 yml 提交仓库
+      enabled: ${AUTH_OAUTH_GITHUB_ENABLED:false}
+      client-id: ${AUTH_OAUTH_GITHUB_CLIENT_ID:}
+      client-secret: ${AUTH_OAUTH_GITHUB_CLIENT_SECRET:}
 
 # 会员支付
 pay:
@@ -78,14 +118,18 @@ pay:
   fulfill-pending-cron: "0 */1 * * * ?"
   fulfill-pending-grace-seconds: 30
   member-expire-cron: "0 5 * * * ?"
-  mock-enabled: true
+  # 本地 profile（application-local.yml）可显式打开；生产/ec2 默认关闭
+  mock-enabled: false
   trust-x-forwarded-for: false
   alipay:
-    enabled: false
+    enabled: ${PAY_ALIPAY_ENABLED:${ALIPAY_ENABLED:false}}
+    app-id: ${PAY_ALIPAY_APP_ID:${ALIPAY_APP_ID:}}
+    private-key: ${PAY_ALIPAY_PRIVATE_KEY:${ALIPAY_PRIVATE_KEY:}}
+    alipay-public-key: ${PAY_ALIPAY_PUBLIC_KEY:${ALIPAY_PUBLIC_KEY:}}
     sign-type: RSA2
     charset: UTF-8
     format: json
-    server-url: https://openapi.alipay.com/gateway.do
+    server-url: ${PAY_ALIPAY_SERVER_URL:${ALIPAY_SERVER_URL:https://openapi.alipay.com/gateway.do}}
     notify-path: /api/pay/notify/alipay
     return-path: /api/pay/return/alipay
     subject-prefix: 会员充值-

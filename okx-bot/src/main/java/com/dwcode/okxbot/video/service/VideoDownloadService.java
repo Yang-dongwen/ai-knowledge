@@ -55,12 +55,22 @@ public class VideoDownloadService {
         Path taskDir = storageService.ensureTaskDir(taskId);
         String resolvedUrl = VideoUrlNormalizer.normalize(url);
         if (resolvedUrl == null || resolvedUrl.isBlank()) {
-            throw new BusinessException("视频链接不能为空");
+            throw new BusinessException(400, "视频链接不能为空");
         }
+        VideoUrlNormalizer.assertSafeForDownload(resolvedUrl);
         if (!resolvedUrl.equals(url)) {
             log.info("已规范化视频链接: {} → {}", url, resolvedUrl);
         }
+        Long taskIdLong = parseTaskId(taskId);
+        processExecutor.bindTask(taskIdLong);
+        try {
+            return downloadBound(url, resolvedUrl, taskDir, extractAudio);
+        } finally {
+            processExecutor.clearTask();
+        }
+    }
 
+    private DownloadResult downloadBound(String url, String resolvedUrl, Path taskDir, boolean extractAudio) {
         // 1. 拉取元数据（标题、时长）
         VideoMeta meta = fetchMeta(resolvedUrl);
 
@@ -125,7 +135,7 @@ public class VideoDownloadService {
 
         if (videoFile == null) {
             // 仅音频场景：仍可转录，视频路径为空
-            log.warn("仅下载到音频，无视频轨: taskId={}", taskId);
+            log.warn("仅下载到音频，无视频轨: dir={}", taskDir);
         } else {
             // 抖音等常下到 HEVC，Chrome/Edge 无法 <video> 播放 → 转成 H.264
             videoFile = ensureBrowserPlayable(videoFile);
@@ -143,7 +153,7 @@ public class VideoDownloadService {
             }
             audioPath = audioFile.toAbsolutePath().toString();
         } else {
-            log.info("跳过音频提取（仅下载视频）: taskId={}", taskId);
+            log.info("跳过音频提取（仅下载视频）: dir={}", taskDir);
             if (videoFile == null) {
                 throw new BusinessException("仅下载模式未得到视频文件");
             }
@@ -165,6 +175,10 @@ public class VideoDownloadService {
      */
     public VideoMeta fetchMeta(String url) {
         String resolvedUrl = VideoUrlNormalizer.normalize(url);
+        if (resolvedUrl == null || resolvedUrl.isBlank()) {
+            throw new BusinessException(400, "视频链接不能为空");
+        }
+        VideoUrlNormalizer.assertSafeForDownload(resolvedUrl);
         List<String> cmd = new ArrayList<>();
         cmd.add(videoProperties.getYtDlpPath());
         cmd.add("--dump-json");
@@ -644,6 +658,17 @@ public class VideoDownloadService {
             return parent != null ? parent.toString() : ffmpeg.toString();
         }
         return ffmpeg.toString();
+    }
+
+    private static Long parseTaskId(String taskId) {
+        if (taskId == null || taskId.isBlank()) {
+            return null;
+        }
+        try {
+            return Long.parseLong(taskId.trim());
+        } catch (NumberFormatException e) {
+            return null;
+        }
     }
 
     private static boolean isLikelyVideoOnly(String name) {

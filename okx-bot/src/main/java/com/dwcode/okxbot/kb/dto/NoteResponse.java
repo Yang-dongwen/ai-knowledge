@@ -26,6 +26,9 @@ public class NoteResponse {
     /** 列表摘要 */
     private String snippet;
 
+    /** 搜索命中片段（含上下文；无 keyword 时为空） */
+    private String matchSnippet;
+
     @JsonSerialize(using = ToStringSerializer.class)
     private Long categoryId;
 

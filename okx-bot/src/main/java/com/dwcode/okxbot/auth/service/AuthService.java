@@ -19,7 +19,10 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
+import org.springframework.web.context.request.RequestContextHolder;
+import org.springframework.web.context.request.ServletRequestAttributes;
 
+import jakarta.servlet.http.HttpServletRequest;
 import java.time.LocalDateTime;
 
 @Slf4j
@@ -34,13 +37,15 @@ public class AuthService {
     private final AuthProperties authProperties;
     private final MemberStatusService memberStatusService;
     private final WxMiniSessionClient wxMiniSessionClient;
+    private final LoginRateLimiter loginRateLimiter;
 
     public void sendRegisterCode(String email) {
         String normalized = EmailCodeService.normalizeEmail(email);
         SysUserEntity exists = findByEmail(normalized);
         if (exists != null) {
-            // 防枚举：仍可返回成功语义，但这里明确提示更符合产品
-            throw new BusinessException(400, "该邮箱已注册，请直接登录");
+            // 防邮箱枚举：与找回密码一致，不暴露是否已注册
+            log.info("注册验证码：邮箱已注册，跳过发送: {}", normalized);
+            return;
         }
         emailCodeService.sendCode(normalized, EmailCodePurpose.REGISTER);
     }
@@ -61,6 +66,7 @@ public class AuthService {
             nickname = email.contains("@") ? email.substring(0, email.indexOf('@')) : email;
         }
         user.setNickname(nickname.trim());
+        user.setTokenVersion(0);
         // 新注册默认普通用户；会员靠后续充值升级
         user.setRole(UserRole.USER.name());
         user.setStatus(1);
@@ -75,8 +81,19 @@ public class AuthService {
 
     public LoginResponse login(LoginRequest request) {
         String email = EmailCodeService.normalizeEmail(request.getEmail());
+        String clientIp = currentClientIp();
+        loginRateLimiter.assertAllowed(email, clientIp);
         SysUserEntity user = findByEmail(email);
-        if (user == null || !passwordEncoder.matches(request.getPassword(), user.getPasswordHash())) {
+        if (user == null) {
+            loginRateLimiter.recordFailure(email, clientIp);
+            throw new BusinessException(400, "邮箱或密码错误");
+        }
+        if (!StringUtils.hasText(user.getPasswordHash())) {
+            loginRateLimiter.recordFailure(email, clientIp);
+            throw new BusinessException(400, "该账号仅支持第三方登录");
+        }
+        if (!passwordEncoder.matches(request.getPassword(), user.getPasswordHash())) {
+            loginRateLimiter.recordFailure(email, clientIp);
             throw new BusinessException(400, "邮箱或密码错误");
         }
         if (user.getStatus() == null || user.getStatus() != 1) {
@@ -85,6 +102,7 @@ public class AuthService {
         if (user.getEmailVerified() == null || user.getEmailVerified() != 1) {
             throw new BusinessException(403, "邮箱未验证，请完成验证后再登录");
         }
+        loginRateLimiter.recordSuccess(email, clientIp);
         user.setLastLoginAt(LocalDateTime.now());
         user.setUpdatedAt(LocalDateTime.now());
         sysUserMapper.updateById(user);
@@ -112,9 +130,12 @@ public class AuthService {
         }
         emailCodeService.verifyAndConsume(email, request.getCode(), EmailCodePurpose.RESET_PASSWORD);
         user.setPasswordHash(passwordEncoder.encode(request.getNewPassword()));
+        // 吊销既有 JWT
+        int next = (user.getTokenVersion() != null ? user.getTokenVersion() : 0) + 1;
+        user.setTokenVersion(next);
         user.setUpdatedAt(LocalDateTime.now());
         sysUserMapper.updateById(user);
-        log.info("密码已重置: email={}", email);
+        log.info("密码已重置: email={} tokenVersion={}", email, next);
     }
 
     /**
@@ -165,10 +186,15 @@ public class AuthService {
         }
 
         String email = EmailCodeService.normalizeEmail(request.getEmail());
+        String clientIp = currentClientIp();
+        loginRateLimiter.assertAllowed(email, clientIp);
         SysUserEntity user = findByEmail(email);
-        if (user == null || !passwordEncoder.matches(request.getPassword(), user.getPasswordHash())) {
+        if (user == null || !StringUtils.hasText(user.getPasswordHash())
+                || !passwordEncoder.matches(request.getPassword(), user.getPasswordHash())) {
+            loginRateLimiter.recordFailure(email, clientIp);
             throw new BusinessException(400, "邮箱或密码错误");
         }
+        loginRateLimiter.recordSuccess(email, clientIp);
         assertUserCanLogin(user);
 
         if (StringUtils.hasText(user.getWxMiniOpenid())
@@ -230,7 +256,8 @@ public class AuthService {
         return toAuthUserResponse(user);
     }
 
-    private void assertUserCanLogin(SysUserEntity user) {
+    /** OAuth / 微信等外部登录复用 */
+    public void assertUserCanLogin(SysUserEntity user) {
         if (user.getStatus() == null || user.getStatus() != 1) {
             throw new BusinessException(403, "账号已被禁用");
         }
@@ -239,10 +266,45 @@ public class AuthService {
         }
     }
 
-    private void touchLogin(SysUserEntity user) {
+    /** OAuth / 微信等外部登录复用 */
+    public void touchLogin(SysUserEntity user) {
         user.setLastLoginAt(LocalDateTime.now());
         user.setUpdatedAt(LocalDateTime.now());
         sysUserMapper.updateById(user);
+    }
+
+    /** OAuth ticket 兑换等复用 */
+    public LoginResponse buildLoginResponse(SysUserEntity user) {
+        int tv = user.getTokenVersion() != null ? user.getTokenVersion() : 0;
+        String token = jwtService.generateToken(user.getId(), user.getEmail(), tv);
+        return LoginResponse.builder()
+                .token(token)
+                .tokenType("Bearer")
+                .expiresIn(authProperties.getJwt().getExpireSeconds())
+                .user(toAuthUserResponse(user))
+                .build();
+    }
+
+    private static String currentClientIp() {
+        try {
+            ServletRequestAttributes attrs =
+                    (ServletRequestAttributes) RequestContextHolder.getRequestAttributes();
+            if (attrs == null) {
+                return "unknown";
+            }
+            HttpServletRequest req = attrs.getRequest();
+            String xff = req.getHeader("X-Forwarded-For");
+            if (StringUtils.hasText(xff)) {
+                return xff.split(",")[0].trim();
+            }
+            String real = req.getHeader("X-Real-IP");
+            if (StringUtils.hasText(real)) {
+                return real.trim();
+            }
+            return req.getRemoteAddr() != null ? req.getRemoteAddr() : "unknown";
+        } catch (Exception e) {
+            return "unknown";
+        }
     }
 
     private WxMiniLoginResponse toWxMiniLoginResponse(SysUserEntity user) {
@@ -253,16 +315,6 @@ public class AuthService {
                 .tokenType(lr.getTokenType())
                 .expiresIn(lr.getExpiresIn())
                 .user(lr.getUser())
-                .build();
-    }
-
-    private LoginResponse buildLoginResponse(SysUserEntity user) {
-        String token = jwtService.generateToken(user.getId(), user.getEmail());
-        return LoginResponse.builder()
-                .token(token)
-                .tokenType("Bearer")
-                .expiresIn(authProperties.getJwt().getExpireSeconds())
-                .user(toAuthUserResponse(user))
                 .build();
     }
 

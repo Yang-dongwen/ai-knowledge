@@ -4,6 +4,7 @@ import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.dwcode.okxbot.auth.security.SecurityUtils;
 import com.dwcode.okxbot.common.exception.BusinessException;
+import com.dwcode.okxbot.member.service.MemberStatusService;
 import com.dwcode.okxbot.chat.config.AiProperties;
 import com.dwcode.okxbot.chat.config.AiProperties.ProviderConfig;
 import com.dwcode.okxbot.video.agent.VideoTaskScheduler;
@@ -60,11 +61,20 @@ public class VideoProcessService {
     private final AiModelConfigService aiModelConfigService;
     private final VideoTaskEventPublisher eventPublisher;
     private final com.dwcode.okxbot.storage.MediaUrlService mediaUrlService;
+    private final MemberStatusService memberStatusService;
+    private final com.dwcode.okxbot.video.util.ProcessExecutor processExecutor;
 
     /**
      * 提交处理任务，立即返回 taskId，后台异步执行。
      */
     public VideoTaskResponse submit(VideoProcessRequest request) {
+        memberStatusService.requireActiveMember();
+        Long userId = SecurityUtils.requireCurrentUserId();
+        int perUser = Math.max(1, videoProperties.getMaxConcurrentTasksPerUser());
+        int inFlight = countUserInFlight(userId);
+        if (inFlight >= perUser) {
+            throw new BusinessException(429, "并发视频任务数已达上限（" + perUser + "），请等待完成后再提交");
+        }
         VideoProcessOptions options = request.getOptions() != null
                 ? request.getOptions()
                 : new VideoProcessOptions();
@@ -197,10 +207,11 @@ public class VideoProcessService {
             return toResponse(entity, false);
         }
 
-        // 进行中：发暂停信号，流水线在步骤间隙退出并 markFinished → tryStartNext
+        // 进行中：发暂停信号 + 强制结束 yt-dlp/ffmpeg
         taskScheduler.requestPause(taskId);
+        processExecutor.destroyTaskProcesses(taskId);
         entity.setStatus(VideoTaskStatus.PAUSED.name());
-        entity.setCurrentStep("暂停中，等待当前步骤结束…");
+        entity.setCurrentStep("已请求暂停（外部进程已尝试终止）");
         entity.setUpdatedAt(LocalDateTime.now());
         videoTaskMapper.updateById(entity);
         eventPublisher.publishEntity(entity, VideoTaskEventPublisher.TYPE_STATUS);
@@ -221,6 +232,7 @@ public class VideoProcessService {
      * 失败 / 暂停 / 成功任务重试：可重新指定 LLM，清空产物后重新排队调度。
      */
     public VideoTaskResponse retryTask(Long taskId, VideoRetryRequest request) {
+        memberStatusService.requireActiveMember();
         VideoTaskEntity entity = requireOwnedTask(taskId);
         String status = entity.getStatus() == null ? "" : entity.getStatus().trim().toUpperCase();
         if (!VIDEO_RETRYABLE_STATUSES.contains(status)) {
@@ -620,21 +632,32 @@ public class VideoProcessService {
                 taskId, entity.getTitle(), filesRemoved);
     }
 
+    private int countUserInFlight(Long userId) {
+        if (userId == null) {
+            return 0;
+        }
+        Long cnt = videoTaskMapper.selectCount(
+                new LambdaQueryWrapper<VideoTaskEntity>()
+                        .eq(VideoTaskEntity::getUserId, userId)
+                        .in(VideoTaskEntity::getStatus,
+                                VideoTaskStatus.PENDING.name(),
+                                VideoTaskStatus.DOWNLOADING.name(),
+                                VideoTaskStatus.TRANSCRIBING.name(),
+                                VideoTaskStatus.UNDERSTANDING.name(),
+                                VideoTaskStatus.SUMMARIZING.name())
+        );
+        return cnt == null ? 0 : cnt.intValue();
+    }
+
     private VideoTaskEntity requireOwnedTask(Long taskId) {
         VideoTaskEntity entity = videoTaskMapper.selectById(taskId);
         if (entity == null) {
             throw new BusinessException(404, "任务不存在: " + taskId);
         }
         Long userId = SecurityUtils.requireCurrentUserId();
-        // 兼容历史数据 user_id 为空：仅允许本人或未绑定数据在登录后不可见他人
-        if (entity.getUserId() != null && !entity.getUserId().equals(userId)) {
+        // 无主任务不可被任意用户认领（历史 null 需运维迁移后才可访问）
+        if (entity.getUserId() == null || !entity.getUserId().equals(userId)) {
             throw new BusinessException(403, "无权访问该任务");
-        }
-        if (entity.getUserId() == null) {
-            // 旧数据首次访问归属当前用户
-            entity.setUserId(userId);
-            entity.setUpdatedAt(LocalDateTime.now());
-            videoTaskMapper.updateById(entity);
         }
         return entity;
     }

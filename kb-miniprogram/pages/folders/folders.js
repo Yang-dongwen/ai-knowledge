@@ -1,5 +1,5 @@
 const { api } = require('../../utils/request')
-const { isLoggedIn } = require('../../utils/auth')
+const { requireLoginOrRedirect } = require('../../utils/auth')
 
 function formatTime(t) {
   if (!t) return ''
@@ -35,10 +35,7 @@ Page({
   },
 
   onShow() {
-    if (!isLoggedIn()) {
-      wx.reLaunch({ url: '/pages/login/login' })
-      return
-    }
+    if (!requireLoginOrRedirect()) return
     this.load()
   },
 

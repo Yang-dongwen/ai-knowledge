@@ -30,13 +30,13 @@ public class PayFulfillService {
         if (order == null) {
             throw new BusinessException(404, "订单不存在: " + orderNo);
         }
-        if (order.getAmountCents() == null || order.getAmountCents().longValue() != amountCentsFromChannel) {
-            throw new BusinessException(400, "金额不匹配");
-        }
-
+        // 已履约成功：幂等早退（在金额复核前），避免渠道重试因解析差异刷失败
         if (PayOrderStatus.SUCCESS.equals(order.getStatus())
                 && order.getFulfilled() != null && order.getFulfilled() == 1) {
             return;
+        }
+        if (order.getAmountCents() == null || order.getAmountCents().longValue() != amountCentsFromChannel) {
+            throw new BusinessException(400, "金额不匹配");
         }
 
         if (!PayOrderStatus.SUCCESS.equals(order.getStatus())) {

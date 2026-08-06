@@ -15,6 +15,9 @@ import com.dwcode.okxbot.imggen.dto.ImgGenCreateOptions;
 import com.dwcode.okxbot.imggen.dto.ImgGenCreateRequest;
 import com.dwcode.okxbot.imggen.dto.ImgGenTaskResponse;
 import com.dwcode.okxbot.imggen.service.ImgGenTaskService;
+import com.dwcode.okxbot.kb.dto.NoteCreateRequest;
+import com.dwcode.okxbot.kb.dto.NoteResponse;
+import com.dwcode.okxbot.kb.service.KbNoteService;
 import com.dwcode.okxbot.video.dto.VideoProcessOptions;
 import com.dwcode.okxbot.video.dto.VideoProcessRequest;
 import com.dwcode.okxbot.video.dto.VideoTaskResponse;
@@ -48,6 +51,7 @@ public class AgentConfirmService {
     private final ImgGenTaskService imgGenTaskService;
     private final AigenTaskService aigenTaskService;
     private final VideoProcessService videoProcessService;
+    private final KbNoteService kbNoteService;
     private final ChatConversationMapper conversationMapper;
     private final ChatMessageMapper messageMapper;
     private final ObjectMapper objectMapper = new ObjectMapper();
@@ -178,6 +182,7 @@ public class AgentConfirmService {
                 case "draft_imggen" -> createImggen(safeArgs);
                 case "draft_aigen" -> createAigen(safeArgs);
                 case "draft_video_extract" -> createVideoExtract(safeArgs);
+                case "draft_create_note" -> createKbNote(safeArgs);
                 default -> ToolResult.fail("UNKNOWN", "未知草案工具: " + tool);
             };
         } catch (BusinessException e) {
@@ -221,6 +226,8 @@ public class AgentConfirmService {
                     || key.equals("llmModel") || key.equals("llmProvider");
             case "draft_video_extract" -> key.equals("url")
                     || key.equals("llmModel") || key.equals("llmProvider");
+            case "draft_create_note" -> key.equals("title") || key.equals("content")
+                    || key.equals("contentFormat");
             default -> false;
         };
     }
@@ -284,6 +291,29 @@ public class AgentConfirmService {
             out.put("url", url);
             putIfPresent(out, args, "llmModel", 200);
             putIfPresent(out, args, "llmProvider", 64);
+            return out;
+        }
+        if ("draft_create_note".equals(tool)) {
+            String content = str(args, "content", "").trim();
+            if (content.isBlank()) {
+                throw new BusinessException(400, "笔记正文不能为空");
+            }
+            if (content.length() > 100_000) {
+                content = content.substring(0, 100_000);
+            }
+            String title = str(args, "title", "").trim();
+            if (title.length() > 200) {
+                title = title.substring(0, 200);
+            }
+            String format = str(args, "contentFormat", "markdown").trim().toLowerCase();
+            if (!"html".equals(format) && !"markdown".equals(format)) {
+                format = "markdown";
+            }
+            if (!title.isBlank()) {
+                out.put("title", title);
+            }
+            out.put("content", content);
+            out.put("contentFormat", format);
             return out;
         }
         return args != null ? args : Map.of();
@@ -412,6 +442,33 @@ public class AgentConfirmService {
 
         return ToolResult.success(
                 "AI 视频任务已创建：#" + task.getId() + "（" + task.getStatus() + "）",
+                data,
+                ui);
+    }
+
+    private ToolResult createKbNote(Map<String, Object> args) {
+        NoteCreateRequest req = new NoteCreateRequest();
+        String title = str(args, "title", "").trim();
+        if (!title.isBlank()) {
+            req.setTitle(title);
+        }
+        req.setContent(str(args, "content", ""));
+        req.setContentFormat(str(args, "contentFormat", "markdown"));
+        NoteResponse note = kbNoteService.create(req);
+
+        Map<String, Object> data = new HashMap<>();
+        data.put("type", "kb_note");
+        data.put("noteId", note.getId() != null ? String.valueOf(note.getId()) : null);
+        data.put("title", note.getTitle());
+        data.put("openPath", "/kb");
+        data.put("contentFormat", note.getContentFormat());
+
+        Map<String, Object> ui = new HashMap<>();
+        ui.put("type", "note_created");
+        ui.put("payload", data);
+
+        return ToolResult.success(
+                "知识库笔记已创建：「" + (note.getTitle() != null ? note.getTitle() : "未命名") + "」",
                 data,
                 ui);
     }

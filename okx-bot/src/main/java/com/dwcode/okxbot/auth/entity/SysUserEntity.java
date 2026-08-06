@@ -26,6 +26,9 @@ public class SysUserEntity {
     /** BCrypt 密码哈希 */
     private String passwordHash;
 
+    /** 会话版本：改密后递增，JWT claim tv 须一致 */
+    private Integer tokenVersion;
+
     private String nickname;
 
     /**

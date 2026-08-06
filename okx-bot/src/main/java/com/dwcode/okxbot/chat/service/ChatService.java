@@ -15,6 +15,7 @@ import com.dwcode.okxbot.chat.stream.StreamCancelledException;
 import com.dwcode.okxbot.common.ai.LlmCallOptions;
 import com.dwcode.okxbot.common.ai.LlmChatGateway;
 import com.dwcode.okxbot.common.exception.BusinessException;
+import com.dwcode.okxbot.member.service.MemberStatusService;
 import com.dwcode.okxbot.common.ai.AiModelConfigService;
 import com.dwcode.okxbot.chat.dto.ChatMessageDTO;
 import com.dwcode.okxbot.chat.dto.ChatRequest;
@@ -86,13 +87,26 @@ public class ChatService {
     private final ChatAgentOrchestrator chatAgentOrchestrator;
     private final AgentConfirmService agentConfirmService;
     private final AgentProperties agentProperties;
+    private final MemberStatusService memberStatusService;
 
     /** 按 ai.response-timeout-seconds 构建；未响应即中断 */
     private OkHttpClient httpClient;
 
     private final ObjectMapper objectMapper = new ObjectMapper();
 
-    private final ExecutorService streamExecutor = Executors.newCachedThreadPool();
+    /** 有界流式线程池，防止会员并发 SSE 打爆线程 */
+    private final ExecutorService streamExecutor = new java.util.concurrent.ThreadPoolExecutor(
+            4,
+            32,
+            60L, java.util.concurrent.TimeUnit.SECONDS,
+            new java.util.concurrent.LinkedBlockingQueue<>(64),
+            r -> {
+                Thread t = new Thread(r, "chat-stream");
+                t.setDaemon(true);
+                return t;
+            },
+            new java.util.concurrent.ThreadPoolExecutor.AbortPolicy()
+    );
 
     @PostConstruct
     void initHttpClient() {
@@ -338,6 +352,7 @@ public class ChatService {
      */
     public void sendMessageStream(ChatRequest request, SseEmitter emitter) {
         SecurityContext securityContext = SecurityContextHolder.getContext();
+        try {
         streamExecutor.execute(() -> {
             SecurityContextHolder.setContext(securityContext);
             ChatStreamHandle streamHandle = null;
@@ -345,6 +360,7 @@ public class ChatService {
             Long conversationId = null;
             try {
                 userId = SecurityUtils.requireCurrentUserId();
+                memberStatusService.requireActiveMember(userId);
                 conversationId = request.getConversationId();
 
                 ProviderConfig providerConfig = resolveProvider(request.getProvider());
@@ -427,6 +443,9 @@ public class ChatService {
                 SecurityContextHolder.clearContext();
             }
         });
+        } catch (java.util.concurrent.RejectedExecutionException e) {
+            sendSseErrorAndComplete(emitter, "对话服务繁忙，请稍后再试");
+        }
     }
 
     /**
@@ -456,7 +475,9 @@ public class ChatService {
      * </ol>
      */
     public void regenerateStream(ChatRequest request, SseEmitter emitter) {
+        // 门闸在异步线程内校验（与 send 一致）
         SecurityContext securityContext = SecurityContextHolder.getContext();
+        try {
         streamExecutor.execute(() -> {
             SecurityContextHolder.setContext(securityContext);
             ChatStreamHandle streamHandle = null;
@@ -464,6 +485,7 @@ public class ChatService {
             Long conversationId = null;
             try {
                 userId = SecurityUtils.requireCurrentUserId();
+                memberStatusService.requireActiveMember(userId);
                 conversationId = request.getConversationId();
                 if (conversationId == null) {
                     throw new BusinessException(400, "重新生成需要指定会话");
@@ -534,6 +556,9 @@ public class ChatService {
                 SecurityContextHolder.clearContext();
             }
         });
+        } catch (java.util.concurrent.RejectedExecutionException e) {
+            sendSseErrorAndComplete(emitter, "对话服务繁忙，请稍后再试");
+        }
     }
 
     /**
@@ -541,6 +566,7 @@ public class ChatService {
      */
     public void editResendStream(EditResendRequest request, SseEmitter emitter) {
         SecurityContext securityContext = SecurityContextHolder.getContext();
+        try {
         streamExecutor.execute(() -> {
             SecurityContextHolder.setContext(securityContext);
             ChatStreamHandle streamHandle = null;
@@ -548,6 +574,7 @@ public class ChatService {
             Long conversationId = null;
             try {
                 userId = SecurityUtils.requireCurrentUserId();
+                memberStatusService.requireActiveMember(userId);
                 conversationId = request.getConversationId();
                 requireOwnedConversation(conversationId, userId);
 
@@ -620,6 +647,9 @@ public class ChatService {
                 SecurityContextHolder.clearContext();
             }
         });
+        } catch (java.util.concurrent.RejectedExecutionException e) {
+            sendSseErrorAndComplete(emitter, "对话服务繁忙，请稍后再试");
+        }
     }
 
     private void bindEmitterCancel(SseEmitter emitter, ChatStreamHandle handle) {
@@ -1355,6 +1385,7 @@ public class ChatService {
      * @param argOverrides 用户在确认卡上修改的参数，可为 null
      */
     public ToolResult confirmAgentAction(String confirmId, Map<String, Object> argOverrides) {
+        memberStatusService.requireActiveMember();
         return agentConfirmService.confirm(confirmId, argOverrides);
     }
 

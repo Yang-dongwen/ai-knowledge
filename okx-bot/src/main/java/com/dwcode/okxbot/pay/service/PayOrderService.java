@@ -55,7 +55,8 @@ public class PayOrderService {
     public PayOrderResponse createOrder(Long userId, CreatePayOrderRequest req, String clientIp) {
         requirePayEnabled();
 
-        SysUserEntity user = sysUserMapper.selectById(userId);
+        // 行锁串行化同用户下单，避免并发突破开单上限/双开未完成单
+        SysUserEntity user = sysUserMapper.selectByIdForUpdate(userId);
         if (user == null) {
             throw new BusinessException(401, "用户不存在");
         }

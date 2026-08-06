@@ -14,7 +14,7 @@
       <div class="layout-content-body">
         <router-view />
       </div>
-      <div v-if="!isImmersive" class="page-footer">© 2024 AI 工具台 · 仅供学习交流</div>
+      <div v-if="!isImmersive" class="page-footer">© {{ new Date().getFullYear() }} AI 工具台 · 仅供学习交流</div>
     </a-layout-content>
   </a-layout>
 </template>

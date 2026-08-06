@@ -34,6 +34,9 @@ public class VideoProperties {
     /** 工作目录：下载视频、音频、临时文件 */
     private String workDir = "./data/video";
 
+    /** 单用户进行中 + 排队任务上限 */
+    private int maxConcurrentTasksPerUser = 2;
+
     /** yt-dlp 可执行文件路径（PATH 中或绝对路径） */
     private String ytDlpPath = "yt-dlp";
 

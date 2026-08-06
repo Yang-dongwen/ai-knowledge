@@ -1,7 +1,8 @@
 const { api, mediaUrl, absolutizeMediaInHtml } = require('../../utils/request')
-const { isLoggedIn } = require('../../utils/auth')
+const { requireLoginOrRedirect } = require('../../utils/auth')
 const { renderMarkdown, enhanceHtmlForRichText } = require('../../utils/markdown')
 const { getShareWebOrigin } = require('../../utils/config')
+const { sanitizeHtml } = require('../../utils/sanitizeHtml')
 
 function formatTime(t) {
   if (!t) return ''
@@ -27,10 +28,7 @@ Page({
   },
 
   onShow() {
-    if (!isLoggedIn()) {
-      wx.reLaunch({ url: '/pages/login/login' })
-      return
-    }
+    if (!requireLoginOrRedirect()) return
     if (this.data.id) this.load()
   },
 
@@ -40,9 +38,9 @@ Page({
       const note = await api.getNote(this.data.id)
       let contentHtml = ''
       if (note.contentFormat === 'html') {
-        contentHtml = enhanceHtmlForRichText(absolutizeMediaInHtml(note.content || ''))
+        contentHtml = sanitizeHtml(enhanceHtmlForRichText(absolutizeMediaInHtml(note.content || '')))
       } else {
-        contentHtml = absolutizeMediaInHtml(renderMarkdown(note.content || ''))
+        contentHtml = sanitizeHtml(absolutizeMediaInHtml(renderMarkdown(note.content || '')))
       }
       let files = []
       try {

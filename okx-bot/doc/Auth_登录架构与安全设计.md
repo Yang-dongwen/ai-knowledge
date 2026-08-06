@@ -189,5 +189,51 @@ com.dwcode.okxbot.auth
 
 ---
 
-**结论**：采用 **Spring Security + JWT + BCrypt + 邮箱验证码**，兼顾主流与前后端分离场景下的安全性。  
+## 9. PC 端 Google / GitHub OAuth（JustAuth）
+
+**选型**：JustAuth 换码 + 本系统 JWT；**不**使用 Spring OAuth2 Client Session。  
+**交付**：回调签发 **one-time ticket**（HMAC，短 TTL），前端 `POST /api/auth/oauth/exchange` 换正式 JWT。
+
+### 9.1 流程
+
+```
+登录页 → GET /api/auth/oauth/{google|github}/authorize?redirect=/path
+      → 302 Google/GitHub（或 mock callback）
+      → GET /api/auth/oauth/{provider}/callback?code&state
+      → 302 {frontend}/oauth/callback?ticket=…&redirect=…
+      → POST /api/auth/oauth/exchange {ticket} → LoginResponse
+```
+
+### 9.2 数据
+
+- 表 `user_oauth_binding`：`UNIQUE(provider, provider_user_id)`  
+- `sys_user.password_hash` 允许 NULL（纯三方用户）  
+- 同邮箱自动绑定已有账号；无 verified 邮箱则拒绝（GitHub 需公开邮箱）
+
+### 9.3 API（均无需 JWT）
+
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| GET | `/api/auth/oauth/providers` | 已启用列表 + mock 标记 |
+| GET | `/api/auth/oauth/{provider}/authorize` | 浏览器跳转 |
+| GET | `/api/auth/oauth/{provider}/callback` | 平台回调 → 前端 |
+| POST | `/api/auth/oauth/exchange` | ticket → JWT |
+
+### 9.4 配置
+
+见 `auth.oauth.*` / 环境变量 `AUTH_OAUTH_*`。本地 `application-local` 默认 `mock=true`。  
+生产：`AUTH_OAUTH_MOCK=false`，配置 Google/GitHub client，  
+`callback` 注册 `{callback-base}/api/auth/oauth/{provider}/callback`。
+
+### 9.5 包结构
+
+```
+com.dwcode.okxbot.auth.oauth
+  OAuthController / OAuthService / JustAuthClient / OAuthTokenStore
+  entity.UserOAuthBindingEntity / mapper
+```
+
+---
+
+**结论**：采用 **Spring Security + JWT + BCrypt + 邮箱验证码**，并扩展 **JustAuth 三方登录（PC）**，兼顾主流与前后端分离场景下的安全性。  
 下方实现按本设计落地。

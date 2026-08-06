@@ -58,7 +58,8 @@ public class VideoCookieService {
                 .platform(p)
                 .configured(ymlConfigured || exists)
                 .fileExists(exists)
-                .filePath(path.toAbsolutePath().toString().replace('\\', '/'))
+                // 不向客户端暴露宿主机绝对路径
+                .filePath(null)
                 .cookieCount(count)
                 .fileSizeBytes(size)
                 .lastModifiedAt(modified)

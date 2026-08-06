@@ -60,9 +60,11 @@ public class MailService {
     }
 
     private void sendViaConsole(String to, String subject, String text, String provider) {
-        log.info("[MAIL-CONSOLE] provider={} to={} subject={} body=\n{}", provider, to, subject, text);
+        // 不打印完整验证码正文，避免日志泄露导致账号接管
+        log.info("[MAIL-CONSOLE] provider={} to={} subject={} bodyLen={}",
+                provider, to, subject, text == null ? 0 : text.length());
         if (!"console".equals(provider) && mailSender == null) {
-            log.warn("邮件提供方为 {} 但未就绪，已降级为控制台输出验证码", provider);
+            log.warn("邮件提供方为 {} 但未就绪，已降级为控制台（验证码未写入日志正文）", provider);
         }
     }
 

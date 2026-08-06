@@ -17,8 +17,9 @@ auth:
   jwt:
     secret: ${AUTH_JWT_SECRET}
   mail:
-    provider: ${AUTH_MAIL_PROVIDER:console}
-    console-mode: ${AUTH_MAIL_CONSOLE_MODE:true}
+    # 生产默认关 console，避免验证码进日志；需显式配真实 provider
+    provider: ${AUTH_MAIL_PROVIDER:agentmail}
+    console-mode: ${AUTH_MAIL_CONSOLE_MODE:false}
     from: ${AUTH_MAIL_FROM:noreply@example.com}
     agentmail:
       api-key: ${AGENTMAIL_API_KEY:}
@@ -29,20 +30,40 @@ auth:
       proxy-port: ${AGENTMAIL_PROXY_PORT:0}
       proxy-type: ${AGENTMAIL_PROXY_TYPE:HTTP}
   admin:
-    seed-enabled: ${AUTH_ADMIN_SEED_ENABLED:true}
+    # 完成首次 bootstrap 后应保持 false
+    seed-enabled: ${AUTH_ADMIN_SEED_ENABLED:false}
     email: ${AUTH_ADMIN_EMAIL:admin@okx-bot.local}
     password: ${AUTH_ADMIN_PASSWORD}
+  cors:
+    allowed-origins:
+      - https://dwcode.cloud
+      - https://www.dwcode.cloud
   wechat:
     mini:
       # 生产默认开启真实微信登录；无密钥时可设 WX_MINI_ENABLED=false
       enabled: ${WX_MINI_ENABLED:true}
+      mock: false
       app-id: ${WX_MINI_APP_ID:}
       app-secret: ${WX_MINI_APP_SECRET:}
+  oauth:
+    mock: ${AUTH_OAUTH_MOCK:false}
+    auto-link-by-email: false
+    frontend-base-url: ${AUTH_OAUTH_FRONTEND_BASE_URL:https://dwcode.cloud}
+    callback-base-url: ${AUTH_OAUTH_CALLBACK_BASE_URL:https://dwcode.cloud}
+    ticket-ttl-seconds: ${AUTH_OAUTH_TICKET_TTL_SECONDS:60}
+    google:
+      enabled: ${AUTH_OAUTH_GOOGLE_ENABLED:false}
+      client-id: ${AUTH_OAUTH_GOOGLE_CLIENT_ID:}
+      client-secret: ${AUTH_OAUTH_GOOGLE_CLIENT_SECRET:}
+    github:
+      enabled: ${AUTH_OAUTH_GITHUB_ENABLED:false}
+      client-id: ${AUTH_OAUTH_GITHUB_CLIENT_ID:}
+      client-secret: ${AUTH_OAUTH_GITHUB_CLIENT_SECRET:}
 
 pay:
   public-base-url: ${PAY_PUBLIC_BASE_URL}
   trust-x-forwarded-for: true
-  mock-enabled: ${PAY_MOCK_ENABLED:true}
+  mock-enabled: ${PAY_MOCK_ENABLED:false}
 
 ai:
   default-provider: ${AI_DEFAULT_PROVIDER:nvidia}
@@ -95,7 +116,7 @@ aigen:
   tts:
     provider: edge
     edge-command: edge-tts
-    fail-open-to-mock: true
+    fail-open-to-mock: ${AIGEN_TTS_FAIL_OPEN_TO_MOCK:false}
 
 imggen:
   work-dir: /app/data/imggen

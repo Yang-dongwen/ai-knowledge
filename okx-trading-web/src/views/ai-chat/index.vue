@@ -307,6 +307,29 @@
                             allow-clear
                           />
                         </div>
+                        <!-- 知识库笔记 -->
+                        <div v-if="'title' in ensureDraftArgs(msg) || confirmToolOf(msg) === 'draft_create_note'" class="agent-param-field">
+                          <label class="agent-param-k">标题</label>
+                          <a-input
+                            v-model:value="ensureDraftArgs(msg).title"
+                            :disabled="isConfirmLocked(msg)"
+                            class="agent-param-input"
+                            placeholder="笔记标题（可选）"
+                            :maxlength="200"
+                            allow-clear
+                          />
+                        </div>
+                        <div v-if="'content' in ensureDraftArgs(msg)" class="agent-param-field">
+                          <label class="agent-param-k">正文</label>
+                          <a-textarea
+                            v-model:value="ensureDraftArgs(msg).content"
+                            :rows="5"
+                            :maxlength="100000"
+                            :disabled="isConfirmLocked(msg)"
+                            class="agent-param-input"
+                            placeholder="笔记正文"
+                          />
+                        </div>
                         <!-- 画幅 -->
                         <div v-if="'aspectRatio' in ensureDraftArgs(msg)" class="agent-param-field agent-param-inline">
                           <label class="agent-param-k">画幅</label>
@@ -447,9 +470,15 @@
                     <div v-if="isCreatedCard(msg)" class="agent-created">
                       <div class="agent-created-row">
                         <a-tag color="processing">{{ typeLabel(createdPayload(msg)?.type) }}</a-tag>
-                        <span class="agent-created-id">#{{ createdPayload(msg)?.taskId }}</span>
-                        <a-tag :color="statusColor(createdPayload(msg)?.status)">
-                          {{ createdPayload(msg)?.status || '-' }}
+                        <span
+                          v-if="createdPayload(msg)?.taskId || createdPayload(msg)?.noteId"
+                          class="agent-created-id"
+                        >#{{ createdPayload(msg)?.taskId || createdPayload(msg)?.noteId }}</span>
+                        <a-tag
+                          v-if="createdPayload(msg)?.status"
+                          :color="statusColor(createdPayload(msg)?.status)"
+                        >
+                          {{ createdPayload(msg)?.status }}
                         </a-tag>
                       </div>
                       <div
@@ -457,7 +486,11 @@
                         class="agent-created-model"
                       >模型：{{ createdModelText(msg) }}</div>
                       <div class="agent-created-title">
-                        {{ createdPayload(msg)?.title || createdPayload(msg)?.prompt || '任务已创建' }}
+                        {{
+                          createdPayload(msg)?.title ||
+                          createdPayload(msg)?.prompt ||
+                          (createdPayload(msg)?.type === 'kb_note' ? '笔记已创建' : '任务已创建')
+                        }}
                       </div>
                       <a-button
                         v-if="createdPayload(msg)?.openPath"
@@ -465,7 +498,36 @@
                         size="small"
                         class="agent-created-link"
                         @click="goPath(createdPayload(msg)!.openPath!)"
-                      >前往任务页 →</a-button>
+                      >{{ createdPayload(msg)?.type === 'kb_note' ? '打开知识库 →' : '前往任务页 →' }}</a-button>
+                    </div>
+
+                    <!-- 知识库笔记列表 -->
+                    <div v-if="toolNoteItems(msg).length" class="agent-task-list">
+                      <div
+                        v-for="(item, idx) in toolNoteItems(msg)"
+                        :key="(item.id || '') + '-' + idx"
+                        class="agent-task-row"
+                      >
+                        <div class="agent-task-left">
+                          <a-tag color="green">笔记</a-tag>
+                          <span class="agent-task-name">{{ item.title || item.id }}</span>
+                        </div>
+                        <div class="agent-task-right">
+                          <a
+                            v-if="item.openPath"
+                            class="agent-task-link"
+                            href="javascript:;"
+                            @click="goPath(item.openPath)"
+                          >打开</a>
+                        </div>
+                      </div>
+                      <div
+                        v-if="toolNoteItems(msg)[0]?.snippet"
+                        class="agent-card-sub muted"
+                        style="padding: 0 4px 6px"
+                      >
+                        {{ toolNoteItems(msg)[0].snippet }}
+                      </div>
                     </div>
 
                     <!-- 任务列表 -->
@@ -543,6 +605,17 @@
                     <CheckOutlined v-if="copiedId === msg.id" />
                     <CopyOutlined v-else />
                     <span class="msg-copy-label">{{ copiedId === msg.id ? '已复制' : '复制' }}</span>
+                  </button>
+                  <button
+                    v-if="msg.content && canSaveToKb(msg)"
+                    type="button"
+                    class="msg-copy-btn"
+                    title="存为知识库笔记"
+                    :disabled="savingNoteId === msg.id"
+                    @click="saveMessageToKb(msg)"
+                  >
+                    <BookOutlined />
+                    <span class="msg-copy-label">{{ savingNoteId === msg.id ? '保存中…' : '存笔记' }}</span>
                   </button>
                   <button
                     v-if="canEditUser(msg)"
@@ -644,6 +717,7 @@ import {
   SendOutlined,
   CopyOutlined,
   CheckOutlined,
+  BookOutlined,
   SettingOutlined,
   ExperimentOutlined,
   EditOutlined,
@@ -657,6 +731,7 @@ import { message } from 'ant-design-vue'
 import { chatApi } from '@/api/chat.api'
 import { videoApi } from '@/api/video.api'
 import { imggenApi } from '@/api/imggen.api'
+import { kbApi } from '@/api/kb.api'
 import { useAuthStore } from '@/stores/auth.store'
 import ModelManageModal from '@/views/video-extract/ModelManageModal.vue'
 import EmptyState from '@/components/EmptyState.vue'
@@ -858,6 +933,7 @@ const agentPrompts = [
   { icon: '🎨', text: '帮我生成一张赛博朋克风格的猫' },
   { icon: '🎬', text: '做一个15秒的科技感短视频，主题是人工智能' },
   { icon: '🔗', text: '帮我提取这个视频的内容（请附上链接）' },
+  { icon: '📓', text: '在我的知识库里搜一下关于 LangChain 的笔记' },
   { icon: '🧩', text: '当前有哪些可用的 Chat 模型？' }
 ]
 
@@ -868,6 +944,51 @@ function toolListItems(msg: UiChatMessage): AgentTaskSummary[] {
   if (!ui || ui.type !== 'task_list') return []
   const items = ui.payload?.items
   return Array.isArray(items) ? items : []
+}
+
+function toolNoteItems(msg: UiChatMessage): Array<{
+  id?: string
+  title?: string
+  snippet?: string
+  openPath?: string
+}> {
+  const ui = msg.toolResult?.ui
+  // note_created 由 isCreatedCard 展示，这里只渲染搜索列表
+  if (!ui || ui.type !== 'note_list') return []
+  const items = ui.payload?.items
+  return Array.isArray(items) ? items : []
+}
+
+const savingNoteId = ref<string | number | null>(null)
+
+function canSaveToKb(msg: UiChatMessage): boolean {
+  if (!msg.content || !String(msg.content).trim()) return false
+  // 工具卡本身已有结构化结果时仍允许存正文
+  return msg.role === 'assistant' || msg.role === 'user'
+}
+
+async function saveMessageToKb(msg: UiChatMessage) {
+  const raw = (msg.content || '').trim()
+  if (!raw) return
+  savingNoteId.value = msg.id
+  try {
+    // 去掉可能的 AGENT 标记块
+    const content = raw
+      .replace(/\n*\[\[AGENT_[\s\S]*?\[\[\/AGENT_[\s\S]*?\]\]/g, '')
+      .trim()
+    const firstLine = content.split('\n').find((l) => l.trim()) || '对话摘录'
+    const title = firstLine.replace(/^#+\s*/, '').slice(0, 80)
+    await kbApi.createNote({
+      title: title || '对话摘录',
+      content,
+      contentFormat: 'markdown'
+    })
+    message.success('已存入知识库')
+  } catch (e: any) {
+    message.error(e?.response?.data?.message || e?.message || '存入知识库失败')
+  } finally {
+    savingNoteId.value = null
+  }
 }
 
 function toolSingleTask(msg: UiChatMessage): AgentTaskSummary | null {
@@ -901,7 +1022,12 @@ function isConfirmCard(msg: UiChatMessage): boolean {
   if (!msg.toolResult) return false
   const t = msg.toolResult.ui?.type
   // 仅「待确认」为确认卡；已拒绝/已失效走结果态，不展示操作按钮
-  if (t === 'confirm_rejected' || t === 'confirm_expired' || t === 'task_created') {
+  if (
+    t === 'confirm_rejected' ||
+    t === 'confirm_expired' ||
+    t === 'task_created' ||
+    t === 'note_created'
+  ) {
     return false
   }
   if (t === 'confirm') return true
@@ -910,7 +1036,8 @@ function isConfirmCard(msg: UiChatMessage): boolean {
 }
 
 function isCreatedCard(msg: UiChatMessage): boolean {
-  return msg.toolResult?.ui?.type === 'task_created'
+  const t = msg.toolResult?.ui?.type
+  return t === 'task_created' || t === 'note_created'
 }
 
 function confirmIdOf(msg: UiChatMessage): string {
@@ -1131,6 +1258,7 @@ async function loadAgentTaskModels() {
 function createdPayload(msg: UiChatMessage): {
   type?: string
   taskId?: string
+  noteId?: string
   status?: string
   title?: string
   prompt?: string
@@ -1213,6 +1341,8 @@ function humanToolName(tool?: string): string {
     draft_imggen: '文生图',
     draft_aigen: 'AI 视频生成',
     draft_video_extract: '视频提取',
+    draft_create_note: '创建知识库笔记',
+    search_notes: '搜索知识库',
     list_my_tasks: '查询任务',
     get_task: '任务详情',
     list_chat_models: 'Chat 模型'
@@ -1231,6 +1361,10 @@ function humanArgKey(key: string): string {
     type: '类型',
     limit: '条数',
     taskId: '任务ID',
+    keyword: '关键词',
+    title: '标题',
+    content: '正文',
+    contentFormat: '格式',
     imageModel: '生图模型',
     imageProvider: '生图供应商',
     llmModel: 'LLM 模型',
@@ -1246,7 +1380,8 @@ function typeLabel(type?: string): string {
     imggen: '文生图',
     aigen: '视频生成',
     video: '视频提取',
-    image: '文生图'
+    image: '文生图',
+    kb_note: '知识库笔记'
   }
   return (type && map[type]) || type || '-'
 }

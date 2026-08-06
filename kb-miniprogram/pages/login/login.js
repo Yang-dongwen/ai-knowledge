@@ -1,6 +1,7 @@
 const { api } = require('../../utils/request')
-const { setSession, isLoggedIn } = require('../../utils/auth')
+const { setSession, isLoggedIn, consumeLoginReturnUrl } = require('../../utils/auth')
 const { getWxLoginCode, isWxMockLogin } = require('../../utils/config')
+const { safeReturnUrl } = require('../../utils/sanitizeHtml')
 
 Page({
   data: {
@@ -33,7 +34,23 @@ Page({
     setSession(data.token, data.user)
     wx.showToast({ title: '登录成功', icon: 'success' })
     setTimeout(() => {
-      wx.switchTab({ url: '/pages/notes/notes' })
+      const ret = safeReturnUrl(consumeLoginReturnUrl(), '/pages/notes/notes')
+      // tabBar 页必须 switchTab
+      if (
+        ret.indexOf('/pages/notes/notes') === 0
+        || ret.indexOf('/pages/edit/edit') === 0
+        || ret.indexOf('/pages/me/me') === 0
+      ) {
+        const tab = ret.split('?')[0]
+        wx.switchTab({ url: tab })
+      } else {
+        wx.redirectTo({
+          url: ret,
+          fail() {
+            wx.switchTab({ url: '/pages/notes/notes' })
+          }
+        })
+      }
     }, 300)
   },
 

@@ -45,3 +45,5 @@
 - [ ] SSH 仅自己 IP（或受控范围）
 - [ ] 验收后 `AUTH_ADMIN_SEED_ENABLED=false`
 - [ ] `STORAGE_ENV_PREFIX=ec2`（勿用 `dev`）
+- [ ] PC OAuth：`AUTH_OAUTH_MOCK=false`；Google/GitHub 回调 URI 与 `AUTH_OAUTH_CALLBACK_BASE_URL` 一致
+- [ ] 启用时填 `AUTH_OAUTH_GOOGLE_*` / `AUTH_OAUTH_GITHUB_*` 并在登录页验收

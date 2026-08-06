@@ -104,7 +104,7 @@ async function onSubmit() {
       nickname: form.nickname?.trim() || undefined
     })
     message.success('注册成功')
-    router.replace('/video-extract')
+    router.replace('/home')
   } catch {
     // handled
   } finally {

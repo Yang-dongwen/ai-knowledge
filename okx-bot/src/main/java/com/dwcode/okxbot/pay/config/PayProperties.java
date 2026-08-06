@@ -24,8 +24,8 @@ public class PayProperties {
     private int fulfillPendingGraceSeconds = 30;
     private String memberExpireCron = "0 5 * * * ?";
 
-    /** 开发 Mock 通道；生产 profile 下应为 false */
-    private boolean mockEnabled = true;
+    /** 开发 Mock 通道；仅 local 等开发 profile 应开启，生产/ec2 必须 false */
+    private boolean mockEnabled = false;
 
     private boolean trustXForwardedFor = false;
 

@@ -269,8 +269,10 @@ public class ChatAgentOrchestrator {
                 2. 用户要「画图/出图/生成图片」→ draft_imggen（prompt 必填）。
                 3. 用户要「生成视频/做短片」→ draft_aigen（prompt 必填）。
                 4. 用户给了视频链接要「提取/转录/总结」→ draft_video_extract（url 必填）。
-                5. draft_* 只会生成待确认草案，不会立刻执行；仍应选择对应 draft 工具。
-                6. 禁止编造任务数据；不确定就 tool=null 并提问。
+                5. 用户要「搜笔记/知识库里有没有/查我记过的」→ search_notes（keyword 必填）。
+                6. 用户要「记到知识库/存成笔记/写笔记」→ draft_create_note（content 必填，title 可选）。
+                7. draft_* 只会生成待确认草案，不会立刻执行；仍应选择对应 draft 工具。
+                8. 禁止编造任务/笔记数据；不确定就 tool=null 并提问。
                 """.formatted(toolRegistry.describeForPrompt()).stripIndent().trim();
     }
 

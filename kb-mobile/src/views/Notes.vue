@@ -68,7 +68,11 @@
 
     <p class="meta muted">{{ filterLabel }} · {{ total }} 条</p>
 
-    <div v-if="loading && !notes.length" class="empty">加载中…</div>
+    <div v-if="loadError" class="empty error-box">
+      <p>{{ loadError }}</p>
+      <button class="btn btn-primary" type="button" @click="reload">重试</button>
+    </div>
+    <div v-else-if="loading && !notes.length" class="empty">加载中…</div>
     <div v-else-if="!notes.length" class="empty">
       <p>{{ trashMode ? '回收站为空' : '还没有笔记' }}</p>
       <button v-if="!trashMode" class="btn btn-primary" type="button" @click="goCreate">写一条</button>
@@ -133,6 +137,7 @@ const total = ref(0)
 const hasMore = ref(false)
 const loading = ref(false)
 const loadingMore = ref(false)
+const loadError = ref('')
 const trashMode = ref(false)
 const trashCount = ref(0)
 const emptying = ref(false)
@@ -216,9 +221,10 @@ async function loadMeta() {
 
 async function reload() {
   loading.value = true
+  loadError.value = ''
   page.value = 0
   openId.value = ''
-  await wrapAuth(async () => {
+  try {
     const data = await api.listNotes(listQuery(0))
     notes.value = data.items || []
     total.value = data.total || 0
@@ -228,8 +234,18 @@ async function reload() {
       const tc = await api.trashCount()
       trashCount.value = Number(tc?.count || 0)
     }
-  })
-  loading.value = false
+  } catch (e) {
+    if (e.code === 401) {
+      clearSession()
+      router.replace('/login')
+      return
+    }
+    loadError.value = e.message || '加载失败'
+    notes.value = []
+    total.value = 0
+  } finally {
+    loading.value = false
+  }
 }
 
 async function loadMore() {

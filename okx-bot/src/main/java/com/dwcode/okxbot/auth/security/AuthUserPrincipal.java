@@ -23,6 +23,7 @@ public class AuthUserPrincipal implements UserDetails {
     private final UserRole role;
     private final boolean enabled;
     private final boolean emailVerified;
+    private final int tokenVersion;
 
     public AuthUserPrincipal(SysUserEntity user) {
         this.id = user.getId();
@@ -32,6 +33,7 @@ public class AuthUserPrincipal implements UserDetails {
         this.role = UserRole.from(user.getRole());
         this.enabled = user.getStatus() != null && user.getStatus() == 1;
         this.emailVerified = user.getEmailVerified() != null && user.getEmailVerified() == 1;
+        this.tokenVersion = user.getTokenVersion() != null ? user.getTokenVersion() : 0;
     }
 
     @Override

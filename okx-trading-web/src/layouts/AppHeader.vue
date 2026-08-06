@@ -119,14 +119,6 @@
             <SyncOutlined />
           </button>
         </a-tooltip>
-        <a-tooltip title="通知">
-          <a-badge :count="0" :offset="[-2, 2]" class="desktop-only">
-            <button type="button" class="icon-btn">
-              <BellOutlined />
-            </button>
-          </a-badge>
-        </a-tooltip>
-
         <div class="user-card">
           <div class="user-main" title="查看个人资料" @click="openProfileCard">
             <a-avatar :size="32" class="user-avatar">{{ avatarLetter }}</a-avatar>
@@ -213,7 +205,7 @@ import {
   PictureOutlined,
   ToolOutlined,
   SyncOutlined,
-  BellOutlined,
+
   DownOutlined,
   MenuOutlined,
   TeamOutlined,

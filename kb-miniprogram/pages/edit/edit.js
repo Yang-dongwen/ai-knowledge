@@ -1,5 +1,5 @@
 const { api, stripMediaTokens, mdImageSyntax } = require('../../utils/request')
-const { isLoggedIn } = require('../../utils/auth')
+const { requireLoginOrRedirect } = require('../../utils/auth')
 const {
   extractTitle,
   emptyMarkdownDoc,
@@ -31,10 +31,7 @@ Page({
   },
 
   onShow() {
-    if (!isLoggedIn()) {
-      wx.reLaunch({ url: '/pages/login/login' })
-      return
-    }
+    if (!requireLoginOrRedirect()) return
     const draft = wx.getStorageSync('kb_edit_draft')
     if (draft && draft.id) {
       this.loadFromDraft(draft)
@@ -84,7 +81,11 @@ Page({
   },
 
   onHide() {
-    if (this.data.saving) return
+    // 保存成功后的跳转也会触发 onHide；勿把刚保存内容写回草稿，否则下次「快记」变成编辑旧笔记
+    if (this.data.saving || this._skipDraftOnce) {
+      this._skipDraftOnce = false
+      return
+    }
     wx.setStorageSync('kb_quick_draft', {
       id: this.data.id,
       format: this.data.format,
@@ -409,12 +410,17 @@ Page({
         this.setData({ pendingFileIds: [] })
       }
       wx.removeStorageSync('kb_quick_draft')
+      this._skipDraftOnce = true
       wx.showToast({ title: '已保存', icon: 'success' })
-      setTimeout(() => wx.switchTab({ url: '/pages/notes/notes' }), 400)
+      // 保持 saving=true 直到离开，防止 onHide 在 finally 后重写草稿
+      setTimeout(() => {
+        this.setData({ saving: false })
+        wx.switchTab({ url: '/pages/notes/notes' })
+      }, 400)
+      return
     } catch (e) {
       wx.showToast({ title: e.message || '保存失败', icon: 'none' })
-    } finally {
-      this.setData({ saving: false })
     }
+    this.setData({ saving: false })
   }
 })

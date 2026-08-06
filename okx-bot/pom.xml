@@ -22,6 +22,8 @@
         <mybatis-plus.version>3.5.6</mybatis-plus.version>
         <hutool.version>5.8.26</hutool.version>
         <jjwt.version>0.12.5</jjwt.version>
+        <!-- JustAuth：Google / GitHub 等第三方登录 -->
+        <justauth.version>1.16.7</justauth.version>
         <!-- 支付宝开放平台 SDK（直连；无密钥时 channel 关闭不调用） -->
         <alipay-sdk.version>4.39.218.ALL</alipay-sdk.version>
         <!-- LangChain4j：三工具 Chat 统一出站（Phase A） -->
@@ -66,6 +68,13 @@
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-mail</artifactId>
+        </dependency>
+
+        <!-- JustAuth OAuth（Google / GitHub PC 登录） -->
+        <dependency>
+            <groupId>me.zhyd.oauth</groupId>
+            <artifactId>JustAuth</artifactId>
+            <version>${justauth.version}</version>
         </dependency>
 
         <!-- JWT -->

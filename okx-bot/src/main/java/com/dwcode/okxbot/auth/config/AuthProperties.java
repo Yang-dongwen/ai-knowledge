@@ -16,6 +16,12 @@ public class AuthProperties {
     private Admin admin = new Admin();
     /** 微信小程序登录 */
     private Wechat wechat = new Wechat();
+    /** PC 端 Google / GitHub OAuth */
+    private OAuth oauth = new OAuth();
+    /** 登录暴力破解限流 */
+    private LoginLimit loginLimit = new LoginLimit();
+    /** CORS 允许的前端 Origin；空则开发友好默认（localhost） */
+    private Cors cors = new Cors();
 
     @Data
     public static class Jwt {
@@ -24,6 +30,26 @@ public class AuthProperties {
         /** 访问令牌有效期（秒），默认 2 小时 */
         private long expireSeconds = 7200;
         private String issuer = "okx-bot";
+    }
+
+    @Data
+    public static class LoginLimit {
+        private boolean enabled = true;
+        /** 滑动窗口秒数 */
+        private int windowSeconds = 900;
+        /** 窗口内最大失败次数 */
+        private int maxFails = 8;
+        /** 触发后锁定秒数 */
+        private int lockSeconds = 600;
+    }
+
+    @Data
+    public static class Cors {
+        /**
+         * 允许的 Origin 列表。生产请显式配置；空列表时使用下方默认本地源。
+         * 支持精确 URL，如 https://dwcode.cloud
+         */
+        private java.util.List<String> allowedOrigins = new java.util.ArrayList<>();
     }
 
     @Data
@@ -98,13 +124,58 @@ public class AuthProperties {
         public static class Mini {
             /**
              * 是否启用真实 jscode2session。
-             * false 时进入 mock：code 本身（或 mock:xxx）作为 openid，便于本地/touristappid 联调。
+             * false 且 {@link #mock}=true 时才走 mock openid。
              */
             private boolean enabled = false;
+            /**
+             * 显式允许 mock（仅本地）。enabled=true 时永远不会 mock。
+             */
+            private boolean mock = true;
             /** 小程序 AppID */
             private String appId = "";
             /** 小程序 AppSecret */
             private String appSecret = "";
+        }
+    }
+
+    @Data
+    public static class OAuth {
+        /**
+         * true：不访问 Google/GitHub，authorize 直接签发 mock 用户 ticket（本地/CI）。
+         */
+        private boolean mock = false;
+        /** 前端 SPA 根地址，回调成功后 302 到 {frontend}/oauth/callback */
+        private String frontendBaseUrl = "http://localhost:3000";
+        /** 后端对外根地址，拼 JustAuth redirect_uri */
+        private String callbackBaseUrl = "http://localhost:8080";
+        /** one-time ticket / state 有效期（秒） */
+        private long ticketTtlSeconds = 60;
+        /**
+         * 登录成功后允许的前端路径白名单（前缀匹配）。
+         * 非空时强制校验；空列表时仅校验「相对路径且不以 // 开头」。
+         */
+        private java.util.List<String> allowedRedirectPaths = new java.util.ArrayList<>();
+        /**
+         * true：邮箱已存在时自动绑定 OAuth（不安全，默认关闭）。
+         * false：邮箱已注册则拒绝自动绑定，需用户先密码登录。
+         */
+        private boolean autoLinkByEmail = false;
+        /**
+         * 访问 GitHub/Google 的 HTTP 代理（本机 Clash 常见 127.0.0.1:7897）。
+         * Java 不会自动走系统/浏览器代理，本地连不上 api.github.com 时必须配置。
+         */
+        private String proxyHost = "";
+        private int proxyPort = 0;
+        /** HTTP 或 SOCKS */
+        private String proxyType = "HTTP";
+        private Provider google = new Provider();
+        private Provider github = new Provider();
+
+        @Data
+        public static class Provider {
+            private boolean enabled = false;
+            private String clientId = "";
+            private String clientSecret = "";
         }
     }
 }

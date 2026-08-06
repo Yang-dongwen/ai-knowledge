@@ -72,12 +72,18 @@ public class MemberStatusService {
         if (user.getMemberExpireAt() != null && user.getMemberExpireAt().isAfter(now)) {
             return;
         }
-        sysUserMapper.update(null, new LambdaUpdateWrapper<SysUserEntity>()
+        // 原子条件：必须仍过期，避免与支付履约 grant 竞态把刚续费用户打回 USER
+        int n = sysUserMapper.update(null, new LambdaUpdateWrapper<SysUserEntity>()
                 .eq(SysUserEntity::getId, userId)
                 .eq(SysUserEntity::getRole, UserRole.MEMBER.name())
+                .and(w -> w.isNull(SysUserEntity::getMemberExpireAt)
+                        .or()
+                        .le(SysUserEntity::getMemberExpireAt, now))
                 .set(SysUserEntity::getRole, UserRole.USER.name())
                 .set(SysUserEntity::getUpdatedAt, now));
-        log.info("会员已过期，降级为 USER: userId={}, expireAt={}", userId, user.getMemberExpireAt());
+        if (n > 0) {
+            log.info("会员已过期，降级为 USER: userId={}, expireAt={}", userId, user.getMemberExpireAt());
+        }
     }
 
     /**
@@ -99,12 +105,20 @@ public class MemberStatusService {
         return n;
     }
 
+    /**
+     * AI 等付费能力入口门闸。知识库等免费能力请勿调用。
+     * 文案固定便于前端匹配升级引导。
+     */
     public void requireActiveMember(Long userId) {
         demoteIfExpired(userId);
         SysUserEntity user = sysUserMapper.selectById(userId);
         if (!isActive(user)) {
-            throw new BusinessException(403, "需要有效会员");
+            throw new BusinessException(403, "需要有效会员才能使用此功能，请先开通会员");
         }
+    }
+
+    public void requireActiveMember() {
+        requireActiveMember(com.dwcode.okxbot.auth.security.SecurityUtils.requireCurrentUserId());
     }
 
     /**

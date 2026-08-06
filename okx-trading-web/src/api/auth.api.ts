@@ -61,5 +61,23 @@ export const authApi = {
   },
   logout() {
     return request.post('/auth/logout')
+  },
+  /** 已启用的 OAuth 提供方（google / github） */
+  listOAuthProviders() {
+    return request.get('/auth/oauth/providers') as Promise<{
+      data: { providers: string[]; mock: boolean }
+    }>
+  },
+  /** one-time ticket 换 JWT */
+  exchangeOAuthTicket(ticket: string) {
+    return request.post('/auth/oauth/exchange', { ticket }) as Promise<{ data: LoginResult }>
   }
+}
+
+/** 浏览器整页跳转用的后端 OAuth authorize URL（不走 axios base，需绝对路径） */
+export function oauthAuthorizeUrl(provider: string, redirect?: string): string {
+  const q = new URLSearchParams()
+  if (redirect) q.set('redirect', redirect)
+  const qs = q.toString()
+  return `/api/auth/oauth/${encodeURIComponent(provider)}/authorize${qs ? `?${qs}` : ''}`
 }

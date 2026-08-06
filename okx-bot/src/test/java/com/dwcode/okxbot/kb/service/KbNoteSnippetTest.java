@@ -40,4 +40,19 @@ class KbNoteSnippetTest {
         assertTrue(ids.contains(1234567890123456789L));
         assertTrue(ids.contains(99L));
     }
+
+    @Test
+    void toPlainText_stripsHtml() {
+        String plain = KbNoteService.toPlainText("<p>你好<strong>世界</strong></p>", "html");
+        assertTrue(plain.contains("你好"));
+        assertTrue(plain.contains("世界"));
+        assertTrue(!plain.contains("<"));
+    }
+
+    @Test
+    void buildMatchSnippet_fromBody() {
+        String body = "前文若干字 " + "x".repeat(20) + " 关键词命中 " + "y".repeat(20) + " 后文";
+        String match = KbNoteService.buildMatchSnippet("无关标题", body, null, "关键词", 10);
+        assertTrue(match != null && match.contains("关键词"));
+    }
 }

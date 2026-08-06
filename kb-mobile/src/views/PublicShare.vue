@@ -33,6 +33,7 @@ import { computed, onMounted, ref } from 'vue'
 import { useRoute } from 'vue-router'
 import { api } from '../api'
 import { renderNoteContent } from '../markdown'
+import { sanitizeHtml } from '../utils/sanitizeHtml'
 
 const route = useRoute()
 const loading = ref(true)
@@ -46,6 +47,19 @@ const dateText = computed(() => {
   return String(t).replace('T', ' ').slice(0, 16)
 })
 
+/** 与 PC 一致：兜底改写私有媒体为公开路径（后端已改写时幂等） */
+function ensurePublicMediaUrls(html, token) {
+  if (!html || !token) return html || ''
+  const pub = `/api/v1/kb/public/s/${token}/files/$1/content`
+  let s = html
+  s = s.replace(
+    /https?:\/\/[^/"'\s)]+\/api\/v1\/kb\/files\/(\d+)\/content(?:\?[^"'\s)]*)?/gi,
+    pub
+  )
+  s = s.replace(/\/api\/v1\/kb\/files\/(\d+)\/content(?:\?[^"'\s)]*)?/gi, pub)
+  return s
+}
+
 onMounted(async () => {
   const token = route.params.token
   if (!token) {
@@ -56,7 +70,10 @@ onMounted(async () => {
   try {
     const data = await api.fetchPublicNote(token)
     note.value = data
-    bodyHtml.value = renderNoteContent(data.content || '', data.contentFormat || 'html')
+    // 与后端/PC 对齐：未声明时按 markdown 处理（HTML 笔记会显式 contentFormat=html）
+    const fmt = data.contentFormat || 'markdown'
+    const raw = renderNoteContent(data.content || '', fmt)
+    bodyHtml.value = sanitizeHtml(ensurePublicMediaUrls(raw, token))
   } catch (e) {
     error.value = e.message || '分享不存在或已关闭'
   } finally {

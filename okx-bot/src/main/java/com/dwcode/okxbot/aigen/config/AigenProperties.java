@@ -14,6 +14,8 @@ public class AigenProperties {
 
     private String workDir = "./data/aigen";
     private int maxConcurrentTasks = 1;
+    /** 单用户进行中 + 排队上限 */
+    private int maxConcurrentTasksPerUser = 1;
 
     /**
      * true：三步全部 mock（回归 Phase 0）。

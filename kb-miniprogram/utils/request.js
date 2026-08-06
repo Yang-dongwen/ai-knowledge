@@ -57,10 +57,24 @@ function uploadFile(filePath, noteId) {
       formData: noteId ? { noteId: String(noteId) } : {},
       header: token ? { Authorization: `Bearer ${token}` } : {},
       success(res) {
+        const status = res.statusCode
         try {
           const body = JSON.parse(res.data || '{}')
-          if (body.success) resolve(body.data)
-          else reject(new Error(body.message || '上传失败'))
+          if (status === 401) {
+            clearSession()
+            reject(new Error(body.message || '未登录或登录已过期'))
+            const pages = getCurrentPages()
+            const cur = pages[pages.length - 1]
+            if (!cur || cur.route !== 'pages/login/login') {
+              wx.reLaunch({ url: '/pages/login/login' })
+            }
+            return
+          }
+          if (status >= 200 && status < 300 && body.success) {
+            resolve(body.data)
+            return
+          }
+          reject(new Error(body.message || '上传失败'))
         } catch (e) {
           reject(new Error('上传响应解析失败'))
         }

@@ -22,10 +22,13 @@ public class PayConfigValidator {
 
     @EventListener(ApplicationReadyEvent.class)
     public void validate() {
-        boolean prod = Arrays.stream(environment.getActiveProfiles())
-                .anyMatch(p -> "prod".equalsIgnoreCase(p) || "production".equalsIgnoreCase(p));
-        if (prod && payProperties.isMockEnabled()) {
-            throw new IllegalStateException("生产环境禁止 pay.mock-enabled=true，请关闭 Mock 通道");
+        boolean prodLike = Arrays.stream(environment.getActiveProfiles())
+                .anyMatch(p -> "prod".equalsIgnoreCase(p)
+                        || "production".equalsIgnoreCase(p)
+                        || "ec2".equalsIgnoreCase(p));
+        if (prodLike && payProperties.isMockEnabled()) {
+            throw new IllegalStateException(
+                    "生产类环境（prod/production/ec2）禁止 pay.mock-enabled=true，请设置 PAY_MOCK_ENABLED=false");
         }
         if (payProperties.isMockEnabled()) {
             log.warn("pay.mock-enabled=true：可使用 POST /api/pay/mock/confirm 模拟支付（勿用于生产）");
@@ -36,12 +39,11 @@ public class PayConfigValidator {
                     && alipay.getPrivateKey() != null && !alipay.getPrivateKey().isBlank()
                     && alipay.getAlipayPublicKey() != null && !alipay.getAlipayPublicKey().isBlank();
             if (!keysOk) {
-                log.warn("pay.alipay.enabled=true 但密钥未配齐（app-id/private-key/alipay-public-key），"
-                        + "选择支付宝下单将失败；无资质请设 enabled=false");
-            } else {
-                log.info("支付宝通道已启用 appId={} serverUrl={}",
-                        alipay.getAppId(), alipay.getServerUrl());
+                throw new IllegalStateException(
+                        "pay.alipay.enabled=true 但密钥未配齐（app-id/private-key/alipay-public-key）");
             }
+            log.info("支付宝通道已启用 appId={} serverUrl={}",
+                    alipay.getAppId(), alipay.getServerUrl());
         } else {
             log.info("支付宝通道关闭（pay.alipay.enabled=false），代码已接入可随时配置密钥开启");
         }

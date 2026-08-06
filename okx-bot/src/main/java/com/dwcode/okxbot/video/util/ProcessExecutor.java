@@ -14,6 +14,9 @@ import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
+import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
 
 /**
@@ -29,6 +32,21 @@ public class ProcessExecutor {
     private static final boolean IS_WINDOWS =
             System.getProperty("os.name", "").toLowerCase(Locale.ROOT).contains("win");
 
+    /** taskId → 当前仍在跑的外部进程（暂停/取消时 destroy） */
+    private final Map<Long, Set<Process>> taskProcesses = new ConcurrentHashMap<>();
+    /** 当前线程绑定的任务（下载流水线内 ffmpeg 等嵌套调用） */
+    private final ThreadLocal<Long> boundTaskId = new ThreadLocal<>();
+
+    public void bindTask(Long taskId) {
+        if (taskId != null) {
+            boundTaskId.set(taskId);
+        }
+    }
+
+    public void clearTask() {
+        boundTaskId.remove();
+    }
+
     /**
      * 执行外部命令。
      *
@@ -37,21 +55,30 @@ public class ProcessExecutor {
      * @return 标准输出 + 标准错误合并文本
      */
     public String execute(List<String> command, int timeoutSeconds) {
+        return execute(boundTaskId.get(), command, timeoutSeconds);
+    }
+
+    /**
+     * 绑定任务 ID：暂停时可 {@link #destroyTaskProcesses(Long)} 强制结束。
+     */
+    public String execute(Long taskId, List<String> command, int timeoutSeconds) {
         if (command == null || command.isEmpty()) {
             throw new BusinessException("外部命令为空");
         }
+        Long effectiveTaskId = taskId != null ? taskId : boundTaskId.get();
 
         List<String> resolved = new ArrayList<>(command);
         String executable = resolveExecutable(resolved.get(0));
         resolved.set(0, executable);
 
-        log.info("执行外部命令: {}", String.join(" ", resolved));
+        log.info("执行外部命令: {}", redactCommandForLog(resolved));
         ProcessBuilder pb = new ProcessBuilder(resolved);
         pb.redirectErrorStream(true);
 
         Process process = null;
         try {
             process = pb.start();
+            registerProcess(effectiveTaskId, process);
             String output = readFully(process);
 
             boolean finished = process.waitFor(timeoutSeconds, TimeUnit.SECONDS);
@@ -81,7 +108,71 @@ public class ProcessExecutor {
                 process.destroyForcibly();
             }
             throw new BusinessException("外部命令被中断: " + executable);
+        } finally {
+            unregisterProcess(effectiveTaskId, process);
         }
+    }
+
+    /**
+     * 强制结束某任务关联的全部外部进程（暂停/取消）。
+     */
+    public void destroyTaskProcesses(Long taskId) {
+        if (taskId == null) {
+            return;
+        }
+        Set<Process> set = taskProcesses.remove(taskId);
+        if (set == null || set.isEmpty()) {
+            return;
+        }
+        int n = 0;
+        for (Process p : set) {
+            if (p != null && p.isAlive()) {
+                p.destroyForcibly();
+                n++;
+            }
+        }
+        log.info("已强制结束任务外部进程: taskId={} count={}", taskId, n);
+    }
+
+    private void registerProcess(Long taskId, Process process) {
+        if (taskId == null || process == null) {
+            return;
+        }
+        taskProcesses.computeIfAbsent(taskId, k -> ConcurrentHashMap.newKeySet()).add(process);
+    }
+
+    private void unregisterProcess(Long taskId, Process process) {
+        if (taskId == null || process == null) {
+            return;
+        }
+        Set<Process> set = taskProcesses.get(taskId);
+        if (set != null) {
+            set.remove(process);
+            if (set.isEmpty()) {
+                taskProcesses.remove(taskId, set);
+            }
+        }
+    }
+
+    /** 日志脱敏：去掉 query 中的 token 等 */
+    static String redactCommandForLog(List<String> cmd) {
+        if (cmd == null || cmd.isEmpty()) {
+            return "";
+        }
+        List<String> parts = new ArrayList<>(cmd.size());
+        for (String s : cmd) {
+            if (s == null) {
+                parts.add("");
+                continue;
+            }
+            String t = s.replaceAll("(?i)([?&](access_token|token|api_key|key)=)[^&\\s]+", "$1***");
+            if (t.length() > 200 && (t.startsWith("http://") || t.startsWith("https://"))) {
+                int q = t.indexOf('?');
+                t = q > 0 ? t.substring(0, q) + "?…" : t.substring(0, 200) + "…";
+            }
+            parts.add(t);
+        }
+        return String.join(" ", parts);
     }
 
     /**

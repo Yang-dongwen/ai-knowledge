@@ -1,4 +1,4 @@
-import request from './request'
+import request, { handleAuthFailure } from './request'
 import axios from 'axios'
 
 const TOKEN_KEY = 'okx_auth_token'
@@ -16,6 +16,8 @@ export interface KbNoteItem {
   content?: string
   contentFormat?: KbContentFormat
   snippet?: string
+  /** 搜索命中片段 */
+  matchSnippet?: string
   categoryId?: string | null
   categoryName?: string | null
   tags?: KbTagBrief[]
@@ -23,6 +25,17 @@ export interface KbNoteItem {
   deleted: boolean
   createdAt?: string
   updatedAt?: string
+}
+
+export interface KbNoteRevision {
+  id: string
+  noteId: string
+  title?: string
+  content?: string
+  contentFormat?: KbContentFormat
+  source?: string
+  snippet?: string
+  createdAt?: string
 }
 
 export interface KbNotePage {
@@ -217,6 +230,7 @@ export const kbApi = {
     includeDeleted?: boolean
     uncategorized?: boolean
     onlyDeleted?: boolean
+    onlyPinned?: boolean
   } = {}): Promise<{ data: KbNotePage }> {
     return request.get('/v1/kb/notes', {
       params: {
@@ -227,7 +241,8 @@ export const kbApi = {
         ...(params.keyword ? { keyword: params.keyword } : {}),
         ...(params.includeDeleted ? { includeDeleted: true } : {}),
         ...(params.uncategorized ? { uncategorized: true } : {}),
-        ...(params.onlyDeleted ? { onlyDeleted: true } : {})
+        ...(params.onlyDeleted ? { onlyDeleted: true } : {}),
+        ...(params.onlyPinned ? { onlyPinned: true } : {})
       }
     })
   },
@@ -393,17 +408,25 @@ export const kbApi = {
     fd.append('file', file)
     if (noteId) fd.append('noteId', noteId)
     const token = localStorage.getItem(TOKEN_KEY)
-    const res = await axios.post('/api/v1/kb/files', fd, {
-      headers: {
-        ...(token ? { Authorization: `Bearer ${token}` } : {})
-      },
-      timeout: 120000
-    })
-    const body = res.data
-    if (!body?.success) {
-      throw new Error(body?.message || '上传失败')
+    try {
+      const res = await axios.post('/api/v1/kb/files', fd, {
+        headers: {
+          ...(token ? { Authorization: `Bearer ${token}` } : {})
+        },
+        timeout: 120000
+      })
+      const body = res.data
+      if (!body?.success) {
+        throw new Error(body?.message || '上传失败')
+      }
+      return { data: body.data }
+    } catch (e: any) {
+      const status = e?.response?.status
+      if (status === 401) {
+        handleAuthFailure(401, e?.response?.data?.message)
+      }
+      throw e
     }
-    return { data: body.data }
   },
 
   listFiles(noteId: string): Promise<{ data: KbFileItem[] }> {
@@ -416,6 +439,54 @@ export const kbApi = {
 
   deleteFile(fileId: string): Promise<{ data: null }> {
     return request.delete(`/v1/kb/files/${fileId}`)
+  },
+
+  duplicateNote(id: string): Promise<{ data: KbNoteItem }> {
+    return request.post(`/v1/kb/notes/${id}/duplicate`)
+  },
+
+  listRevisions(noteId: string): Promise<{ data: KbNoteRevision[] }> {
+    return request.get(`/v1/kb/notes/${noteId}/revisions`)
+  },
+
+  getRevision(noteId: string, revisionId: string): Promise<{ data: KbNoteRevision }> {
+    return request.get(`/v1/kb/notes/${noteId}/revisions/${revisionId}`)
+  },
+
+  restoreRevision(noteId: string, revisionId: string): Promise<{ data: KbNoteItem }> {
+    return request.post(`/v1/kb/notes/${noteId}/revisions/${revisionId}/restore`)
+  },
+
+  /** 导出 Markdown 并触发浏览器下载 */
+  async exportNoteMarkdown(id: string, filenameHint?: string): Promise<void> {
+    const token = localStorage.getItem(TOKEN_KEY)
+    const res = await axios.get(`/api/v1/kb/notes/${id}/export`, {
+      params: { format: 'md' },
+      responseType: 'blob',
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+      timeout: 120000
+    })
+    if (res.status === 401) {
+      handleAuthFailure(401, '未登录或登录已过期')
+      throw new Error('未登录')
+    }
+    const blob = res.data as Blob
+    let name = filenameHint?.trim() || `note-${id}.md`
+    if (!name.toLowerCase().endsWith('.md')) name += '.md'
+    const cd = res.headers?.['content-disposition'] as string | undefined
+    if (cd) {
+      const m = /filename\*=UTF-8''([^;]+)|filename="?([^";]+)"?/i.exec(cd)
+      const raw = decodeURIComponent((m?.[1] || m?.[2] || '').trim())
+      if (raw) name = raw
+    }
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = name
+    document.body.appendChild(a)
+    a.click()
+    a.remove()
+    URL.revokeObjectURL(url)
   }
 }
 

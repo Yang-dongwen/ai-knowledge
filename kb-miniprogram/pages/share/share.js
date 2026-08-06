@@ -1,5 +1,6 @@
 const { api, absolutizeMediaInHtml } = require('../../utils/request')
 const { renderMarkdown, enhanceHtmlForRichText } = require('../../utils/markdown')
+const { sanitizeHtml } = require('../../utils/sanitizeHtml')
 
 function formatTime(t) {
   if (!t) return ''
@@ -30,9 +31,9 @@ Page({
       const note = await api.fetchPublicNote(token)
       let contentHtml = ''
       if (note.contentFormat === 'html') {
-        contentHtml = enhanceHtmlForRichText(absolutizeMediaInHtml(note.content || ''))
+        contentHtml = sanitizeHtml(enhanceHtmlForRichText(absolutizeMediaInHtml(note.content || '')))
       } else {
-        contentHtml = absolutizeMediaInHtml(renderMarkdown(note.content || ''))
+        contentHtml = sanitizeHtml(absolutizeMediaInHtml(renderMarkdown(note.content || '')))
       }
       this.setData({
         note: {

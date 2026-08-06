@@ -20,6 +20,7 @@ import com.dwcode.okxbot.auth.security.SecurityUtils;
 import com.dwcode.okxbot.chat.config.AiProperties;
 import com.dwcode.okxbot.common.ai.AiModelConfigService;
 import com.dwcode.okxbot.common.exception.BusinessException;
+import com.dwcode.okxbot.member.service.MemberStatusService;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -63,8 +64,10 @@ public class ArticleTaskService {
     private final AiModelConfigService aiModelConfigService;
     private final AiProperties aiProperties;
     private final ObjectMapper objectMapper;
+    private final MemberStatusService memberStatusService;
 
     public ArticleTaskResponse create(ArticleCreateRequest request) {
+        memberStatusService.requireActiveMember();
         if (!properties.isEnabled()) {
             throw new BusinessException(400, "文章提取功能未启用");
         }
@@ -249,6 +252,7 @@ public class ArticleTaskService {
     }
 
     public ArticleTaskResponse paste(Long taskId, ArticlePasteRequest request) {
+        memberStatusService.requireActiveMember();
         ArticleTaskEntity entity = requireOwnedTask(taskId);
         String status = entity.getStatus();
         if (!ArticleTaskStatus.NEEDS_PASTE.name().equals(status)) {
@@ -346,6 +350,7 @@ public class ArticleTaskService {
     }
 
     public ArticleTaskResponse retryTask(Long taskId, ArticleRetryRequest request) {
+        memberStatusService.requireActiveMember();
         ArticleTaskEntity entity = requireOwnedTask(taskId);
         String status = entity.getStatus() == null ? "" : entity.getStatus().trim().toUpperCase();
         if (ArticleTaskStatus.NEEDS_PASTE.name().equals(status)) {

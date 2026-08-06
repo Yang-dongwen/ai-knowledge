@@ -18,6 +18,8 @@ public class ImgGenProperties {
     private boolean enabled = true;
     private String workDir = "./data/imggen";
     private int maxConcurrentTasks = 2;
+    /** 单用户进行中 + 排队上限 */
+    private int maxConcurrentTasksPerUser = 2;
     private boolean mockPipeline = false;
     private long mockStepDelayMs = 400;
     private boolean cleanupOnDelete = true;
