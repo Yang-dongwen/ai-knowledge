@@ -174,9 +174,10 @@ public class VideoProcessService {
     }
 
     /**
-     * 测试指定模型是否可用。
+     * 测试指定模型是否可用（会真实调用供应商 API，仅 SUPER_ADMIN）。
      */
     public LlmModelTestResponse testLlmModel(LlmModelTestRequest request) {
+        SecurityUtils.requireSuperAdmin();
         return llmChatClient.testModel(request.getProvider().trim(), request.getModel().trim());
     }
 

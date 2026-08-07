@@ -36,6 +36,8 @@ spring:
 
 # 认证：密钥与管理员账号在 local / ec2
 auth:
+  # 仅在反向代理已剥离客户端伪造头时开启；默认 false 防 IP 伪造绕过限流
+  trust-x-forwarded-for: false
   jwt:
     expire-seconds: 7200
     issuer: okx-bot
@@ -57,6 +59,13 @@ auth:
     send-interval-seconds: 60
     max-verify-fails: 10
     verify-fail-window-minutes: 15
+    # 发送配额（内存滑动窗口，不依赖 Redis；多实例尽力而为）
+    send-quota-enabled: true
+    max-sends-per-ip-per-window: 20
+    ip-window-seconds: 3600
+    max-sends-global-per-window: 200
+    global-window-seconds: 3600
+
   admin:
     seed-enabled: true
     nickname: 超级管理员

@@ -170,13 +170,17 @@ public class KbShareService {
         InputStream raw = objectStorage.openStream(file.getObjectKey());
         java.io.BufferedInputStream in = new java.io.BufferedInputStream(raw);
         byte[] header = peekHeader(in, 32);
-        MediaType mediaType = KbMediaTypes.resolve(file, header);
+        MediaType resolved = KbMediaTypes.resolve(file, header);
+        // 与私有流一致：仅白名单类型 inline，活动内容强制 attachment + octet-stream
+        boolean inline = KbMediaTypes.isSafeInline(resolved);
+        MediaType mediaType = KbMediaTypes.responseMediaType(resolved);
         String safeName = file.getOriginalName() == null ? "file" : file.getOriginalName().replace("\"", "");
         String encoded = URLEncoder.encode(safeName, StandardCharsets.UTF_8).replace("+", "%20");
         long len = file.getSizeBytes() != null ? file.getSizeBytes() : -1;
         var builder = ResponseEntity.ok()
                 .header(HttpHeaders.CONTENT_DISPOSITION,
-                        "inline; filename=\"" + safeName + "\"; filename*=UTF-8''" + encoded)
+                        (inline ? "inline" : "attachment")
+                                + "; filename=\"" + safeName + "\"; filename*=UTF-8''" + encoded)
                 .header(HttpHeaders.CACHE_CONTROL, "public, max-age=300")
                 .header("X-Content-Type-Options", "nosniff")
                 .contentType(mediaType);

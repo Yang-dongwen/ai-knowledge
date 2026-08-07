@@ -36,8 +36,22 @@ import java.util.Set;
 @RequiredArgsConstructor
 public class KbFileService {
 
+    /** 可执行/脚本/可在浏览器内执行的活动内容，禁止上传 */
     private static final Set<String> BLOCKED_EXT = Set.of(
-            "exe", "bat", "cmd", "sh", "ps1", "js", "msi", "dll", "com", "scr", "vbs"
+            "exe", "bat", "cmd", "sh", "ps1", "js", "msi", "dll", "com", "scr", "vbs",
+            "html", "htm", "svg", "xhtml", "xml", "mhtml", "shtml", "xht"
+    );
+
+    /** 客户端声明的危险 MIME（同 origin 下可能被浏览器当文档执行） */
+    private static final Set<String> BLOCKED_MIME = Set.of(
+            "text/html",
+            "image/svg+xml",
+            "application/xhtml+xml",
+            "text/xml",
+            "application/xml",
+            "application/javascript",
+            "text/javascript",
+            "text/css"
     );
 
     private final KbFileMapper fileMapper;
@@ -72,6 +86,10 @@ public class KbFileService {
         String contentType = file.getContentType();
         if (!StringUtils.hasText(contentType)) {
             contentType = "application/octet-stream";
+        }
+        String mimeBase = baseMime(contentType);
+        if (BLOCKED_MIME.contains(mimeBase)) {
+            throw new BusinessException(400, "不允许上传该类型文件");
         }
         String kind = detectKind(ext, contentType);
         long size = file.getSize();
@@ -232,11 +250,13 @@ public class KbFileService {
             header = new byte[0];
         }
         // 魔数优先：nosniff 下扩展名/上传 MIME 与真实内容不一致会导致浏览器拒显
-        MediaType mediaType = KbMediaTypes.resolve(e, header);
+        MediaType resolved = KbMediaTypes.resolve(e, header);
+        // 仅栅格图/PDF/视频可 inline；其余强制 attachment + octet-stream，防 HTML/SVG XSS
+        boolean inline = !download && KbMediaTypes.isSafeInline(resolved);
+        MediaType mediaType = KbMediaTypes.responseMediaType(resolved);
         String safeName = e.getOriginalName() == null ? "file" : e.getOriginalName().replace("\"", "");
         String encoded = URLEncoder.encode(safeName, StandardCharsets.UTF_8).replace("+", "%20");
-        // 预览必须 inline，否则浏览器 PDF 插件 / iframe 会失败
-        String disposition = (download ? "attachment" : "inline")
+        String disposition = (inline ? "inline" : "attachment")
                 + "; filename=\"" + safeName + "\"; filename*=UTF-8''" + encoded;
 
         return ResponseEntity.ok()
@@ -280,9 +300,23 @@ public class KbFileService {
         }
     }
 
+    /** 去掉 charset 等参数，仅保留 type/subtype */
+    static String baseMime(String contentType) {
+        if (contentType == null) {
+            return "";
+        }
+        String ct = contentType.trim().toLowerCase(Locale.ROOT);
+        int semi = ct.indexOf(';');
+        if (semi >= 0) {
+            ct = ct.substring(0, semi).trim();
+        }
+        return ct;
+    }
+
     static String detectKind(String ext, String contentType) {
         String ct = contentType == null ? "" : contentType.toLowerCase(Locale.ROOT);
-        if (ct.startsWith("image/") || Set.of("jpg", "jpeg", "png", "gif", "webp", "bmp", "svg").contains(ext)) {
+        // svg 已在 BLOCKED_EXT 拒绝，不归类为 image
+        if (ct.startsWith("image/") || Set.of("jpg", "jpeg", "png", "gif", "webp", "bmp").contains(ext)) {
             return "image";
         }
         if (ct.startsWith("video/") || Set.of("mp4", "webm", "mov", "mkv").contains(ext)) {

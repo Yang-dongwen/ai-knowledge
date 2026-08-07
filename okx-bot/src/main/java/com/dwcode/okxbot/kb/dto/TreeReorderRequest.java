@@ -2,6 +2,7 @@ package com.dwcode.okxbot.kb.dto;
 
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotEmpty;
+import jakarta.validation.constraints.Size;
 import lombok.Data;
 
 import java.util.List;
@@ -25,5 +26,6 @@ public class TreeReorderRequest {
     private Boolean clearParent;
 
     @NotEmpty
+    @Size(max = 200, message = "单次重排不能超过200条")
     private List<Long> orderedIds;
 }

@@ -73,7 +73,7 @@ public class VideoProcessController {
     }
 
     /**
-     * 测试指定模型是否可调用（短请求，默认 10s 超时）。
+     * 测试指定模型是否可调用（短请求，默认 10s 超时；仅 SUPER_ADMIN，会真实消耗供应商额度）。
      */
     @PostMapping("/models/test")
     public ApiResult<LlmModelTestResponse> testModel(@Valid @RequestBody LlmModelTestRequest request) {
@@ -241,7 +241,7 @@ public class VideoProcessController {
     @PostMapping("/tasks/{taskId}/retry")
     public ApiResult<VideoTaskResponse> retryTask(
             @PathVariable Long taskId,
-            @RequestBody(required = false) VideoRetryRequest request) {
+            @Valid @RequestBody(required = false) VideoRetryRequest request) {
         log.info("重试视频任务: taskId={}, llm={}/{}",
                 taskId,
                 request != null ? request.getLlmProvider() : null,

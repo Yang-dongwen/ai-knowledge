@@ -3,9 +3,11 @@ package com.dwcode.okxbot.common.exception;
 import com.dwcode.okxbot.common.response.ApiResult;
 import jakarta.validation.ConstraintViolationException;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
+import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.validation.BindException;
 import org.springframework.web.HttpMediaTypeNotSupportedException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
@@ -65,6 +67,32 @@ public class GlobalExceptionHandler {
     public ApiResult<Void> handleConstraintViolationException(ConstraintViolationException e) {
         log.warn("约束校验失败: {}", e.getMessage());
         return ApiResult.fail(400, e.getMessage());
+    }
+
+    /**
+     * 请求体为空或 JSON 无法解析（如语法错误、类型不匹配）。
+     * 返回稳定文案，避免把 Jackson 堆栈细节暴露给客户端。
+     */
+    @ExceptionHandler(HttpMessageNotReadableException.class)
+    @ResponseStatus(HttpStatus.BAD_REQUEST)
+    public ApiResult<Void> handleHttpMessageNotReadable(HttpMessageNotReadableException e) {
+        log.warn("请求体无法读取: {}", e.getMostSpecificCause() != null
+                ? e.getMostSpecificCause().getMessage()
+                : e.getMessage());
+        return ApiResult.fail(400, "请求体为空或 JSON 格式无效");
+    }
+
+    /**
+     * 数据库唯一约束 / 外键等完整性冲突。
+     * 不向客户端泄露 SQL 或约束名细节。
+     */
+    @ExceptionHandler(DataIntegrityViolationException.class)
+    @ResponseStatus(HttpStatus.BAD_REQUEST)
+    public ApiResult<Void> handleDataIntegrityViolation(DataIntegrityViolationException e) {
+        log.warn("数据完整性约束冲突: {}", e.getMostSpecificCause() != null
+                ? e.getMostSpecificCause().getMessage()
+                : e.getMessage());
+        return ApiResult.fail(400, "数据冲突或违反完整性约束");
     }
 
     /**

@@ -2,6 +2,7 @@ package com.dwcode.okxbot.chat.dto;
 
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.Size;
 import lombok.Data;
 
 /**
@@ -18,6 +19,7 @@ public class EditResendRequest {
     private Long messageId;
 
     @NotBlank(message = "消息内容不能为空")
+    @Size(max = 32000, message = "消息内容最多 32000 字")
     private String message;
 
     private String provider;

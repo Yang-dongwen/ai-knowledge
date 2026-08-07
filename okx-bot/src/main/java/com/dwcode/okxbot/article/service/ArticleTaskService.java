@@ -137,7 +137,8 @@ public class ArticleTaskService {
         entity.setSupportLevel(platformInfo.getSupportLevel() != null
                 ? platformInfo.getSupportLevel().name() : ArticleSupportLevel.FULL.name());
         entity.setTitle(null);
-        entity.setLanguage(blankToNull(options.getLanguage()) != null ? options.getLanguage() : "zh");
+        String language = blankToNull(options.getLanguage());
+        entity.setLanguage(language != null ? language : "zh");
         entity.setInputMode(inputMode);
         entity.setPasteText(paste);
         entity.setForcePasteOnly(forcePaste ? 1 : 0);

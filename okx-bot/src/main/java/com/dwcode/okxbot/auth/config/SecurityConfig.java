@@ -80,9 +80,11 @@ public class SecurityConfig {
                         // 知识库公开分享阅读（无需登录）
                         .requestMatchers("/api/v1/kb/public/**").permitAll()
                         .requestMatchers("/error").permitAll()
-                        // 用户管理 / 模型配置 CRUD / 全局 yt-dlp Cookie：仅超级管理员
+                        // 用户管理 / 模型配置 CRUD / 模型连通性测试 / 全局 yt-dlp Cookie：仅超级管理员
                         .requestMatchers("/api/admin/**").hasRole("SUPER_ADMIN")
                         .requestMatchers("/api/v1/video/model-configs", "/api/v1/video/model-configs/**")
+                        .hasRole("SUPER_ADMIN")
+                        .requestMatchers(HttpMethod.POST, "/api/v1/video/models/test")
                         .hasRole("SUPER_ADMIN")
                         .requestMatchers("/api/v1/video/cookies", "/api/v1/video/cookies/**")
                         .hasRole("SUPER_ADMIN")

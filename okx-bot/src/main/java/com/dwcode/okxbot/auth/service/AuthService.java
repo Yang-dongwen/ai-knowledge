@@ -41,13 +41,16 @@ public class AuthService {
 
     public void sendRegisterCode(String email) {
         String normalized = EmailCodeService.normalizeEmail(email);
+        String clientIp = currentClientIp();
+        // 超限时与真实发信路径一致返回 429，避免跳过发信时被用于邮箱枚举
+        emailCodeService.assertSendQuota(clientIp);
         SysUserEntity exists = findByEmail(normalized);
         if (exists != null) {
             // 防邮箱枚举：与找回密码一致，不暴露是否已注册
             log.info("注册验证码：邮箱已注册，跳过发送: {}", normalized);
             return;
         }
-        emailCodeService.sendCode(normalized, EmailCodePurpose.REGISTER);
+        emailCodeService.sendCode(normalized, EmailCodePurpose.REGISTER, clientIp);
     }
 
     @Transactional
@@ -65,7 +68,12 @@ public class AuthService {
         if (nickname == null || nickname.isBlank()) {
             nickname = email.contains("@") ? email.substring(0, email.indexOf('@')) : email;
         }
-        user.setNickname(nickname.trim());
+        nickname = nickname.trim();
+        // 与 sys_user.nickname VARCHAR(64) / OAuth 路径一致，防御性截断
+        if (nickname.length() > 64) {
+            nickname = nickname.substring(0, 64);
+        }
+        user.setNickname(nickname);
         user.setTokenVersion(0);
         // 新注册默认普通用户；会员靠后续充值升级
         user.setRole(UserRole.USER.name());
@@ -112,13 +120,16 @@ public class AuthService {
 
     public void sendResetCode(String email) {
         String normalized = EmailCodeService.normalizeEmail(email);
+        String clientIp = currentClientIp();
+        // 超限时与真实发信路径一致返回 429，避免跳过发信时被用于邮箱枚举
+        emailCodeService.assertSendQuota(clientIp);
         SysUserEntity user = findByEmail(normalized);
         // 防枚举：用户不存在也假装已发送
         if (user == null) {
             log.info("找回密码：邮箱未注册，跳过发送: {}", normalized);
             return;
         }
-        emailCodeService.sendCode(normalized, EmailCodePurpose.RESET_PASSWORD);
+        emailCodeService.sendCode(normalized, EmailCodePurpose.RESET_PASSWORD, clientIp);
     }
 
     @Transactional
@@ -285,7 +296,12 @@ public class AuthService {
                 .build();
     }
 
-    private static String currentClientIp() {
+    /**
+     * 解析客户端 IP，供登录/发信限流使用。
+     * 默认不信任转发头；仅当 {@code auth.trust-x-forwarded-for=true} 时读取代理头。
+     * 信任时优先 X-Real-IP（代理常设为单值真实客户端），再取 X-Forwarded-For 最左端。
+     */
+    private String currentClientIp() {
         try {
             ServletRequestAttributes attrs =
                     (ServletRequestAttributes) RequestContextHolder.getRequestAttributes();
@@ -293,13 +309,16 @@ public class AuthService {
                 return "unknown";
             }
             HttpServletRequest req = attrs.getRequest();
-            String xff = req.getHeader("X-Forwarded-For");
-            if (StringUtils.hasText(xff)) {
-                return xff.split(",")[0].trim();
-            }
-            String real = req.getHeader("X-Real-IP");
-            if (StringUtils.hasText(real)) {
-                return real.trim();
+            if (authProperties.isTrustXForwardedFor()) {
+                // Prefer X-Real-IP over leftmost XFF when both present (single hop value).
+                String real = req.getHeader("X-Real-IP");
+                if (StringUtils.hasText(real)) {
+                    return real.trim();
+                }
+                String xff = req.getHeader("X-Forwarded-For");
+                if (StringUtils.hasText(xff)) {
+                    return xff.split(",")[0].trim();
+                }
             }
             return req.getRemoteAddr() != null ? req.getRemoteAddr() : "unknown";
         } catch (Exception e) {

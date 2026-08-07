@@ -1,5 +1,6 @@
 package com.dwcode.okxbot.imggen.dto;
 
+import jakarta.validation.constraints.Size;
 import lombok.Data;
 
 @Data
@@ -23,5 +24,7 @@ public class ImgGenCreateOptions {
     private String llmProvider;
     /** 润色用 Chat LLM 模型 ID */
     private String llmModel;
+
+    @Size(max = 1024, message = "negativePrompt 最长 1024 字符")
     private String negativePrompt;
 }

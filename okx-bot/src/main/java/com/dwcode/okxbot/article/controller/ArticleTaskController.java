@@ -45,7 +45,7 @@ public class ArticleTaskController {
     }
 
     @PostMapping("/tasks")
-    public ApiResult<ArticleTaskResponse> create(@RequestBody ArticleCreateRequest request) {
+    public ApiResult<ArticleTaskResponse> create(@Valid @RequestBody ArticleCreateRequest request) {
         log.info("创建 article 任务: hasUrl={} hasPaste={}",
                 request.getUrl() != null && !request.getUrl().isBlank(),
                 request.getPasteText() != null && !request.getPasteText().isBlank());

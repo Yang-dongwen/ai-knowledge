@@ -1,6 +1,7 @@
 package com.dwcode.okxbot.chat.dto;
 
 import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.Size;
 import lombok.Data;
 
 /**
@@ -10,6 +11,7 @@ import lombok.Data;
 public class ChatRequest {
 
     @NotBlank(message = "消息内容不能为空")
+    @Size(max = 32000, message = "消息内容最多 32000 字")
     private String message;
 
     /** 会话ID，新对话时可为空 */

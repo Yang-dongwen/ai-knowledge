@@ -11,6 +11,7 @@ public class RegisterRequest {
 
     @NotBlank(message = "邮箱不能为空")
     @Email(message = "邮箱格式不正确")
+    @Size(max = 128, message = "邮箱长度不能超过 128")
     private String email;
 
     @NotBlank(message = "密码不能为空")
@@ -22,5 +23,6 @@ public class RegisterRequest {
     @Size(min = 4, max = 8, message = "验证码格式不正确")
     private String code;
 
+    @Size(max = 64, message = "昵称长度不能超过 64")
     private String nickname;
 }

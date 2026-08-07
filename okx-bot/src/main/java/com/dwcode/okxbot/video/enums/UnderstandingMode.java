@@ -1,5 +1,7 @@
 package com.dwcode.okxbot.video.enums;
 
+import com.dwcode.okxbot.common.exception.BusinessException;
+
 import java.util.Locale;
 
 /**
@@ -34,6 +36,9 @@ public enum UnderstandingMode {
         return this == DOWNLOAD_ONLY;
     }
 
+    /**
+     * 解析理解模式。null/blank 默认 {@link #AUDIO_ONLY}；未知取值抛 400。
+     */
     public static UnderstandingMode from(String raw) {
         if (raw == null || raw.isBlank()) {
             return AUDIO_ONLY;
@@ -42,9 +47,9 @@ public enum UnderstandingMode {
         return switch (n) {
             case "download_only", "download", "video_only", "only_download" -> DOWNLOAD_ONLY;
             case "hybrid" -> HYBRID;
-            case "omni_only", "omni", "omni-only" -> OMNI_ONLY;
+            case "omni_only", "omni" -> OMNI_ONLY;
             case "audio_only", "audio", "asr" -> AUDIO_ONLY;
-            default -> AUDIO_ONLY;
+            default -> throw new BusinessException(400, "不支持的理解模式: " + raw.trim());
         };
     }
 

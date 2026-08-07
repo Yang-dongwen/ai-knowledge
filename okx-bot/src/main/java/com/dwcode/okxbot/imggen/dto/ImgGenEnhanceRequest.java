@@ -1,6 +1,7 @@
 package com.dwcode.okxbot.imggen.dto;
 
 import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.Size;
 import lombok.Data;
 
 /**
@@ -11,6 +12,7 @@ import lombok.Data;
 public class ImgGenEnhanceRequest {
 
     @NotBlank(message = "prompt 不能为空")
+    @Size(max = 4000, message = "prompt 最长 4000 字符")
     private String prompt;
 
     /** Chat 供应商 key（如 deepseek / openai） */

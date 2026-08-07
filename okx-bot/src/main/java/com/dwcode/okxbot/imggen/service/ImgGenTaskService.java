@@ -76,6 +76,9 @@ public class ImgGenTaskService {
         if (original.isEmpty()) {
             throw new BusinessException(400, "prompt 不能为空");
         }
+        if (original.length() > 4000) {
+            throw new BusinessException(400, "prompt 最长 4000 字符");
+        }
         if ("off".equalsIgnoreCase(properties.getSteps().getEnhance())) {
             throw new BusinessException(400, "润色步骤已关闭（imggen.steps.enhance=off）");
         }
@@ -150,9 +153,12 @@ public class ImgGenTaskService {
         if (countUserInFlight(userId) >= perUser) {
             throw new BusinessException(429, "并发文生图任务数已达上限（" + perUser + "），请等待完成后再提交");
         }
-        String prompt = request.getPrompt().trim();
+        String prompt = request.getPrompt() != null ? request.getPrompt().trim() : "";
         if (prompt.isEmpty()) {
             throw new BusinessException(400, "prompt 不能为空");
+        }
+        if (prompt.length() > 4000) {
+            throw new BusinessException(400, "prompt 最长 4000 字符");
         }
 
         ImgGenCreateOptions options = request.getOptions() != null
@@ -228,9 +234,13 @@ public class ImgGenTaskService {
             llmModel = llm.model;
         }
 
+        // 优先 options，再 request 顶层；blankToNull 仅 trim，长度在此拦截以免 VARCHAR(1024) 落库 500
         String negative = blankToNull(options.getNegativePrompt());
         if (negative == null) {
             negative = blankToNull(request.getNegativePrompt());
+        }
+        if (negative != null && negative.length() > 1024) {
+            throw new BusinessException(400, "negativePrompt 最长 1024 字符");
         }
 
         ImgGenTaskEntity entity = new ImgGenTaskEntity();

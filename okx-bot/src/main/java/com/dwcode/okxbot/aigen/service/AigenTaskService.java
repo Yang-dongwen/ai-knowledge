@@ -779,6 +779,7 @@ public class AigenTaskService {
      * 单镜重生图（可选润色）；默认完成后重渲染整片。
      */
     public AigenTaskResponse regenerateShot(Long taskId, String shotId, Boolean enhance, Boolean reRender) {
+        memberStatusService.requireActiveMember();
         AigenTaskEntity entity = requireOwnedTask(taskId);
         requireVisualTerminal(entity);
         ShotlistDto list = loadShotlist(entity);
@@ -818,10 +819,14 @@ public class AigenTaskService {
      * 上传用户图替换某镜主视觉。
      */
     public AigenShotSummary uploadShotImage(Long taskId, String shotId, MultipartFile file, Boolean reRender) {
+        memberStatusService.requireActiveMember();
         AigenTaskEntity entity = requireOwnedTask(taskId);
         requireVisualTerminal(entity);
         if (file == null || file.isEmpty()) {
             throw new BusinessException(400, "请上传图片文件");
+        }
+        if (file.getSize() > 15 * 1024 * 1024) {
+            throw new BusinessException(400, "图片不能超过 15MB");
         }
         String ct = file.getContentType() != null ? file.getContentType() : "";
         if (!ct.startsWith("image/") && !looksLikeImageName(file.getOriginalFilename())) {

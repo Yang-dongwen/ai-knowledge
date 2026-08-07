@@ -22,6 +22,11 @@ public class AuthProperties {
     private LoginLimit loginLimit = new LoginLimit();
     /** CORS 允许的前端 Origin；空则开发友好默认（localhost） */
     private Cors cors = new Cors();
+    /**
+     * 是否信任 X-Forwarded-For / X-Real-IP（仅反向代理已剥离不可信头时开启）。
+     * false 时限流等仅用 remoteAddr，防止客户端伪造 IP 绕过登录/发信配额。
+     */
+    private boolean trustXForwardedFor = false;
 
     @Data
     public static class Jwt {
@@ -105,6 +110,19 @@ public class AuthProperties {
         private int maxVerifyFails = 10;
         /** 失败计数窗口分钟 */
         private int verifyFailWindowMinutes = 15;
+        /**
+         * 是否启用 IP / 全局发送配额（内存滑动窗口；同邮箱间隔始终生效）。
+         * 多实例尽力而为，不依赖 Redis。
+         */
+        private boolean sendQuotaEnabled = true;
+        /** 同一 IP 滑动窗口内最大发送次数；≤0 表示不限制 */
+        private int maxSendsPerIpPerWindow = 20;
+        /** IP 配额滑动窗口秒数 */
+        private int ipWindowSeconds = 3600;
+        /** 全局滑动窗口内最大发送次数；≤0 表示不限制（可选） */
+        private int maxSendsGlobalPerWindow = 200;
+        /** 全局配额滑动窗口秒数 */
+        private int globalWindowSeconds = 3600;
     }
 
     @Data
