@@ -1,19 +1,21 @@
-# 一键部署：push main 或手动 Run workflow
+# 一键部署已暂停：不再在 push main 时自动部署
+# 需要发版时：GitHub Actions → Deploy EC2 → Run workflow（手动）
 # SSH → git pull → docker compose 重建
 # 业务密钥: 服务器 deploy/env/app.env
 
 name: Deploy EC2
 
 on:
-  push:
-    branches: [main]
-    paths-ignore:
-      - "**.md"
-      - "docs/**"
-      - "okx-bot/doc/**"
-      - ".grok/**"
-      - "deploy/docs/**"
-      - "deploy/README.md"
+  # push 自动部署已关闭（2026-08-08）
+  # push:
+  #   branches: [main]
+  #   paths-ignore:
+  #     - "**.md"
+  #     - "docs/**"
+  #     - "okx-bot/doc/**"
+  #     - ".grok/**"
+  #     - "deploy/docs/**"
+  #     - "deploy/README.md"
   workflow_dispatch:
     inputs:
       ref:
