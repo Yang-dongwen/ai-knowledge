@@ -2,7 +2,7 @@
 
 Issues and PRDs for this repo live as GitHub issues. Use the `gh` CLI for all operations.
 
-Repo: `Yang-dongwen/auto-exchange` (from `git remote origin`).
+Repo: `Yang-dongwen/ai-knowledge` (from `git remote origin`; 旧名 auto-exchange 已重命名).
 
 ## Conventions
 

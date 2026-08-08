@@ -50,3 +50,25 @@ pdf.dwcode.cloud {
 		header_up X-Real-IP {remote_host}
 	}
 }
+
+# show-standard SaaS（nginx 需 network connect 到 auto-exchange-lite_appnet，别名 show-nginx）
+show.dwcode.cloud {
+	encode gzip
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		X-Content-Type-Options "nosniff"
+		X-Frame-Options "SAMEORIGIN"
+		Referrer-Policy "strict-origin-when-cross-origin"
+		-Server
+	}
+	reverse_proxy show-nginx:80 {
+		flush_interval -1
+		transport http {
+			read_timeout 3600s
+			write_timeout 3600s
+		}
+		header_up X-Forwarded-Proto {scheme}
+		header_up X-Forwarded-Host {host}
+		header_up X-Real-IP {remote_host}
+	}
+}

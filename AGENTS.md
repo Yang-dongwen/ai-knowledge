@@ -6,7 +6,7 @@ Project guidance for coding agents working in **auto-exchange**.
 
 ### Issue tracker
 
-GitHub Issues on `Yang-dongwen/auto-exchange` via the `gh` CLI. See `docs/agents/issue-tracker.md`.
+GitHub Issues on `Yang-dongwen/ai-knowledge` via the `gh` CLI. See `docs/agents/issue-tracker.md`.
 
 ### Domain docs
 

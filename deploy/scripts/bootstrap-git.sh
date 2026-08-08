@@ -3,12 +3,13 @@
 #
 # 用法:
 #   bash deploy/scripts/bootstrap-git.sh
-#   REPO=git@github.com:Yang-dongwen/auto-exchange.git bash deploy/scripts/bootstrap-git.sh
+#   REPO=git@github.com:Yang-dongwen/ai-knowledge.git bash deploy/scripts/bootstrap-git.sh
 #
 set -euo pipefail
 
 APP_DIR="${APP_DIR:-$HOME/auto-exchange}"
-REPO="${REPO:-git@github.com:Yang-dongwen/auto-exchange.git}"
+# 仓库已从 auto-exchange 重命名为 ai-knowledge（旧名仍可 redirect，但 Deploy Key / clone 请用新名）
+REPO="${REPO:-git@github.com:Yang-dongwen/ai-knowledge.git}"
 BRANCH="${BRANCH:-main}"
 KEY_FILE="${KEY_FILE:-$HOME/.ssh/github_deploy}"
 ENV_REL="deploy/env/app.env"
