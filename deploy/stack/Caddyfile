@@ -51,6 +51,23 @@ pdf.dwcode.cloud {
 	}
 }
 
+# Git 操作指南（nginx 需在 auto-exchange-lite_appnet，别名 git-nginx）
+git.dwcode.cloud {
+	encode gzip
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		X-Content-Type-Options "nosniff"
+		X-Frame-Options "SAMEORIGIN"
+		Referrer-Policy "strict-origin-when-cross-origin"
+		-Server
+	}
+	reverse_proxy git-nginx:80 {
+		header_up X-Forwarded-Proto {scheme}
+		header_up X-Forwarded-Host {host}
+		header_up X-Real-IP {remote_host}
+	}
+}
+
 # show-standard SaaS（nginx 需 network connect 到 auto-exchange-lite_appnet，别名 show-nginx）
 show.dwcode.cloud {
 	encode gzip
