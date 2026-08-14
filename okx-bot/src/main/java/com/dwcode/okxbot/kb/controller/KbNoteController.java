@@ -6,6 +6,7 @@ import com.dwcode.okxbot.kb.dto.NotePageResponse;
 import com.dwcode.okxbot.kb.dto.NoteResponse;
 import com.dwcode.okxbot.kb.dto.NoteRevisionResponse;
 import com.dwcode.okxbot.kb.dto.NoteUpdateRequest;
+import com.dwcode.okxbot.kb.service.KbBlogPublishService;
 import com.dwcode.okxbot.kb.service.KbNoteService;
 import jakarta.servlet.http.HttpServletResponse;
 import jakarta.validation.Valid;
@@ -39,6 +40,7 @@ import java.util.Map;
 public class KbNoteController {
 
     private final KbNoteService noteService;
+    private final KbBlogPublishService blogPublishService;
 
     @GetMapping
     public ApiResult<NotePageResponse> list(
@@ -128,6 +130,12 @@ public class KbNoteController {
     @PostMapping("/{id}/duplicate")
     public ApiResult<NoteResponse> duplicate(@PathVariable Long id) {
         return ApiResult.ok(noteService.duplicate(id));
+    }
+
+    /** 发布或更新到 Halo 博客 */
+    @PostMapping("/{id}/publish-blog")
+    public ApiResult<NoteResponse> publishBlog(@PathVariable Long id) {
+        return ApiResult.ok(blogPublishService.publish(id));
     }
 
     /** 导出 Markdown 文件 */

@@ -25,9 +25,12 @@
 
 - **后端部署 / 外部工具 / 配置 / API / 排障** → 阅读 **[okx-bot/README.md](./okx-bot/README.md)**
 - **部署目录地图** → **[deploy/README.md](./deploy/README.md)**
+  - **本机运行（工具台 + 博客）** → [deploy/docs/local-run.md](./deploy/docs/local-run.md)
+  - **远程部署说明** → [deploy/docs/remote-deploy.md](./deploy/docs/remote-deploy.md)
   - 日常 CI / 同步密钥 → [deploy/docs/cicd.md](./deploy/docs/cicd.md)
   - 脚本说明 → [deploy/docs/scripts.md](./deploy/docs/scripts.md)
   - **自有域名 dwcode.cloud（国内推荐）** → [deploy/docs/domain-dwcode-cloud.md](./deploy/docs/domain-dwcode-cloud.md)
+  - Halo 博客细节 → [deploy/docs/halo-blog.md](./deploy/docs/halo-blog.md)
   - **Worker 反代（海外/备用）** → [deploy/docs/worker-proxy.md](./deploy/docs/worker-proxy.md)
   - **代码**：`git push` → Actions
   - **密钥**：`deploy/env/app.env`（**不提交**）→ `sync-env-local.ps1`
@@ -41,6 +44,7 @@
 | 服务 | 端口 |
 |------|------|
 | okx-bot | 8080 |
+| Halo 博客（`--profile blog`） | 内部 8090；对外 `blog.dwcode.cloud`（[文档](./deploy/docs/halo-blog.md)） |
 | whisper-service | 8000 |
 | aigen-remotion | 3100 |
 | okx-trading-web（dev） | 以 Vite 配置为准 |

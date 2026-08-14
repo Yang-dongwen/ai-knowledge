@@ -142,6 +142,14 @@ aigen:
 imggen:
   work-dir: ./data/imggen
 
+halo:
+  enabled: true
+  # 本机默认直连云端博客；与本地 okx_bot 库无关
+  base-url: {g(m, 'HALO_PUBLIC_BASE_URL') or 'https://blog.dwcode.cloud'}
+  token: "{g(m, 'HALO_PAT')}"
+  public-base-url: {g(m, 'HALO_PUBLIC_BASE_URL') or 'https://blog.dwcode.cloud'}
+  publish-on-create: true
+
 logging:
   level:
     root: INFO

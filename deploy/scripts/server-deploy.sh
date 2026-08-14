@@ -87,8 +87,15 @@ fi
 
 HOST_DATA_ROOT="${HOST_DATA_ROOT:-/data/auto-exchange}"
 echo "==> ensure $HOST_DATA_ROOT"
-sudo mkdir -p "$HOST_DATA_ROOT/logs" "$HOST_DATA_ROOT/data"
+sudo mkdir -p "$HOST_DATA_ROOT/logs" "$HOST_DATA_ROOT/data" "$HOST_DATA_ROOT/halo"
 sudo chmod -R a+rwX "$HOST_DATA_ROOT" 2>/dev/null || true
+
+BLOG_COMPOSE="${BLOG_COMPOSE:-deploy/stack/compose.blog.yml}"
+COMPOSE_ARGS=(-f "$COMPOSE_FILE")
+if [[ -f "$BLOG_COMPOSE" ]]; then
+  COMPOSE_ARGS+=(-f "$BLOG_COMPOSE" --profile blog)
+  echo "==> halo overlay $BLOG_COMPOSE --profile blog"
+fi
 
 # ---------- compose override：绝对路径 env_file（避免相对路径坑）----------
 OVERRIDE=$(mktemp /tmp/ae-env.override.XXXXXX.yml)
@@ -102,15 +109,15 @@ services:
 EOF
 echo "==> override env_file=$ENV_FILE"
 
-echo "==> docker compose -f $COMPOSE_FILE -f $OVERRIDE up -d --build"
+echo "==> docker compose ${COMPOSE_ARGS[*]} -f $OVERRIDE up -d --build"
 docker compose \
-  -f "$COMPOSE_FILE" \
+  "${COMPOSE_ARGS[@]}" \
   -f "$OVERRIDE" \
   --env-file "$ENV_FILE" \
   up -d --build
 
 echo "==> status"
-docker compose -f "$COMPOSE_FILE" -f "$OVERRIDE" --env-file "$ENV_FILE" ps
+docker compose "${COMPOSE_ARGS[@]}" -f "$OVERRIDE" --env-file "$ENV_FILE" ps
 for i in 1 2 3 4 5 6 7 8 9 10; do
   code=$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:8088/api/ 2>/dev/null || echo 000)
   if [[ "$code" == "401" || "$code" == "200" || "$code" == "403" ]]; then

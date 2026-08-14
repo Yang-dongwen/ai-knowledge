@@ -159,6 +159,23 @@
             <version>1.18.3</version>
         </dependency>
 
+        <!-- Markdown → HTML（发 Halo 时 content 必须是渲染后的 HTML） -->
+        <dependency>
+            <groupId>org.commonmark</groupId>
+            <artifactId>commonmark</artifactId>
+            <version>0.24.0</version>
+        </dependency>
+        <dependency>
+            <groupId>org.commonmark</groupId>
+            <artifactId>commonmark-ext-gfm-tables</artifactId>
+            <version>0.24.0</version>
+        </dependency>
+        <dependency>
+            <groupId>org.commonmark</groupId>
+            <artifactId>commonmark-ext-gfm-strikethrough</artifactId>
+            <version>0.24.0</version>
+        </dependency>
+
         <!-- 支付宝开放平台 Java SDK -->
         <dependency>
             <groupId>com.alipay.sdk</groupId>

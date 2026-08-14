@@ -23,6 +23,10 @@ export interface KbNoteItem {
   tags?: KbTagBrief[]
   pinned: boolean
   deleted: boolean
+  haloPostName?: string | null
+  haloPermalink?: string | null
+  haloPublishedAt?: string | null
+  unresolvedMedia?: boolean
   createdAt?: string
   updatedAt?: string
 }
@@ -267,6 +271,10 @@ export const kbApi = {
 
   restoreNote(id: string): Promise<{ data: KbNoteItem }> {
     return request.post(`/v1/kb/notes/${id}/restore`)
+  },
+
+  publishNoteToBlog(id: string): Promise<{ data: KbNoteItem }> {
+    return request.post(`/v1/kb/notes/${id}/publish-blog`, {}, { timeout: 60000 })
   },
 
   /** 永久删除（含 R2/本地附件对象） */

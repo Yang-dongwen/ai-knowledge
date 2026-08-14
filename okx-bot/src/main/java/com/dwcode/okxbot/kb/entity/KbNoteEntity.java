@@ -52,6 +52,12 @@ public class KbNoteEntity {
     private Integer shareEnabled;
     private LocalDateTime shareEnabledAt;
 
+    /** Halo 文章 metadata.name，可空 */
+    private String haloPostName;
+    /** 对外 permalink（完整 URL） */
+    private String haloPermalink;
+    private LocalDateTime haloPublishedAt;
+
     @TableField(fill = FieldFill.INSERT)
     private LocalDateTime createdAt;
 

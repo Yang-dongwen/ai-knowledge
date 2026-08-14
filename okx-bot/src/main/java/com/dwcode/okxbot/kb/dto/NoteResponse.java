@@ -40,6 +40,15 @@ public class NoteResponse {
 
     private boolean deleted;
 
+    private String haloPostName;
+
+    private String haloPermalink;
+
+    private LocalDateTime haloPublishedAt;
+
+    /** 正文含知识库私有附件路径，博客读者可能裂图 */
+    private Boolean unresolvedMedia;
+
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
 }

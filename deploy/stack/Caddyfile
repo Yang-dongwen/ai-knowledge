@@ -30,6 +30,29 @@ dwcode.cloud, www.dwcode.cloud {
 	}
 }
 
+# Halo 博客（compose.blog.yml --profile blog；未启动时仅本子域 502）
+blog.dwcode.cloud {
+	encode gzip
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		X-Content-Type-Options "nosniff"
+		X-Frame-Options "SAMEORIGIN"
+		Referrer-Policy "strict-origin-when-cross-origin"
+		-Server
+	}
+
+	reverse_proxy halo:8090 {
+		flush_interval -1
+		transport http {
+			read_timeout 3600s
+			write_timeout 3600s
+		}
+		header_up X-Forwarded-Proto {scheme}
+		header_up X-Forwarded-Host {host}
+		header_up X-Real-IP {remote_host}
+	}
+}
+
 # Stirling-PDF（容器名 stirling-pdf，需在 auto-exchange-lite_appnet 网络中）
 pdf.dwcode.cloud {
 	encode gzip

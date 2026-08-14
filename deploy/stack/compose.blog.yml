@@ -1,0 +1,45 @@
+# Halo 博客旁挂（可选 overlay）
+#
+# 默认不启动。生产 2G 小机请先确认内存再开。
+#
+#   docker compose -f deploy/stack/compose.lite.yml \
+#     -f deploy/stack/compose.blog.yml \
+#     --profile blog --env-file deploy/env/app.env up -d
+#
+# 说明与已做步骤：deploy/docs/halo-blog.md
+# 首次：RDS 建库 halo → POST /system/setup → PAT 写入 HALO_PAT → 重启 okx-bot
+
+name: auto-exchange-lite
+
+services:
+  halo:
+    image: halohub/halo:2.25
+    profiles:
+      - blog
+    restart: unless-stopped
+    environment:
+      JVM_OPTS: ${HALO_JVM_OPTS:--Xms128m -Xmx256m}
+      SPRING_R2DBC_URL: ${HALO_R2DBC_URL}
+      SPRING_R2DBC_USERNAME: ${HALO_DB_USERNAME:-${SPRING_DATASOURCE_USERNAME}}
+      SPRING_R2DBC_PASSWORD: ${HALO_DB_PASSWORD:-${SPRING_DATASOURCE_PASSWORD}}
+      SPRING_SQL_INIT_PLATFORM: mysql
+      HALO_EXTERNAL_URL: ${HALO_PUBLIC_BASE_URL:-https://blog.dwcode.cloud}
+      HALO_SECURITY_BASIC_AUTH_DISABLED: "false"
+      TZ: Asia/Shanghai
+    volumes:
+      - ${HOST_DATA_ROOT:-/data/auto-exchange}/halo:/root/.halo2
+    networks:
+      - appnet
+    expose:
+      - "8090"
+    deploy:
+      resources:
+        limits:
+          memory: 420M
+
+  okx-bot:
+    environment:
+      HALO_BASE_URL: http://halo:8090
+      HALO_PUBLIC_BASE_URL: ${HALO_PUBLIC_BASE_URL:-https://blog.dwcode.cloud}
+      HALO_PAT: ${HALO_PAT:-}
+      HALO_ENABLED: ${HALO_ENABLED:-true}

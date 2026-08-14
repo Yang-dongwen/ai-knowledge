@@ -121,6 +121,12 @@ aigen:
 imggen:
   work-dir: /app/data/imggen
 
+halo:
+  enabled: ${HALO_ENABLED:false}
+  base-url: ${HALO_BASE_URL:http://halo:8090}
+  token: ${HALO_PAT:}
+  public-base-url: ${HALO_PUBLIC_BASE_URL:https://blog.dwcode.cloud}
+
 article:
   safety:
     allow-loopback: false

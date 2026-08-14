@@ -22,12 +22,16 @@ deploy/
 | **`env/app.env.local.example`** | 本机 env 可选模板 | ✅ |
 | **`stack/compose.lite.yml`** | **当前生产**：web + okx-bot | ✅ |
 | **`stack/compose.full.yml`** | 全量：+ whisper + remotion | ✅ |
+| **`stack/compose.blog.yml`** | Halo 博客 overlay（`--profile blog`） | ✅ |
 | **`stack/Dockerfile.*`** | 镜像构建 | ✅ |
 | **`stack/nginx.conf`** | 前端反代 | ✅ |
 | **`scripts/*`** | 同步密钥 / 发版 / 本机启动 | ✅ |
 | **`docs/cicd.md`** | 日常发代码 + 同步密钥 | ✅ |
 | **`docs/scripts.md`** | 每个脚本详细说明 | ✅ |
 | **`docs/setup.md`** | 从零建 EC2/RDS（可选深读） | ✅ |
+| **`docs/local-run.md`** | **本机怎么跑（工具台 + 博客隧道/本地 Halo）** | ✅ |
+| **`docs/remote-deploy.md`** | **远程部署（容器关系、脚本、发版）** | ✅ |
+| **`docs/halo-blog.md`** | Halo 细节、服务器已做步骤、排障 | ✅ |
 | **`docs/worker-proxy.md`** | **Worker 反代固定域名（完整步骤）** | ✅ |
 | **`worker-proxy/`** | Cloudflare Worker 源码与 wrangler 配置 | ✅ |
 
@@ -45,6 +49,7 @@ Spring 业务配置**不在**本目录：
 | 方案 | 地址 | 国内直连 | 文档 |
 |------|------|----------|------|
 | **A. 自有域名 HTTPS（推荐）** | **https://dwcode.cloud** | ✅ | [docs/domain-dwcode-cloud.md](./docs/domain-dwcode-cloud.md) |
+| A2. Halo 博客 | **https://blog.dwcode.cloud** | 待 DNS | [docs/halo-blog.md](./docs/halo-blog.md) |
 | B. 备用 :8088 | http://dwcode.cloud:8088 | ✅ | — |
 | C. Worker 反代 | https://auto-exchange-proxy.dwcode.workers.dev | ❌ 常需代理 | [docs/worker-proxy.md](./docs/worker-proxy.md) |
 | D. Quick Tunnel | `*.trycloudflare.com` | ❌ | `scripts/quick-tunnel.sh` |

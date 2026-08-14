@@ -342,6 +342,14 @@ aigen:
     node-path: node
     startup-timeout-seconds: 180
 
+# Halo 旁挂博客（PAT 为空则发文接口返回 503）
+halo:
+  enabled: ${HALO_ENABLED:false}
+  base-url: ${HALO_BASE_URL:http://127.0.0.1:8090}
+  token: ${HALO_PAT:}
+  public-base-url: ${HALO_PUBLIC_BASE_URL:https://blog.dwcode.cloud}
+  publish-on-create: ${HALO_PUBLISH_ON_CREATE:true}
+
 # 文章/新闻提取
 article:
   enabled: true

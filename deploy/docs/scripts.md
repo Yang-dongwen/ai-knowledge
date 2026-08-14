@@ -21,6 +21,7 @@ CI 挂了    →  deploy-local.ps1
 | **`sync-env-local.ps1`** | scp `deploy/env/app.env` → EC2，默认重启 compose |
 | **`deploy-local.ps1`** | 打包代码 scp 到 EC2（不覆盖密钥），重建镜像 |
 | **`run-local.ps1`** | `SPRING_PROFILES_ACTIVE=local` + `mvn spring-boot:run` |
+| **`halo-tunnel.ps1`** | 本机 `8090` → 线上 Halo，发文联调（见 [halo-blog.md](./halo-blog.md) §10） |
 | **`gen_profile_yml.py`** | 从 `env/app.env` 生成 `application-local.yml` |
 
 ```powershell
@@ -41,7 +42,8 @@ powershell -ExecutionPolicy Bypass -File deploy/scripts/run-local.ps1
 | **`server-deploy.sh`** | 可选 git pull + compose build/up + 探活（CI 入口） |
 | **`up.sh`** | 仅 compose up（不 pull） |
 | **`bootstrap-git.sh`** | 一次性：Deploy Key + clone，保留密钥 |
-| **`init-rds.sh`** | 一次性：RDS 建库 + schema |
+| **`init-rds.sh`** | 一次性：RDS 建库（含 `halo`）+ 表由 Flyway |
+| **`bootstrap-halo.sh`** | 一次性：Halo `/system/setup` + 写 `HALO_PAT`（见 [halo-blog.md](./halo-blog.md)） |
 | **`quick-tunnel.sh`** | Cloudflare 快速隧道：免费 `*.trycloudflare.com`（Worker 源站依赖它） |
 | **`deploy-worker-proxy.ps1`** | 部署固定 `*.workers.dev` Worker 反代（详见 [worker-proxy.md](./worker-proxy.md)） |
 
@@ -68,8 +70,9 @@ bash deploy/scripts/init-rds.sh
 |----|------|
 | 密钥文件 | 仓库根下 `deploy/env/app.env` |
 | compose 注入 | `export APP_ENV_FILE=<绝对路径>`（`server-deploy` / `up` 已自动设置） |
-| 生产 compose | `deploy/stack/compose.lite.yml` |
-| Docker | `APP_ENV_FILE=... docker compose -f deploy/stack/compose.lite.yml --env-file deploy/env/app.env` |
+| 生产 compose | `deploy/stack/compose.lite.yml` + `compose.blog.yml --profile blog` |
+| Docker | `docker compose -f deploy/stack/compose.lite.yml -f deploy/stack/compose.blog.yml --profile blog --env-file deploy/env/app.env` |
+| Halo 说明 | [halo-blog.md](./halo-blog.md) |
 
 ---
 

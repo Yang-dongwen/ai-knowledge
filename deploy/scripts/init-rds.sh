@@ -12,6 +12,7 @@ ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 : "${DB_PASSWORD:?set DB_PASSWORD}"
 RDS_PORT="${RDS_PORT:-3306}"
 RDS_DATABASE="${RDS_DATABASE:-okx_bot}"
+HALO_DATABASE="${HALO_DATABASE:-halo}"
 
 if ! command -v mysql >/dev/null 2>&1; then
   echo "installing mysql client..."
@@ -27,6 +28,10 @@ timeout 5 bash -c "cat < /dev/null > /dev/tcp/${RDS_HOST}/${RDS_PORT}" \
 echo "==> CREATE DATABASE IF NOT EXISTS ${RDS_DATABASE}"
 mysql -h "$RDS_HOST" -P "$RDS_PORT" -u "$DB_USER" -p"$DB_PASSWORD" \
   -e "CREATE DATABASE IF NOT EXISTS \`${RDS_DATABASE}\` DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci;"
+
+echo "==> CREATE DATABASE IF NOT EXISTS ${HALO_DATABASE} (Halo sidecar)"
+mysql -h "$RDS_HOST" -P "$RDS_PORT" -u "$DB_USER" -p"$DB_PASSWORD" \
+  -e "CREATE DATABASE IF NOT EXISTS \`${HALO_DATABASE}\` DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci;"
 
 echo "==> current tables (may be empty; schema applied by Flyway on app start):"
 mysql -h "$RDS_HOST" -P "$RDS_PORT" -u "$DB_USER" -p"$DB_PASSWORD" "$RDS_DATABASE" -e "SHOW TABLES;" || true

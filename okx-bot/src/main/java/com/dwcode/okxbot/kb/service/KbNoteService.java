@@ -785,6 +785,9 @@ public class KbNoteService {
                 .tags(tagBriefs)
                 .pinned(Objects.equals(e.getIsPinned(), 1))
                 .deleted(Objects.equals(e.getIsDeleted(), 1))
+                .haloPostName(e.getHaloPostName())
+                .haloPermalink(e.getHaloPermalink())
+                .haloPublishedAt(e.getHaloPublishedAt())
                 .createdAt(e.getCreatedAt())
                 .updatedAt(e.getUpdatedAt())
                 .build();

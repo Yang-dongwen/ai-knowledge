@@ -20,6 +20,7 @@
 |------|------|
 | **https://dwcode.cloud** | **推荐主入口**（80/443 + HTTPS） |
 | https://www.dwcode.cloud | 同上 |
+| https://blog.dwcode.cloud | Halo 博客（容器已起，**待 DNS**，全文见 [halo-blog.md](./halo-blog.md)） |
 | http://dwcode.cloud:8088 | 备用直连（不经 Caddy） |
 | http://13.201.82.24:8088 | IP 备用 |
 | https://auto-exchange-proxy.dwcode.workers.dev | Worker 反代（海外/备用，国内常需代理） |
@@ -48,6 +49,18 @@ okx-bot :8080
 | `deploy/stack/Caddyfile` | 域名与反代规则 |
 | `deploy/stack/compose.lite.yml` | `caddy` 服务映射 80/443 |
 | `deploy/scripts/free-ports-for-web.sh` | 将原占用 80/443 的 xray 改端口 |
+| `deploy/stack/compose.blog.yml` | Halo 旁挂 overlay（`--profile blog`） |
+
+---
+
+## Halo 博客
+
+完整记录（决策、代码、服务器已做步骤、排障）：**[halo-blog.md](./halo-blog.md)**。
+
+- 容器已与工具台同机运行（`--profile blog`）。
+- 还差 DNSPod：`blog` A → `13.201.82.24`。
+- 后台账号 `admin`，密码在 `deploy/env/app.env` 的 `HALO_ADMIN_PASSWORD`。
+- 改页面：`/data/auto-exchange/halo/themes`，不必改本仓库发文代码。
 
 ---
 
@@ -73,6 +86,7 @@ okx-bot :8080
 |----------|------|--------|
 | `@` | A | `13.201.82.24` |
 | `www` | A | `13.201.82.24` |
+| `blog` | A | `13.201.82.24`（**待加**，Halo） |
 
 **不要**把域名开成 Cloudflare 橙云代理（国内可能再次打不开）。保持 DNSPod 直指 IP 即可。
 
@@ -129,5 +143,6 @@ docker logs auto-exchange-lite-caddy-1 --tail 50
 - [x] /api/ 401  
 - [x] PAY_PUBLIC_BASE_URL=https://dwcode.cloud  
 - [x] 8088 备用仍可用  
+- [ ] `blog.dwcode.cloud` DNS + 证书 + 发一篇验证（见 [halo-blog.md](./halo-blog.md)） 
 
 相关：[deploy/README.md](../README.md) · [worker-proxy.md](./worker-proxy.md)

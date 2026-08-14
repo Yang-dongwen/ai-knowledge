@@ -509,6 +509,9 @@
                 <template #overlay>
                   <a-menu @click="onDocMoreMenu">
                     <a-menu-item key="export">导出 Markdown</a-menu-item>
+                    <a-menu-item key="publish-blog">
+                      {{ editHaloPermalink ? '更新到博客' : '发布到博客' }}
+                    </a-menu-item>
                     <a-menu-item key="duplicate">复制文档</a-menu-item>
                     <a-menu-item key="revisions">版本历史</a-menu-item>
                     <a-menu-item key="convert">
@@ -548,6 +551,9 @@
                         分享
                       </a-menu-item>
                       <a-menu-item key="export">导出 Markdown</a-menu-item>
+                      <a-menu-item key="publish-blog">
+                        {{ editHaloPermalink ? '更新到博客' : '发布到博客' }}
+                      </a-menu-item>
                       <a-menu-item key="duplicate">复制文档</a-menu-item>
                       <a-menu-item key="revisions">版本历史</a-menu-item>
                       <a-menu-item key="convert">
@@ -1188,7 +1194,7 @@ function onMobileMoreMenu({ key }: { key: string }) {
     shareOpen.value = true
     return
   }
-  if (key === 'export' || key === 'duplicate' || key === 'revisions' || key === 'convert') {
+  if (key === 'export' || key === 'duplicate' || key === 'revisions' || key === 'convert' || key === 'publish-blog') {
     onDocMoreMenu({ key })
     return
   }
@@ -1200,6 +1206,10 @@ function onMobileMoreMenu({ key }: { key: string }) {
 function onDocMoreMenu({ key }: { key: string }) {
   if (key === 'export') {
     void exportCurrentNote()
+    return
+  }
+  if (key === 'publish-blog') {
+    void publishCurrentNoteToBlog()
     return
   }
   if (key === 'duplicate') {
@@ -1215,6 +1225,8 @@ function onDocMoreMenu({ key }: { key: string }) {
   }
 }
 const editTitle = ref('')
+const editHaloPermalink = ref('')
+const publishingBlog = ref(false)
 const editContent = ref('')
 /** Markdown 编辑区：标题与正文视觉分离（仍合并进 editContent 存库） */
 const mdTitleLine = ref('未命名笔记')
@@ -2454,6 +2466,54 @@ function clearListView() {
   void loadTree({ keepExpanded: true })
 }
 
+async function publishCurrentNoteToBlog() {
+  if (!selectedId.value || isCreating.value) {
+    message.warning('请先保存笔记再发布')
+    return
+  }
+  if (publishingBlog.value) return
+
+  const updating = !!editHaloPermalink.value
+  const title = (editTitle.value || '未命名笔记').trim()
+  Modal.confirm({
+    title: updating ? '更新到博客？' : '发布到博客？',
+    content: updating
+      ? `将把「${title}」的最新内容同步到云端博客（覆盖该文）。`
+      : `将把「${title}」发布到云端博客。笔记仍保存在本机/工具台知识库。`,
+    okText: updating ? '更新' : '发布',
+    cancelText: '取消',
+    async onOk() {
+      publishingBlog.value = true
+      try {
+        if (dirty.value) {
+          await saveNote(true)
+        }
+        if (!selectedId.value) {
+          message.warning('请先保存笔记再发布')
+          return
+        }
+        const res = await kbApi.publishNoteToBlog(selectedId.value)
+        const note = res.data
+        if (note?.haloPermalink) {
+          editHaloPermalink.value = note.haloPermalink
+        }
+        if (note?.unresolvedMedia) {
+          message.warning('已发布，但正文含知识库私有附件，博客读者可能看不到图')
+        } else {
+          message.success(updating ? '已同步到博客' : '已发布到博客')
+        }
+        if (note?.haloPermalink) {
+          window.open(note.haloPermalink, '_blank', 'noopener')
+        }
+      } catch (e: any) {
+        message.error(e?.message || '发布失败')
+      } finally {
+        publishingBlog.value = false
+      }
+    }
+  })
+}
+
 async function exportCurrentNote() {
   if (!selectedId.value || isCreating.value) return
   try {
@@ -2612,6 +2672,7 @@ async function selectNote(id: string) {
     editTagIds.value = (cachedList?.tags || []).map((t) => t.id)
     editPinned.value = !!(cachedList?.pinned ?? cachedTree?.pinned)
     editDeleted.value = !!cachedList?.deleted
+    editHaloPermalink.value = cachedList?.haloPermalink || ''
     editUpdatedAt.value = cachedList?.updatedAt || cachedTree?.updatedAt
     saveHint.value = '加载正文中…'
     dirty.value = false
@@ -2672,6 +2733,7 @@ function applyNote(n: KbNoteItem, seq = openSeq) {
   editTagIds.value = (n.tags || []).map((t) => t.id)
   editPinned.value = !!n.pinned
   editDeleted.value = !!n.deleted
+  editHaloPermalink.value = n.haloPermalink || ''
   editUpdatedAt.value = n.updatedAt
   saveHint.value = editFormat.value === 'html' && !n.deleted ? '编辑器准备中…' : ''
   dirty.value = false
@@ -2731,6 +2793,7 @@ async function createNote(format: KbContentFormat = 'html') {
   pendingFileIds.value = []
   contentLoading.value = false
   editTitle.value = '未命名笔记'
+  editHaloPermalink.value = ''
   if (format === 'html') {
     editContent.value = emptyHtmlDoc()
     mdTitleLine.value = '未命名笔记'

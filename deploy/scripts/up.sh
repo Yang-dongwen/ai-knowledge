@@ -31,6 +31,7 @@ if [[ ! -f "$COMPOSE_REL" ]]; then
 fi
 
 ENV_FILE="$ROOT/$ENV_REL"
+BLOG_COMPOSE="${BLOG_COMPOSE:-deploy/stack/compose.blog.yml}"
 OVERRIDE=$(mktemp /tmp/ae-env.override.XXXXXX.yml)
 trap 'rm -f "$OVERRIDE"' EXIT
 cat > "$OVERRIDE" <<EOF
@@ -40,8 +41,13 @@ services:
       - ${ENV_FILE}
 EOF
 
+COMPOSE_ARGS=(-f "$COMPOSE_REL")
+if [[ -f "$BLOG_COMPOSE" ]]; then
+  COMPOSE_ARGS+=(-f "$BLOG_COMPOSE" --profile blog)
+fi
+
 docker compose \
-  -f "$COMPOSE_REL" \
+  "${COMPOSE_ARGS[@]}" \
   -f "$OVERRIDE" \
   --env-file "$ENV_REL" \
   up -d --build "$@"

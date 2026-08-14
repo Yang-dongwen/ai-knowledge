@@ -686,6 +686,7 @@ Invoke-RestMethod -Uri "http://127.0.0.1:8080/api/v1/video/tasks?page=0&size=1" 
 | `Auth_登录架构与安全设计.md` | 认证安全 |
 | `会员充值与支付宝微信支付对接架构设计方案.md` | 会员支付架构 |
 | `LangChain4j_三工具切换架构设计.md` | Chat 出站引擎切换 |
+| [`Halo博客_知识库发文打通.md`](./doc/Halo博客_知识库发文打通.md) | 知识库发到旁挂 Halo（代码入口） |
 | `sql/*.sql` | 历史增量归档；新 DDL 写 `resources/db/migration/` |
 
 渲染侧：`aigen-remotion/README.md`。
