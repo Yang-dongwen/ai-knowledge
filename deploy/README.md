@@ -32,8 +32,7 @@ deploy/
 | **`docs/local-run.md`** | **本机怎么跑（工具台 + 博客隧道/本地 Halo）** | ✅ |
 | **`docs/remote-deploy.md`** | **远程部署（容器关系、脚本、发版）** | ✅ |
 | **`docs/halo-blog.md`** | Halo 细节、服务器已做步骤、排障 | ✅ |
-| **`docs/worker-proxy.md`** | **Worker 反代固定域名（完整步骤）** | ✅ |
-| **`worker-proxy/`** | Cloudflare Worker 源码与 wrangler 配置 | ✅ |
+| **`docs/domain-dwcode-cloud.md`** | 域名 / Caddy / 80·443 | ✅ |
 
 Spring 业务配置**不在**本目录：
 
@@ -49,10 +48,8 @@ Spring 业务配置**不在**本目录：
 | 方案 | 地址 | 国内直连 | 文档 |
 |------|------|----------|------|
 | **A. 自有域名 HTTPS（推荐）** | **https://dwcode.cloud** | ✅ | [docs/domain-dwcode-cloud.md](./docs/domain-dwcode-cloud.md) |
-| A2. Halo 博客 | **https://blog.dwcode.cloud** | 待 DNS | [docs/halo-blog.md](./docs/halo-blog.md) |
+| A2. Halo 博客 | **https://blog.dwcode.cloud** | ✅ | [docs/halo-blog.md](./docs/halo-blog.md) |
 | B. 备用 :8088 | http://dwcode.cloud:8088 | ✅ | — |
-| C. Worker 反代 | https://auto-exchange-proxy.dwcode.workers.dev | ❌ 常需代理 | [docs/worker-proxy.md](./docs/worker-proxy.md) |
-| D. Quick Tunnel | `*.trycloudflare.com` | ❌ | `scripts/quick-tunnel.sh` |
 
 Caddy 占用 **80/443**（自动 HTTPS）；xray SS 已改到 **18080/18443**；**8088** 仍作备用。
 

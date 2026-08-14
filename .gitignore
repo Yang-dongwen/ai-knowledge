@@ -2,6 +2,13 @@
 /desgin
 /first
 
+# 仅本机保留，不进 GitHub（前导 / = 只匹配仓库根）
+/kb-mobile/
+/docs/
+/.grok/
+/deploy/docs/worker-proxy.md
+/deploy/worker-proxy/
+
 # Python
 __pycache__/
 *.py[cod]

@@ -23,7 +23,6 @@
 | https://blog.dwcode.cloud | Halo 博客（容器已起，**待 DNS**，全文见 [halo-blog.md](./halo-blog.md)） |
 | http://dwcode.cloud:8088 | 备用直连（不经 Caddy） |
 | http://13.201.82.24:8088 | IP 备用 |
-| https://auto-exchange-proxy.dwcode.workers.dev | Worker 反代（海外/备用，国内常需代理） |
 
 ---
 
@@ -145,4 +144,4 @@ docker logs auto-exchange-lite-caddy-1 --tail 50
 - [x] 8088 备用仍可用  
 - [ ] `blog.dwcode.cloud` DNS + 证书 + 发一篇验证（见 [halo-blog.md](./halo-blog.md)） 
 
-相关：[deploy/README.md](../README.md) · [worker-proxy.md](./worker-proxy.md)
+相关：[deploy/README.md](../README.md)

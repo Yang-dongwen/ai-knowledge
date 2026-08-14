@@ -9,10 +9,8 @@
 | **[okx-bot](./okx-bot/)** | 主后端（Spring Boot 3 / Java 17）。认证、聊天、视频提取、AI 视频生成、文生图 | **[完整操作指南](./okx-bot/README.md)** · [详细设计 doc/](./okx-bot/doc/) |
 | **[aigen-remotion](./aigen-remotion/)** | Remotion 模板与 HTTP 渲染服务（默认 `:3100`，可由 okx-bot 托管） | [README](./aigen-remotion/README.md) |
 | **[okx-trading-web](./okx-trading-web/)** | Vue 3 前端（AI 工具台 + 知识库 PC 端） | 见该目录 `package.json` 脚本 |
-| **[kb-mobile](./kb-mobile/)** | 知识库移动端 H5（与小程序 M1/M2 能力对齐） | [README](./kb-mobile/README.md) |
-| **[kb-miniprogram](./kb-miniprogram/)** | 知识库微信小程序（M2：微信登录/文件夹/标签/分享） | [README](./kb-miniprogram/README.md) |
-| **[polymarket-ai-trader](./polymarket-ai-trader/)** | 独立 Python 交易脚本（与 okx-bot 无强耦合） | [docs/](./polymarket-ai-trader/docs/) |
-| [desgin/](./desgin/) · [first/](./first/) · [doc/](./doc/) | 早期设计稿、方案与运营类文档 | 按需查阅 |
+| **[kb-miniprogram](./kb-miniprogram/)** | 知识库微信小程序 | [README](./kb-miniprogram/README.md) |
+| **[deploy](./deploy/)** | 部署脚本、compose、环境变量模板 | [deploy/README.md](./deploy/README.md) |
 
 辅助服务（在 okx-bot 内）：
 
@@ -24,17 +22,11 @@
 ## 快速入口
 
 - **后端部署 / 外部工具 / 配置 / API / 排障** → 阅读 **[okx-bot/README.md](./okx-bot/README.md)**
-- **部署目录地图** → **[deploy/README.md](./deploy/README.md)**
-  - **本机运行（工具台 + 博客）** → [deploy/docs/local-run.md](./deploy/docs/local-run.md)
-  - **远程部署说明** → [deploy/docs/remote-deploy.md](./deploy/docs/remote-deploy.md)
-  - 日常 CI / 同步密钥 → [deploy/docs/cicd.md](./deploy/docs/cicd.md)
-  - 脚本说明 → [deploy/docs/scripts.md](./deploy/docs/scripts.md)
-  - **自有域名 dwcode.cloud（国内推荐）** → [deploy/docs/domain-dwcode-cloud.md](./deploy/docs/domain-dwcode-cloud.md)
-  - Halo 博客细节 → [deploy/docs/halo-blog.md](./deploy/docs/halo-blog.md)
-  - **Worker 反代（海外/备用）** → [deploy/docs/worker-proxy.md](./deploy/docs/worker-proxy.md)
-  - **代码**：`git push` → Actions
-  - **密钥**：`deploy/env/app.env`（**不提交**）→ `sync-env-local.ps1`
-  - R2：`env-prefix` = `local` / `ec2`
+- **部署** → **[deploy/README.md](./deploy/README.md)**
+  - 本机： [deploy/docs/local-run.md](./deploy/docs/local-run.md)
+  - 远程： [deploy/docs/remote-deploy.md](./deploy/docs/remote-deploy.md)
+  - 域名 / 博客： [deploy/docs/domain-dwcode-cloud.md](./deploy/docs/domain-dwcode-cloud.md) · [deploy/docs/halo-blog.md](./deploy/docs/halo-blog.md)
+  - 代码：`git push` → Actions 手动 Deploy；密钥：`deploy/env/app.env`（**不提交**）→ `sync-env-local.ps1`
 - **视频提取运行流程 / 工具串联 / Mermaid 一页纸** → [okx-bot/doc/VideoCoreExtractor_视频提取运行流程教程.md](./okx-bot/doc/VideoCoreExtractor_视频提取运行流程教程.md)
 - **AI 成片渲染联调** → [aigen-remotion/README.md](./aigen-remotion/README.md) + okx-bot 中 `aigen.remotion` 配置
 - **模块级深度文档**（提取、生成、文生图、Auth、LangChain4j 等）→ [okx-bot/doc/](./okx-bot/doc/)
