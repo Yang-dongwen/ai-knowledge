@@ -1,7 +1,6 @@
-# 一键部署已暂停：不再在 push main 时自动部署
-# 需要发版时：GitHub Actions → Deploy EC2 → Run workflow（手动）
-# SSH → git pull → docker compose 重建
-# 业务密钥: 服务器 deploy/env/app.env
+# 手动发版：Actions → Deploy EC2 → Run workflow
+# 服务器执行 deploy/aws/server-deploy.sh（git pull + compose）
+# 密钥只在服务器 deploy/env/app.env
 
 name: Deploy EC2
 
@@ -64,15 +63,19 @@ jobs:
               echo "ERROR: $APP_DIR 不存在"
               exit 1
             fi
-            if [ ! -f "$APP_DIR/deploy/scripts/server-deploy.sh" ]; then
+            DEPLOY_SH=""
+            if [ -f "$APP_DIR/deploy/aws/server-deploy.sh" ]; then
+              DEPLOY_SH="$APP_DIR/deploy/aws/server-deploy.sh"
+            elif [ -f "$APP_DIR/deploy/scripts/server-deploy.sh" ]; then
+              DEPLOY_SH="$APP_DIR/deploy/scripts/server-deploy.sh"
+            else
               echo "ERROR: 缺少 server-deploy.sh"
               exit 1
             fi
             if [ "$SKIP_GIT" != "1" ] && [ ! -d "$APP_DIR/.git" ]; then
-              echo "ERROR: 尚未 git 化。执行: bash $APP_DIR/deploy/scripts/bootstrap-git.sh"
+              echo "ERROR: 尚未 git 化。执行: bash $APP_DIR/deploy/aws/bootstrap-git.sh"
               exit 1
             fi
             export APP_DIR COMPOSE_FILE="$COMPOSE" REF SKIP_GIT
-            # server-deploy.sh 自己解析 deploy/env/app.env（含旧路径迁移）
-            chmod +x "$APP_DIR/deploy/scripts/"*.sh || true
-            bash "$APP_DIR/deploy/scripts/server-deploy.sh"
+            chmod +x "$APP_DIR/deploy/aws/"*.sh "$APP_DIR/deploy/scripts/"*.sh 2>/dev/null || true
+            bash "$DEPLOY_SH"

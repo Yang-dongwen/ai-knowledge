@@ -6,8 +6,8 @@
 #     -f deploy/stack/compose.blog.yml \
 #     --profile blog --env-file deploy/env/app.env up -d
 #
-# 说明与已做步骤：deploy/docs/halo-blog.md
-# 首次：RDS 建库 halo → POST /system/setup → PAT 写入 HALO_PAT → 重启 okx-bot
+# 由 server-deploy.sh / up.sh 在发现本文件时自动加上。
+# 首次：init-rds.sh 建库 halo → bootstrap-halo.sh 写 PAT → 再 server-deploy。
 
 name: auto-exchange-lite
 

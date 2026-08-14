@@ -1,8 +1,7 @@
 # 知识库 → Halo 发文（代码入口）
 
-- **本机怎么跑**：[deploy/docs/local-run.md](../../deploy/docs/local-run.md)  
-- **服务器怎么部署**：[deploy/docs/remote-deploy.md](../../deploy/docs/remote-deploy.md)  
-- 细节与排障：[deploy/docs/halo-blog.md](../../deploy/docs/halo-blog.md)
+- **本机怎么跑**：[deploy/local/README.md](../../deploy/local/README.md)
+- **一键上 AWS**：[deploy/aws/README.md](../../deploy/aws/README.md)
 
 ## 代码入口
 

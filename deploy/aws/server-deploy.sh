@@ -49,7 +49,7 @@ fi
 # ---------- git ----------
 if [[ "$SKIP_GIT" != "1" ]]; then
   if [[ ! -d "$APP_DIR/.git" ]]; then
-    echo "ERROR: 不是 git 仓库。先 bootstrap-git 或用 deploy-local.ps1" >&2
+    echo "ERROR: 不是 git 仓库。先 bootstrap-git 或用 deploy/aws/deploy.ps1" >&2
     exit 1
   fi
   echo "==> git fetch/reset ($REF)"

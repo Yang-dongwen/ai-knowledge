@@ -13,7 +13,7 @@ if (-not (Test-Path $localYml)) {
   1) 复制模板:
      copy okx-bot\src\main\resources\application-local.yml.example okx-bot\src\main\resources\application-local.yml
   2) 或从 deploy/env/app.env 生成:
-     python deploy/scripts/gen_profile_yml.py
+     python deploy/local/gen-local-yml.py
 "@ -ForegroundColor Yellow
   throw "application-local.yml not found"
 }

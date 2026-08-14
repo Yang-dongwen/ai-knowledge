@@ -45,7 +45,7 @@ def main():
     local = f"""# 本地开发 — 真实配置，不提交 Git（.gitignore）
 # IDE / 启动: spring.profiles.active=local
 # R2 前缀 local，与 ec2 区分
-# 生成: python deploy/scripts/gen_profile_yml.py
+# 生成: python deploy/local/gen-local-yml.py
 
 server:
   port: 8080

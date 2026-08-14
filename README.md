@@ -22,11 +22,9 @@
 ## 快速入口
 
 - **后端部署 / 外部工具 / 配置 / API / 排障** → 阅读 **[okx-bot/README.md](./okx-bot/README.md)**
-- **部署** → **[deploy/README.md](./deploy/README.md)**
-  - 本机： [deploy/docs/local-run.md](./deploy/docs/local-run.md)
-  - 远程： [deploy/docs/remote-deploy.md](./deploy/docs/remote-deploy.md)
-  - 域名 / 博客： [deploy/docs/domain-dwcode-cloud.md](./deploy/docs/domain-dwcode-cloud.md) · [deploy/docs/halo-blog.md](./deploy/docs/halo-blog.md)
-  - 代码：`git push` → Actions 手动 Deploy；密钥：`deploy/env/app.env`（**不提交**）→ `sync-env-local.ps1`
+- **部署** → **[deploy/README.md](./deploy/README.md)**（先看这一页的四层说明）
+  - 本机：[deploy/local/README.md](./deploy/local/README.md)
+  - 一键上 AWS：[deploy/aws/README.md](./deploy/aws/README.md)
 - **视频提取运行流程 / 工具串联 / Mermaid 一页纸** → [okx-bot/doc/VideoCoreExtractor_视频提取运行流程教程.md](./okx-bot/doc/VideoCoreExtractor_视频提取运行流程教程.md)
 - **AI 成片渲染联调** → [aigen-remotion/README.md](./aigen-remotion/README.md) + okx-bot 中 `aigen.remotion` 配置
 - **模块级深度文档**（提取、生成、文生图、Auth、LangChain4j 等）→ [okx-bot/doc/](./okx-bot/doc/)
@@ -36,7 +34,7 @@
 | 服务 | 端口 |
 |------|------|
 | okx-bot | 8080 |
-| Halo 博客（`--profile blog`） | 内部 8090；对外 `blog.dwcode.cloud`（[文档](./deploy/docs/halo-blog.md)） |
+| Halo 博客（AWS 上） | 内部 8090；对外 `https://blog.dwcode.cloud` |
 | whisper-service | 8000 |
 | aigen-remotion | 3100 |
 | okx-trading-web（dev） | 以 Vite 配置为准 |

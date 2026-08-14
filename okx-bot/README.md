@@ -151,7 +151,7 @@ okx:
 CREATE DATABASE IF NOT EXISTS okx_bot DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci;
 ```
 
-或执行 `src/main/resources/db/schema.sql`（现仅含建库语句）。生产可用 `deploy/scripts/init-rds.sh`（同样只建库）。
+或执行 `src/main/resources/db/schema.sql`（现仅含建库语句）。生产可用 `deploy/aws/init-rds.sh`（同样只建库）。
 
 **MySQL 版本**：本地与生产均建议 **MySQL 8+**（Flyway Community 9.x 不支持 5.7）。本机已可按 `MySQL84` 服务使用 8.4。
 
@@ -314,16 +314,16 @@ ai:
 
 ```powershell
 # 生成本地 yml（可从 deploy/env/app.env 填 R2/AI）
-python deploy/scripts/gen_profile_yml.py
+python deploy/local/gen-local-yml.py
 
 # 本地启动
-powershell -ExecutionPolicy Bypass -File deploy/scripts/run-local.ps1
+powershell -File deploy/local/run.ps1
 
 # 只同步服务器密钥（deploy/env/app.env）
-powershell -ExecutionPolicy Bypass -File deploy/scripts/sync-env-local.ps1
+powershell -File deploy/aws/sync-env.ps1
 ```
 
-部署目录地图见 [deploy/README.md](../deploy/README.md)；脚本说明见 [deploy/docs/scripts.md](../deploy/docs/scripts.md)。
+部署说明见 [deploy/README.md](../deploy/README.md)：本机 [deploy/local](../deploy/local/README.md)，AWS [deploy/aws](../deploy/aws/README.md)。
 
 IDE：Active profiles = `local`。
 

@@ -2,7 +2,7 @@
 # 在 EC2 上：连通 RDS 并创建空库（表结构由应用启动时 Flyway 自动迁移）
 # 用法:
 #   set -a; source deploy/env/app.env; set +a
-#   bash deploy/scripts/init-rds.sh
+#   bash deploy/aws/init-rds.sh
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
@@ -40,5 +40,5 @@ echo "DONE."
 echo "说明: 表结构 / 增量 SQL 由 okx-bot 启动时 Flyway 执行（classpath:db/migration）。"
 echo "  · 空库 → 跑 V1 基线 + 后续版本"
 echo "  · 已有库无 flyway 历史 → baseline V1，只跑 V2+"
-echo "启动: bash deploy/scripts/server-deploy.sh"
+echo "启动: bash deploy/aws/server-deploy.sh"
 echo "  或: docker compose -f deploy/stack/compose.lite.yml --env-file deploy/env/app.env up -d --build"

@@ -1,11 +1,5 @@
-# 生产默认（2G 小机）：web + okx-bot + caddy(80/443)
-#
-# 密钥：server-deploy 生成 env override
-# 域名: https://dwcode.cloud （Caddy 自动证书）
-# 备用: http://公网IP:8088 （直连 web，无证书）
-#
-# Cloudflare Tunnel（profile: tunnel）:
-#   bash deploy/scripts/quick-tunnel.sh start
+# 生产默认（2G 小机）：okx-bot + web + caddy
+# 由 deploy/aws/server-deploy.sh 调用，不要单独 compose up 漏掉 env override。
 
 name: auto-exchange-lite
 
@@ -57,26 +51,6 @@ services:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
       - caddy_data:/data
       - caddy_config:/config
-    depends_on:
-      - web
-    networks:
-      - appnet
-    deploy:
-      resources:
-        limits:
-          memory: 64M
-
-  # cloudflared；command 可由 quick/named 脚本 override
-  tunnel:
-    image: cloudflare/cloudflared:latest
-    restart: unless-stopped
-    profiles:
-      - tunnel
-    command:
-      - tunnel
-      - --no-autoupdate
-      - --url
-      - http://web:80
     depends_on:
       - web
     networks:

@@ -6,8 +6,6 @@
 /kb-mobile/
 /docs/
 /.grok/
-/deploy/docs/worker-proxy.md
-/deploy/worker-proxy/
 
 # Python
 __pycache__/

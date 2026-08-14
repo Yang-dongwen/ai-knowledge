@@ -80,17 +80,17 @@ if [ -s "`$ENV_BAK" ]; then
   chmod 600 "`$APP_DIR/`$ENV_REL"
 fi
 rm -f "`$ENV_BAK" /tmp/auto-exchange-deploy.tgz
-chmod +x "`$APP_DIR/deploy/scripts/"*.sh 2>/dev/null || true
+chmod +x "`$APP_DIR/deploy/aws/"*.sh 2>/dev/null || true
 mkdir -p "`$HOME/bin"
-ln -sfn "`$APP_DIR/deploy/scripts/server-deploy.sh" "`$HOME/bin/deploy"
-ln -sfn "`$APP_DIR/deploy/scripts/up.sh" "`$HOME/bin/up"
+ln -sfn "`$APP_DIR/deploy/aws/server-deploy.sh" "`$HOME/bin/deploy"
+ln -sfn "`$APP_DIR/deploy/aws/up.sh" "`$HOME/bin/up"
 "@
 
 if (-not $SkipBuild) {
   $remoteScript += @"
 
 export APP_DIR COMPOSE_FILE=$ComposeFile SKIP_GIT=1
-bash "`$APP_DIR/deploy/scripts/server-deploy.sh"
+bash "`$APP_DIR/deploy/aws/server-deploy.sh"
 "@
 } else {
   $remoteScript += "echo 'SkipBuild: code only'`n"

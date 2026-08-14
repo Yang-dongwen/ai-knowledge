@@ -51,7 +51,7 @@ if (-not $NoRestart) {
   $remoteCmd += @"
 
 export APP_DIR='$RemoteAppDir' COMPOSE_FILE=$ComposeRel SKIP_GIT=1
-bash deploy/scripts/server-deploy.sh
+bash deploy/aws/server-deploy.sh
 "@
 }
 

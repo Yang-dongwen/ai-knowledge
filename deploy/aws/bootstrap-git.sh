@@ -2,8 +2,8 @@
 # 一次性：tar 目录 → git clone，保留 deploy/env/app.env
 #
 # 用法:
-#   bash deploy/scripts/bootstrap-git.sh
-#   REPO=git@github.com:Yang-dongwen/ai-knowledge.git bash deploy/scripts/bootstrap-git.sh
+#   bash deploy/aws/bootstrap-git.sh
+#   REPO=git@github.com:Yang-dongwen/ai-knowledge.git bash deploy/aws/bootstrap-git.sh
 #
 set -euo pipefail
 
@@ -77,7 +77,7 @@ echo "==> restore secrets -> $ENV_REL"
 mkdir -p "$NEW_DIR/deploy/env"
 cp -a "$ENV_BAK" "$NEW_DIR/$ENV_REL"
 chmod 600 "$NEW_DIR/$ENV_REL"
-chmod +x "$NEW_DIR/deploy/scripts/"*.sh 2>/dev/null || true
+chmod +x "$NEW_DIR/deploy/aws/"*.sh 2>/dev/null || true
 
 echo "==> swap directories"
 mv "$APP_DIR" "$OLD_DIR"
@@ -85,12 +85,12 @@ mv "$NEW_DIR" "$APP_DIR"
 rm -f "$ENV_BAK"
 
 mkdir -p "$HOME/bin"
-ln -sfn "$APP_DIR/deploy/scripts/server-deploy.sh" "$HOME/bin/deploy"
-ln -sfn "$APP_DIR/deploy/scripts/up.sh" "$HOME/bin/up"
-chmod +x "$APP_DIR/deploy/scripts/server-deploy.sh" "$APP_DIR/deploy/scripts/up.sh" 2>/dev/null || true
+ln -sfn "$APP_DIR/deploy/aws/server-deploy.sh" "$HOME/bin/deploy"
+ln -sfn "$APP_DIR/deploy/aws/up.sh" "$HOME/bin/up"
+chmod +x "$APP_DIR/deploy/aws/server-deploy.sh" "$APP_DIR/deploy/aws/up.sh" 2>/dev/null || true
 
 echo
 echo "DONE. 应用目录: $APP_DIR (git)"
 echo "密钥: $APP_DIR/$ENV_REL"
 echo "旧目录备份: $OLD_DIR"
-echo "部署: bash $APP_DIR/deploy/scripts/server-deploy.sh"
+echo "部署: bash $APP_DIR/deploy/aws/server-deploy.sh"

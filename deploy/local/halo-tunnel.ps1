@@ -1,7 +1,7 @@
 <#
 .SYNOPSIS
   把 EC2 上 Halo 容器的 8090 转到本机 127.0.0.1:18090（默认），供本地 okx-bot 发文联调。
-  说明见 deploy/docs/local-run.md
+  说明见 deploy/local/README.md
 #>
 param(
   [string]$HostName = "13.201.82.24",

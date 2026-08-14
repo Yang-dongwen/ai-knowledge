@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # 仅重建/拉起容器（不 git pull）
-# 用法（仓库根）: bash deploy/scripts/up.sh
+# 用法（仓库根）: bash deploy/aws/up.sh
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
