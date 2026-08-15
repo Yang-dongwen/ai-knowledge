@@ -6,6 +6,7 @@ import com.dwcode.okxbot.blog.port.HaloPublishPort;
 import com.dwcode.okxbot.blog.port.HaloPublishResult;
 import com.dwcode.okxbot.common.exception.BusinessException;
 import com.dwcode.okxbot.kb.dto.NoteResponse;
+import com.dwcode.okxbot.kb.entity.KbFileEntity;
 import com.dwcode.okxbot.kb.entity.KbNoteEntity;
 import com.dwcode.okxbot.kb.mapper.KbNoteMapper;
 import org.junit.jupiter.api.Test;
@@ -47,7 +48,9 @@ class KbBlogPublishServiceTest {
                 new HaloPublishResult("post-x", "https://blog.example.com/a", "/a"));
         when(noteService.get(11L)).thenReturn(NoteResponse.builder().id(11L).title("标题").build());
 
-        KbBlogPublishService svc = new KbBlogPublishService(mapper, noteService, port);
+        KbFileService files = mock(KbFileService.class);
+        when(files.listEntitiesByNote(11L, 7L)).thenReturn(java.util.List.of());
+        KbBlogPublishService svc = new KbBlogPublishService(mapper, noteService, files, port);
         try (MockedStatic<SecurityUtils> st = mockStatic(SecurityUtils.class)) {
             st.when(SecurityUtils::requireCurrentUserId).thenReturn(7L);
             NoteResponse resp = svc.publish(11L);
@@ -64,6 +67,47 @@ class KbBlogPublishServiceTest {
     }
 
     @Test
+    void uploadsInlineMediaAndRewrites() {
+        KbNoteMapper mapper = mock(KbNoteMapper.class);
+        KbNoteService noteService = mock(KbNoteService.class);
+        HaloPublishPort port = mock(HaloPublishPort.class);
+        KbFileService files = mock(KbFileService.class);
+
+        KbNoteEntity e = new KbNoteEntity();
+        e.setId(11L);
+        e.setUserId(7L);
+        e.setTitle("带图");
+        e.setContent("![a](/api/v1/kb/files/99/content)");
+        e.setContentFormat("markdown");
+        e.setIsDeleted(0);
+        when(mapper.selectById(11L)).thenReturn(e);
+
+        KbFileEntity file = new KbFileEntity();
+        file.setId(99L);
+        file.setOriginalName("a.png");
+        file.setContentType("image/png");
+        file.setUserId(7L);
+        when(files.listEntitiesByNote(11L, 7L)).thenReturn(java.util.List.of(file));
+        when(files.readBytes(file)).thenReturn(new byte[]{1, 2, 3});
+        when(port.upload(any(), any(), any())).thenReturn(
+                new com.dwcode.okxbot.blog.port.HaloAttachment("att", "https://blog.example.com/upload/a.png"));
+        when(port.publish(any())).thenReturn(
+                new HaloPublishResult("post-x", "https://blog.example.com/a", "/a"));
+        when(noteService.get(11L)).thenReturn(NoteResponse.builder().id(11L).title("带图").build());
+
+        KbBlogPublishService svc = new KbBlogPublishService(mapper, noteService, files, port);
+        try (MockedStatic<SecurityUtils> st = mockStatic(SecurityUtils.class)) {
+            st.when(SecurityUtils::requireCurrentUserId).thenReturn(7L);
+            svc.publish(11L);
+        }
+
+        ArgumentCaptor<HaloPublishCommand> cap = ArgumentCaptor.forClass(HaloPublishCommand.class);
+        verify(port).publish(cap.capture());
+        assertEquals("![a](https://blog.example.com/upload/a.png)", cap.getValue().raw());
+        assertEquals("https://blog.example.com/upload/a.png", cap.getValue().cover());
+    }
+
+    @Test
     void rejectsOtherUsersNote() {
         KbNoteMapper mapper = mock(KbNoteMapper.class);
         KbNoteEntity e = new KbNoteEntity();
@@ -73,7 +117,7 @@ class KbBlogPublishServiceTest {
         when(mapper.selectById(2L)).thenReturn(e);
 
         KbBlogPublishService svc = new KbBlogPublishService(
-                mapper, mock(KbNoteService.class), mock(HaloPublishPort.class));
+                mapper, mock(KbNoteService.class), mock(KbFileService.class), mock(HaloPublishPort.class));
         try (MockedStatic<SecurityUtils> st = mockStatic(SecurityUtils.class)) {
             st.when(SecurityUtils::requireCurrentUserId).thenReturn(1L);
             assertThrows(BusinessException.class, () -> svc.publish(2L));

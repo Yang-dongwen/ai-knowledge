@@ -1,6 +1,8 @@
 package com.dwcode.okxbot.kb.controller;
 
 import com.dwcode.okxbot.common.response.ApiResult;
+import com.dwcode.okxbot.kb.dto.BlogPublishOptionsResponse;
+import com.dwcode.okxbot.kb.dto.BlogPublishRequest;
 import com.dwcode.okxbot.kb.dto.NoteCreateRequest;
 import com.dwcode.okxbot.kb.dto.NotePageResponse;
 import com.dwcode.okxbot.kb.dto.NoteResponse;
@@ -132,10 +134,17 @@ public class KbNoteController {
         return ApiResult.ok(noteService.duplicate(id));
     }
 
+    /** 发布弹窗：Halo 分类/标签 + 当前文章已选项 */
+    @GetMapping("/{id}/publish-blog")
+    public ApiResult<BlogPublishOptionsResponse> publishBlogOptions(@PathVariable Long id) {
+        return ApiResult.ok(blogPublishService.options(id));
+    }
+
     /** 发布或更新到 Halo 博客 */
     @PostMapping("/{id}/publish-blog")
-    public ApiResult<NoteResponse> publishBlog(@PathVariable Long id) {
-        return ApiResult.ok(blogPublishService.publish(id));
+    public ApiResult<NoteResponse> publishBlog(@PathVariable Long id,
+                                               @RequestBody(required = false) BlogPublishRequest request) {
+        return ApiResult.ok(blogPublishService.publish(id, request));
     }
 
     /** 导出 Markdown 文件 */

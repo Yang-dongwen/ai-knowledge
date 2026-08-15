@@ -86,7 +86,10 @@ public class SecurityConfig {
                         .hasRole("SUPER_ADMIN")
                         .requestMatchers(HttpMethod.POST, "/api/v1/video/models/test")
                         .hasRole("SUPER_ADMIN")
-                        .requestMatchers("/api/v1/video/cookies", "/api/v1/video/cookies/**")
+                        // Cookie 状态给登录用户看（进视频提取页会查）；上传/清除仍仅超管
+                        .requestMatchers(HttpMethod.POST, "/api/v1/video/cookies", "/api/v1/video/cookies/**")
+                        .hasRole("SUPER_ADMIN")
+                        .requestMatchers(HttpMethod.DELETE, "/api/v1/video/cookies", "/api/v1/video/cookies/**")
                         .hasRole("SUPER_ADMIN")
                         .anyRequest().authenticated()
                 )

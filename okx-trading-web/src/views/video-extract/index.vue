@@ -232,14 +232,12 @@
       <a-modal
         v-model:open="cookieModalOpen"
         title="抖音 Cookie"
-        :ok-text="'保存 Cookie'"
-        cancel-text="关闭"
-        :confirm-loading="cookieSaving"
-        :ok-button-props="{ disabled: !cookieHeaderInput.trim() }"
-        @ok="saveCookie"
+        :footer="null"
+        @cancel="cookieModalOpen = false"
       >
         <p class="cookie-hint">
           从浏览器开发者工具复制 Cookie 请求头字符串（整段即可），用于 yt-dlp 下载抖音等受限内容。不会在状态接口回显明文。
+          <template v-if="!auth.isSuperAdmin"> 全局 Cookie 由管理员配置。</template>
         </p>
         <div class="cookie-status-box" v-if="cookieStatus">
           <a-tag :color="cookieStatus.configured ? 'success' : 'default'">
@@ -253,32 +251,37 @@
           </span>
           <span class="muted" v-if="cookieStatus.hint">{{ cookieStatus.hint }}</span>
         </div>
-        <a-textarea
-          v-model:value="cookieHeaderInput"
-          :rows="6"
-          placeholder="粘贴 Cookie: xxx=yyy; ... 或纯 name=value; 列表"
-          allow-clear
-          style="margin-top: 10px"
-        />
-        <template #footer>
-          <a-button
-            danger
-            :disabled="!cookieStatus?.configured"
-            :loading="cookieClearing"
-            @click="handleClearCookie"
-          >
-            清除 Cookie
-          </a-button>
-          <a-button @click="cookieModalOpen = false">关闭</a-button>
-          <a-button
-            type="primary"
-            :loading="cookieSaving"
-            :disabled="!cookieHeaderInput.trim()"
-            @click="saveCookie"
-          >
-            保存 Cookie
-          </a-button>
+        <template v-if="auth.isSuperAdmin">
+          <a-textarea
+            v-model:value="cookieHeaderInput"
+            :rows="6"
+            placeholder="粘贴 Cookie: xxx=yyy; ... 或纯 name=value; 列表"
+            allow-clear
+            style="margin-top: 10px"
+          />
+          <div class="cookie-modal-actions">
+            <a-button
+              danger
+              :disabled="!cookieStatus?.configured"
+              :loading="cookieClearing"
+              @click="handleClearCookie"
+            >
+              清除 Cookie
+            </a-button>
+            <a-button @click="cookieModalOpen = false">关闭</a-button>
+            <a-button
+              type="primary"
+              :loading="cookieSaving"
+              :disabled="!cookieHeaderInput.trim()"
+              @click="saveCookie"
+            >
+              保存 Cookie
+            </a-button>
+          </div>
         </template>
+        <div v-else class="cookie-modal-actions">
+          <a-button @click="cookieModalOpen = false">关闭</a-button>
+        </div>
       </a-modal>
 
       <ModelManageModal
@@ -3677,6 +3680,13 @@ onUnmounted(() => {
   align-items: center;
   gap: 8px;
   font-size: 12px;
+}
+
+.cookie-modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 12px;
 }
 
 .overview-side {

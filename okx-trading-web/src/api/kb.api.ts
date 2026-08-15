@@ -108,6 +108,26 @@ export interface NoteCreateBody {
   pinned?: boolean
 }
 
+export interface HaloTermItem {
+  name: string
+  displayName: string
+}
+
+export interface BlogPublishOptions {
+  published: boolean
+  permalink?: string | null
+  categories: HaloTermItem[]
+  tags: HaloTermItem[]
+  selectedCategoryNames: string[]
+  selectedTagNames: string[]
+  mediaCount: number
+}
+
+export interface BlogPublishBody {
+  categoryNames?: string[]
+  tagNames?: string[]
+}
+
 export interface NoteUpdateBody {
   title?: string
   content?: string
@@ -273,8 +293,15 @@ export const kbApi = {
     return request.post(`/v1/kb/notes/${id}/restore`)
   },
 
-  publishNoteToBlog(id: string): Promise<{ data: KbNoteItem }> {
-    return request.post(`/v1/kb/notes/${id}/publish-blog`, {}, { timeout: 60000 })
+  getBlogPublishOptions(id: string): Promise<{ data: BlogPublishOptions }> {
+    return request.get(`/v1/kb/notes/${id}/publish-blog`, { timeout: 30000 })
+  },
+
+  publishNoteToBlog(
+    id: string,
+    body: BlogPublishBody = {}
+  ): Promise<{ data: KbNoteItem }> {
+    return request.post(`/v1/kb/notes/${id}/publish-blog`, body, { timeout: 180000 })
   },
 
   /** 永久删除（含 R2/本地附件对象） */

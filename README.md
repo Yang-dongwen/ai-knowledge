@@ -144,7 +144,7 @@ npm run dev
 | 视频提取 | 安装 yt-dlp、FFmpeg；在 yml 里写**绝对路径**。首次进入 `okx-bot/whisper-service` 建 venv 并 `pip install -r requirements.txt` |
 | AI 成片 | `cd aigen-remotion` → `npm install`；需要 TTS 时 `pip install edge-tts` |
 | 微信小程序知识库 | 用微信开发者工具打开 `kb-miniprogram`，后端保持 `auth.wechat.mini.mock=true` 即可本机模拟登录 |
-| 发布到博客 | 本机 yml 里配置 `halo.base-url` 和 `halo.token`（个人令牌）。笔记仍在本机库，文章写到博客站点 |
+| 发布到博客 | 本机 yml 里配置 `halo.base-url` 和 `halo.token`（个人令牌，需文章 + 附件 + 分类/标签权限）。笔记仍在本机库；图片/附件会上传到博客 |
 
 ### 默认端口
 

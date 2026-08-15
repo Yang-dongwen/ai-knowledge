@@ -1,10 +1,24 @@
 <template>
   <div
     class="kb-workspace"
-    :class="{ 'mobile-detail': mobileDetailOpen }"
+    :class="{
+      'mobile-detail': mobileDetailOpen,
+      'sidebar-collapsed': sidebarUiCollapsed,
+      'has-outline': outlinePaneVisible,
+      'outline-collapsed': outlineUiCollapsed
+    }"
   >
     <!-- 左：目录树（文件夹 + 文档） -->
-    <aside class="kb-sidebar">
+    <aside class="kb-sidebar" :class="{ 'is-collapsed': sidebarUiCollapsed }">
+      <button
+        type="button"
+        class="pane-rail-btn sidebar-rail-btn"
+        title="展开文档目录"
+        @click="setSidebarCollapsed(false)"
+      >
+        <MenuUnfoldOutlined />
+        <span class="rail-label">目录</span>
+      </button>
       <div class="side-head">
         <span class="side-title">{{ trashMode ? '回收站' : '文档目录' }}</span>
         <div class="side-head-actions">
@@ -25,6 +39,16 @@
               </a-button>
             </a-tooltip>
           </template>
+          <a-tooltip title="隐藏目录">
+            <a-button
+              type="text"
+              size="small"
+              class="icon-action sidebar-fold-btn"
+              @click="setSidebarCollapsed(true)"
+            >
+              <MenuFoldOutlined />
+            </a-button>
+          </a-tooltip>
         </div>
       </div>
 
@@ -461,6 +485,17 @@
               <ArrowLeftOutlined />
               <span>目录</span>
             </button>
+            <a-tooltip :title="sidebarCollapsed ? '显示目录' : '隐藏目录'">
+              <a-button
+                type="text"
+                size="small"
+                class="icon-action desktop-sidebar-toggle"
+                @click="setSidebarCollapsed(!sidebarCollapsed)"
+              >
+                <MenuUnfoldOutlined v-if="sidebarCollapsed" />
+                <MenuFoldOutlined v-else />
+              </a-button>
+            </a-tooltip>
             <span class="doc-title-hint muted" :title="editTitle">{{ editTitle || '未命名笔记' }}</span>
             <a-tag :color="editFormat === 'markdown' ? 'blue' : 'green'" class="format-badge">
               <span class="fmt-full">{{ editFormat === 'markdown' ? 'Markdown' : '富文本' }}</span>
@@ -523,6 +558,17 @@
               <a-button class="desktop-only-action" @click="confirmConvertFormat">
                 转为{{ editFormat === 'html' ? 'Markdown' : '富文本' }}
               </a-button>
+              <a-tooltip :title="outlineCollapsed ? '显示大纲' : '隐藏大纲'">
+                <a-button
+                  type="text"
+                  size="small"
+                  class="icon-action desktop-sidebar-toggle"
+                  @click="setOutlineCollapsed(!outlineCollapsed)"
+                >
+                  <MenuFoldOutlined v-if="outlineCollapsed" />
+                  <MenuUnfoldOutlined v-else />
+                </a-button>
+              </a-tooltip>
               <a-button type="primary" :loading="saving" @click="saveNote(false)">保存</a-button>
               <a-button
                 v-if="selectedId"
@@ -747,7 +793,9 @@
             </div>
             <div
               v-if="viewMode !== 'edit'"
+              ref="mdPreviewRef"
               class="md-preview doc-preview"
+              @scroll.passive="onMdPreviewScroll"
               @click="onMarkdownPreviewClick"
               v-html="previewHtml"
             />
@@ -780,26 +828,81 @@
             <template v-if="saveHint === '未保存'"> · Ctrl+S 保存</template>
           </span>
           <span v-else-if="editUpdatedAt">更新于 {{ formatTime(editUpdatedAt) }}</span>
-          <span v-if="outlineHeadings.length" class="outline-inline muted">
-            大纲 {{ outlineHeadings.length }} 节
-          </span>
-        </div>
-        <div v-if="outlineHeadings.length && !editDeleted" class="doc-outline">
-          <div class="outline-title">大纲</div>
           <button
-            v-for="(h, i) in outlineHeadings"
-            :key="i"
+            v-if="outlineHeadings.length"
             type="button"
-            class="outline-item"
-            :style="{ paddingLeft: `${8 + (h.level - 1) * 12}px` }"
+            class="outline-inline muted"
+            @click="setOutlineCollapsed(false)"
+          >
+            大纲 {{ outlineHeadings.length }} 节
+          </button>
+        </div>
+      </template>
+    </section>
+
+    <!-- 右：文档大纲 -->
+    <aside
+      v-if="outlinePaneVisible"
+      class="kb-outline-pane"
+      :class="{ 'is-collapsed': outlineUiCollapsed }"
+    >
+      <button
+        type="button"
+        class="pane-rail-btn outline-rail-btn"
+        title="展开大纲"
+        @click="setOutlineCollapsed(false)"
+      >
+        <MenuFoldOutlined />
+        <span class="rail-label">大纲</span>
+      </button>
+      <div class="outline-head">
+        <span class="outline-title">大纲</span>
+        <div class="outline-head-actions">
+          <span class="outline-count muted">{{ outlineHeadings.length }}</span>
+          <a-tooltip title="隐藏大纲">
+            <a-button
+              type="text"
+              size="small"
+              class="icon-action outline-fold-btn"
+              @click="setOutlineCollapsed(true)"
+            >
+              <MenuUnfoldOutlined />
+            </a-button>
+          </a-tooltip>
+        </div>
+      </div>
+      <div v-if="!outlineHeadings.length" class="outline-empty muted">
+        正文中的一至三级标题会显示在这里
+      </div>
+      <div v-else class="outline-scroll">
+        <div
+          v-for="h in visibleOutlineNodes"
+          :key="`${h.line}-${h.level}-${h.text}`"
+          class="outline-item"
+          :class="{ parent: h.hasChildren }"
+          :style="{ paddingLeft: `${4 + (h.level - 1) * 12}px` }"
+        >
+          <button
+            type="button"
+            class="outline-twist"
+            :class="{ spacer: !h.hasChildren }"
+            :title="h.hasChildren ? (isOutlineNodeCollapsed(h) ? '展开' : '收起') : undefined"
+            @click.stop="toggleOutlineNode(h)"
+          >
+            <CaretDownOutlined v-if="h.hasChildren && !isOutlineNodeCollapsed(h)" />
+            <CaretRightOutlined v-else-if="h.hasChildren" />
+          </button>
+          <button
+            type="button"
+            class="outline-label"
             :title="h.text"
             @click="scrollToOutline(h)"
           >
             {{ h.text }}
           </button>
         </div>
-      </template>
-    </section>
+      </div>
+    </aside>
 
     <a-modal
       v-model:open="revisionModalOpen"
@@ -933,6 +1036,15 @@
     </a-modal>
 
     <ShareModal v-model:open="shareOpen" :note-id="selectedId" />
+    <PublishBlogModal
+      v-model:open="blogOpen"
+      :note-id="selectedId"
+      :note-title="editTitle"
+      :updating="!!editHaloPermalink"
+      :default-tag-names="editTagChips.map((t) => t.name)"
+      :default-category-name="currentFolderName"
+      @published="onBlogPublished"
+    />
 
     <!-- 新建：先选格式 -->
     <a-modal
@@ -979,6 +1091,8 @@ import {
   FolderOpenOutlined,
   FolderOutlined,
   InboxOutlined,
+  MenuFoldOutlined,
+  MenuUnfoldOutlined,
   MoreOutlined,
   PlusOutlined,
   PushpinOutlined
@@ -986,6 +1100,7 @@ import {
 import dayjs from 'dayjs'
 import EmptyState from '@/components/EmptyState.vue'
 import ShareModal from './ShareModal.vue'
+import PublishBlogModal from './PublishBlogModal.vue'
 import {
   kbApi,
   injectKbMediaTokens,
@@ -1040,6 +1155,20 @@ async function ensureMd() {
     multiline: true,
     rowspan: true,
     headerless: true
+  })
+  // 块级 token 带上行号，分栏滚动按正文块对齐，而不是按滚动条比例
+  md.core.ruler.push('kb-md-line', (state) => {
+    for (const token of state.tokens) {
+      if (!token.map || token.nesting === -1) continue
+      const taggable =
+        token.nesting === 1 ||
+        token.type === 'fence' ||
+        token.type === 'code_block' ||
+        token.type === 'hr' ||
+        token.type === 'html_block'
+      if (!taggable) continue
+      token.attrSet('data-md-line', String(token.map[0]))
+    }
   })
   mdRender = (src: string) => {
     const raw = src || ''
@@ -1143,8 +1272,86 @@ const revisionRestoring = ref<string | null>(null)
 let autoSaveTimer: ReturnType<typeof setTimeout> | null = null
 const AUTO_SAVE_MS = 1800
 
-type OutlineHeading = { level: number; text: string; anchor: string }
+type OutlineHeading = { level: number; text: string; anchor: string; line: number }
+type OutlineNode = OutlineHeading & { hasChildren: boolean }
+
 const outlineHeadings = computed(() => buildOutline(editContent.value, editFormat.value))
+const outlineNodes = computed<OutlineNode[]>(() => {
+  const items = outlineHeadings.value
+  return items.map((h, i) => ({
+    ...h,
+    hasChildren: !!items[i + 1] && items[i + 1].level > h.level
+  }))
+})
+const outlineCollapsedKeys = ref<Set<string>>(new Set())
+function outlineNodeKey(h: { line: number; level: number }) {
+  return `${h.line}:${h.level}`
+}
+function isOutlineNodeCollapsed(h: { line: number; level: number }) {
+  return outlineCollapsedKeys.value.has(outlineNodeKey(h))
+}
+function toggleOutlineNode(h: OutlineNode) {
+  if (!h.hasChildren) return
+  const key = outlineNodeKey(h)
+  const next = new Set(outlineCollapsedKeys.value)
+  if (next.has(key)) next.delete(key)
+  else next.add(key)
+  outlineCollapsedKeys.value = next
+}
+const visibleOutlineNodes = computed(() => {
+  const items = outlineNodes.value
+  const collapsed = outlineCollapsedKeys.value
+  const out: OutlineNode[] = []
+  let hideDeeperThan: number | null = null
+  for (const h of items) {
+    if (hideDeeperThan != null && h.level > hideDeeperThan) continue
+    hideDeeperThan = null
+    out.push(h)
+    if (h.hasChildren && collapsed.has(outlineNodeKey(h))) hideDeeperThan = h.level
+  }
+  return out
+})
+
+const SIDEBAR_COLLAPSED_KEY = 'kb_sidebar_collapsed'
+function readSidebarCollapsed(): boolean {
+  try {
+    return localStorage.getItem(SIDEBAR_COLLAPSED_KEY) === '1'
+  } catch {
+    return false
+  }
+}
+const sidebarCollapsed = ref(readSidebarCollapsed())
+const isNarrowScreen = ref(
+  typeof window !== 'undefined' && window.matchMedia('(max-width: 768px)').matches
+)
+/** 小屏仍走列表/详情全屏，不应用桌面收起态 */
+const sidebarUiCollapsed = computed(() => sidebarCollapsed.value && !isNarrowScreen.value)
+function setSidebarCollapsed(collapsed: boolean) {
+  sidebarCollapsed.value = collapsed
+  try {
+    localStorage.setItem(SIDEBAR_COLLAPSED_KEY, collapsed ? '1' : '0')
+  } catch {
+    /* ignore quota / private mode */
+  }
+}
+
+const OUTLINE_COLLAPSED_KEY = 'kb_outline_collapsed'
+function readOutlineCollapsed(): boolean {
+  try {
+    return localStorage.getItem(OUTLINE_COLLAPSED_KEY) === '1'
+  } catch {
+    return false
+  }
+}
+const outlineCollapsed = ref(readOutlineCollapsed())
+function setOutlineCollapsed(collapsed: boolean) {
+  outlineCollapsed.value = collapsed
+  try {
+    localStorage.setItem(OUTLINE_COLLAPSED_KEY, collapsed ? '1' : '0')
+  } catch {
+    /* ignore quota / private mode */
+  }
+}
 
 const selectedId = ref<string | null>(null)
 const isCreating = ref(false)
@@ -1226,7 +1433,7 @@ function onDocMoreMenu({ key }: { key: string }) {
 }
 const editTitle = ref('')
 const editHaloPermalink = ref('')
-const publishingBlog = ref(false)
+const blogOpen = ref(false)
 const editContent = ref('')
 /** Markdown 编辑区：标题与正文视觉分离（仍合并进 editContent 存库） */
 const mdTitleLine = ref('未命名笔记')
@@ -1242,6 +1449,16 @@ const editCategoryId = ref<string | undefined>(undefined)
 const editTagIds = ref<string[]>([])
 const editPinned = ref(false)
 const editDeleted = ref(false)
+const outlinePaneVisible = computed(
+  () =>
+    !isNarrowScreen.value &&
+    !trashMode.value &&
+    !editDeleted.value &&
+    !!(selectedId.value || isCreating.value)
+)
+const outlineUiCollapsed = computed(
+  () => outlinePaneVisible.value && outlineCollapsed.value
+)
 const editUpdatedAt = ref<string | undefined>()
 const saving = ref(false)
 const saveHint = ref('')
@@ -1423,6 +1640,13 @@ const folderPathText = computed(() => {
   return parts.length ? parts.join(' / ') : '未归档'
 })
 
+const currentFolderName = computed(() => {
+  const id = editCategoryId.value
+  if (!id) return ''
+  const found = flatCategories.value.find((c) => c.id === id)
+  return found?.name || ''
+})
+
 const editTagChips = computed(() => {
   const set = new Set(editTagIds.value)
   return tags.value.filter((t) => set.has(t.id))
@@ -1602,6 +1826,7 @@ const folderChildNotes = computed((): FlatTreeRow[] => {
 })
 
 const previewHtml = ref('')
+const mdPreviewRef = ref<HTMLElement | null>(null)
 const mdBodyAreaRef = ref<any>(null)
 const mdImageInputRef = ref<HTMLInputElement | null>(null)
 const mdImageUploading = ref(false)
@@ -1615,6 +1840,229 @@ function getMdTextareaEl(): HTMLTextAreaElement | null {
   if (!root) return null
   if (root.tagName === 'TEXTAREA') return root as HTMLTextAreaElement
   return root.querySelector?.('textarea') || null
+}
+
+function getMdEditScrollEl(): HTMLElement | null {
+  const ta = getMdTextareaEl()
+  if (!ta) return null
+  if (ta.scrollHeight > ta.clientHeight + 2) return ta
+  const wrap = ta.parentElement
+  if (wrap && wrap.scrollHeight > wrap.clientHeight + 2) return wrap
+  return ta
+}
+
+let mdScrollSyncing = false
+let mdScrollLock = false
+let mdEditScrollBound: HTMLElement | null = null
+let mdEditLineCache: { sig: string; tops: Map<number, number> } | null = null
+
+function headingOffsetInPreview(preview: HTMLElement, el: HTMLElement) {
+  return el.getBoundingClientRect().top - preview.getBoundingClientRect().top + preview.scrollTop
+}
+
+function mapMdScroll(marks: { src: number; dst: number }[], pos: number) {
+  if (marks.length < 2) return pos
+  if (pos <= marks[0].src) return marks[0].dst
+  for (let i = 1; i < marks.length; i++) {
+    const a = marks[i - 1]
+    const b = marks[i]
+    if (pos <= b.src) {
+      const span = b.src - a.src
+      if (span <= 0) return b.dst
+      return a.dst + ((pos - a.src) / span) * (b.dst - a.dst)
+    }
+  }
+  return marks[marks.length - 1].dst
+}
+
+function editLineCacheSig(ta: HTMLTextAreaElement) {
+  const v = ta.value
+  return `${ta.clientWidth}|${ta.scrollHeight}|${v.length}|${v.slice(0, 32)}|${v.slice(-32)}`
+}
+
+/** 按源码行量出编辑区真实 Y（计入自动换行），避免一行源码被当成固定行高 */
+function measureBodyLineTops(ta: HTMLTextAreaElement, bodyLines: number[]): Map<number, number> {
+  const wanted = [...new Set(bodyLines.filter((n) => n >= 0))].sort((a, b) => a - b)
+  const tops = new Map<number, number>()
+  if (!wanted.length) return tops
+
+  const sig = editLineCacheSig(ta)
+  if (mdEditLineCache && mdEditLineCache.sig === sig) {
+    let hit = true
+    for (const line of wanted) {
+      const y = mdEditLineCache.tops.get(line)
+      if (y == null) {
+        hit = false
+        break
+      }
+      tops.set(line, y)
+    }
+    if (hit) return tops
+  }
+
+  const style = window.getComputedStyle(ta)
+  const mirror = document.createElement('div')
+  mirror.setAttribute('aria-hidden', 'true')
+  mirror.style.cssText = [
+    'position:absolute',
+    'left:-99999px',
+    'top:0',
+    'visibility:hidden',
+    'pointer-events:none',
+    'height:auto',
+    'overflow:hidden',
+    'white-space:pre-wrap',
+    'word-wrap:break-word',
+    'overflow-wrap:break-word'
+  ].join(';')
+  mirror.style.boxSizing = style.boxSizing
+  mirror.style.width = `${ta.offsetWidth}px`
+  mirror.style.font = style.font
+  mirror.style.fontSize = style.fontSize
+  mirror.style.fontFamily = style.fontFamily
+  mirror.style.fontWeight = style.fontWeight
+  mirror.style.letterSpacing = style.letterSpacing
+  mirror.style.wordSpacing = style.wordSpacing
+  mirror.style.lineHeight = style.lineHeight
+  mirror.style.padding = style.padding
+  mirror.style.border = style.border
+  mirror.style.tabSize = style.tabSize
+
+  const lines = ta.value.split('\n')
+  const maxLine = Math.min(wanted[wanted.length - 1], Math.max(0, lines.length - 1))
+  const needed = new Set(wanted)
+  const spans: { line: number; el: HTMLSpanElement }[] = []
+  const frag = document.createDocumentFragment()
+  for (let i = 0; i <= maxLine; i++) {
+    const chunk = (lines[i] ?? '') + (i < lines.length - 1 ? '\n' : '')
+    if (needed.has(i)) {
+      const span = document.createElement('span')
+      span.textContent = chunk || '\n'
+      frag.appendChild(span)
+      spans.push({ line: i, el: span })
+    } else {
+      frag.appendChild(document.createTextNode(chunk))
+    }
+  }
+  mirror.appendChild(frag)
+  document.body.appendChild(mirror)
+  for (const { line, el } of spans) tops.set(line, el.offsetTop)
+  document.body.removeChild(mirror)
+
+  if (!mdEditLineCache || mdEditLineCache.sig !== sig) {
+    mdEditLineCache = { sig, tops: new Map() }
+  }
+  for (const [line, y] of tops) mdEditLineCache.tops.set(line, y)
+  return tops
+}
+
+function collectPreviewLineEls(preview: HTMLElement) {
+  const map = new Map<number, HTMLElement>()
+  const nodes = preview.querySelectorAll('[data-md-line]')
+  for (const node of Array.from(nodes)) {
+    const el = node as HTMLElement
+    const line = Number(el.getAttribute('data-md-line'))
+    if (!Number.isFinite(line) || map.has(line)) continue
+    map.set(line, el)
+  }
+  return map
+}
+
+function pushMdMark(
+  marks: { src: number; dst: number }[],
+  src: number,
+  dst: number
+) {
+  const last = marks[marks.length - 1]
+  if (last && Math.abs(last.src - src) < 0.5) {
+    last.dst = dst
+    return
+  }
+  if (src < (last?.src ?? -1)) return
+  marks.push({ src, dst })
+}
+
+function buildMdScrollMarks(from: HTMLElement, to: HTMLElement, fromIsEdit: boolean) {
+  const marks: { src: number; dst: number }[] = [{ src: 0, dst: 0 }]
+  const ta = getMdTextareaEl()
+  const preview = fromIsEdit ? to : from
+  if (ta && preview) {
+    const previewEls = collectPreviewLineEls(preview)
+    const contentLines = [...previewEls.keys()].sort((a, b) => a - b)
+    const bodyLines: number[] = []
+    const pairs: { contentLine: number; bodyLine: number | 'title' }[] = []
+    for (const contentLine of contentLines) {
+      const bodyLine = markdownBodyLineOf(contentLine)
+      pairs.push({ contentLine, bodyLine })
+      if (bodyLine !== 'title') bodyLines.push(bodyLine)
+    }
+    const lineTops = measureBodyLineTops(ta, bodyLines)
+    for (const { contentLine, bodyLine } of pairs) {
+      const previewEl = previewEls.get(contentLine)
+      if (!previewEl) continue
+      const editY = bodyLine === 'title' ? 0 : (lineTops.get(bodyLine) ?? 0)
+      const previewY = headingOffsetInPreview(preview, previewEl)
+      if (fromIsEdit) pushMdMark(marks, editY, previewY)
+      else pushMdMark(marks, previewY, editY)
+    }
+  }
+  pushMdMark(marks, from.scrollHeight, to.scrollHeight)
+  return marks
+}
+
+function runMdScrollSync(from: HTMLElement, to: HTMLElement, fromIsEdit: boolean) {
+  if (mdScrollLock || mdScrollSyncing) return
+  if (viewMode.value !== 'split' || editFormat.value !== 'markdown') return
+  mdScrollSyncing = true
+  const mapped = mapMdScroll(buildMdScrollMarks(from, to, fromIsEdit), from.scrollTop)
+  const max = Math.max(0, to.scrollHeight - to.clientHeight)
+  to.scrollTop = Math.max(0, Math.min(max, mapped))
+  requestAnimationFrame(() => {
+    requestAnimationFrame(() => {
+      mdScrollSyncing = false
+    })
+  })
+}
+
+function onMdEditScroll() {
+  const edit = getMdEditScrollEl()
+  const preview = mdPreviewRef.value
+  if (!edit || !preview) return
+  runMdScrollSync(edit, preview, true)
+}
+
+function onMdPreviewScroll() {
+  const edit = getMdEditScrollEl()
+  const preview = mdPreviewRef.value
+  if (!edit || !preview) return
+  runMdScrollSync(preview, edit, false)
+}
+
+function unbindMdSplitScroll() {
+  if (!mdEditScrollBound) return
+  mdEditScrollBound.removeEventListener('scroll', onMdEditScroll)
+  mdEditScrollBound = null
+}
+
+function bindMdSplitScroll() {
+  unbindMdSplitScroll()
+  if (viewMode.value !== 'split' || editFormat.value !== 'markdown') return
+  if (!selectedId.value && !isCreating.value) return
+  nextTick(() => {
+    if (viewMode.value !== 'split' || editFormat.value !== 'markdown') return
+    if (!selectedId.value && !isCreating.value) return
+    const edit = getMdEditScrollEl()
+    if (!edit) {
+      window.setTimeout(() => {
+        if (mdEditScrollBound || viewMode.value !== 'split') return
+        if (!selectedId.value && !isCreating.value) return
+        bindMdSplitScroll()
+      }, 80)
+      return
+    }
+    edit.addEventListener('scroll', onMdEditScroll, { passive: true })
+    mdEditScrollBound = edit
+  })
 }
 
 /** 在光标处插入 Markdown 片段 */
@@ -1831,12 +2279,12 @@ function buildOutline(content: string, format: KbContentFormat): OutlineHeading[
   const items: OutlineHeading[] = []
   if (format === 'markdown') {
     const lines = content.split('\n')
-    for (const line of lines) {
-      const m = /^(#{1,3})\s+(.+?)\s*$/.exec(line)
+    for (let i = 0; i < lines.length; i++) {
+      const m = /^(#{1,3})\s+(.+?)\s*$/.exec(lines[i])
       if (!m) continue
       const text = m[2].replace(/[#*`_[\]]/g, '').trim()
       if (!text) continue
-      items.push({ level: m[1].length, text, anchor: text })
+      items.push({ level: m[1].length, text, anchor: text, line: i })
       if (items.length >= 40) break
     }
   } else {
@@ -1845,23 +2293,100 @@ function buildOutline(content: string, format: KbContentFormat): OutlineHeading[
     while ((m = re.exec(content)) && items.length < 40) {
       const text = m[2].replace(/<[^>]+>/g, '').trim()
       if (!text) continue
-      items.push({ level: Number(m[1]), text, anchor: text })
+      items.push({ level: Number(m[1]), text, anchor: text, line: items.length })
     }
   }
   return items
 }
 
-function scrollToOutline(h: OutlineHeading) {
-  // Markdown 预览区 / 富文本：按标题文本粗定位
-  const pane = document.querySelector('.kb-editor-pane .md-preview, .kb-editor-pane .w-e-text-container')
-  if (!pane) return
-  const nodes = pane.querySelectorAll('h1,h2,h3')
-  for (const node of Array.from(nodes)) {
-    if ((node.textContent || '').trim() === h.text) {
-      node.scrollIntoView({ behavior: 'smooth', block: 'start' })
-      return
-    }
+function markdownBodyLineOf(contentLine: number): number | 'title' {
+  const title = (mdTitleLine.value || '').trim() || '未命名笔记'
+  const prefixLines = `# ${title}\n\n`.split('\n').length - 1
+  if (contentLine < prefixLines) return 'title'
+  return contentLine - prefixLines
+}
+
+function selectTextareaLine(ta: HTMLTextAreaElement, lineIndex: number) {
+  const lines = ta.value.split('\n')
+  const idx = Math.max(0, Math.min(lineIndex, Math.max(0, lines.length - 1)))
+  let start = 0
+  for (let i = 0; i < idx; i++) start += lines[i].length + 1
+  const end = start + (lines[idx]?.length ?? 0)
+  ta.focus()
+  try {
+    ta.setSelectionRange(start, end)
+  } catch {
+    /* ignore */
   }
+}
+
+function setScrollTop(el: HTMLElement, top: number) {
+  const max = Math.max(0, el.scrollHeight - el.clientHeight)
+  el.scrollTop = Math.max(0, Math.min(max, top))
+}
+
+function scrollMdEditorToBodyLine(bodyLine: number | 'title') {
+  const ta = getMdTextareaEl()
+  const edit = getMdEditScrollEl() || ta
+  if (bodyLine === 'title') {
+    const titleEl = document.querySelector('.kb-editor-pane .md-doc-title') as HTMLInputElement | null
+    titleEl?.focus()
+    if (edit) edit.scrollTop = 0
+    return
+  }
+  if (!ta || !edit) return
+  const y = measureBodyLineTops(ta, [bodyLine]).get(bodyLine) ?? 0
+  setScrollTop(edit, y)
+  selectTextareaLine(ta, bodyLine)
+}
+
+function scrollMdPreviewToContentLine(contentLine: number, headingText?: string) {
+  const preview =
+    mdPreviewRef.value ||
+    (document.querySelector('.kb-editor-pane .md-preview') as HTMLElement | null)
+  if (!preview) return
+  const byLine = preview.querySelector(`[data-md-line="${contentLine}"]`) as HTMLElement | null
+  if (byLine) {
+    setScrollTop(preview, headingOffsetInPreview(preview, byLine))
+    return
+  }
+  const nodes = Array.from(preview.querySelectorAll('h1,h2,h3'))
+  const node = headingText
+    ? nodes.find((n) => (n.textContent || '').trim() === headingText)
+    : nodes[contentLine]
+  if (node) setScrollTop(preview, headingOffsetInPreview(preview, node as HTMLElement))
+}
+
+function scrollHeadingInRoot(root: Element | null, h: OutlineHeading) {
+  if (!root) return
+  const nodes = Array.from(root.querySelectorAll('h1,h2,h3'))
+  const order = outlineHeadings.value.findIndex(
+    (x) => x.line === h.line && x.level === h.level && x.text === h.text
+  )
+  const node =
+    (order >= 0 ? nodes[order] : null) ||
+    nodes.find((n) => (n.textContent || '').trim() === h.text)
+  node?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+}
+
+function scrollToOutline(h: OutlineHeading) {
+  if (editFormat.value === 'markdown') {
+    mdScrollLock = true
+    if (viewMode.value !== 'preview') scrollMdEditorToBodyLine(markdownBodyLineOf(h.line))
+    if (viewMode.value !== 'edit') scrollMdPreviewToContentLine(h.line, h.text)
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        mdScrollLock = false
+      })
+    })
+    return
+  }
+  scrollHeadingInRoot(
+    document.querySelector(
+      '.kb-editor-pane .w-e-scroll, .kb-editor-pane .w-e-text-container, .kb-editor-pane .shell-body'
+    ),
+    h
+  )
 }
 
 function onMarkdownBlur() {
@@ -2471,47 +2996,24 @@ async function publishCurrentNoteToBlog() {
     message.warning('请先保存笔记再发布')
     return
   }
-  if (publishingBlog.value) return
-
-  const updating = !!editHaloPermalink.value
-  const title = (editTitle.value || '未命名笔记').trim()
-  Modal.confirm({
-    title: updating ? '更新到博客？' : '发布到博客？',
-    content: updating
-      ? `将把「${title}」的最新内容同步到云端博客（覆盖该文）。`
-      : `将把「${title}」发布到云端博客。笔记仍保存在本机/工具台知识库。`,
-    okText: updating ? '更新' : '发布',
-    cancelText: '取消',
-    async onOk() {
-      publishingBlog.value = true
-      try {
-        if (dirty.value) {
-          await saveNote(true)
-        }
-        if (!selectedId.value) {
-          message.warning('请先保存笔记再发布')
-          return
-        }
-        const res = await kbApi.publishNoteToBlog(selectedId.value)
-        const note = res.data
-        if (note?.haloPermalink) {
-          editHaloPermalink.value = note.haloPermalink
-        }
-        if (note?.unresolvedMedia) {
-          message.warning('已发布，但正文含知识库私有附件，博客读者可能看不到图')
-        } else {
-          message.success(updating ? '已同步到博客' : '已发布到博客')
-        }
-        if (note?.haloPermalink) {
-          window.open(note.haloPermalink, '_blank', 'noopener')
-        }
-      } catch (e: any) {
-        message.error(e?.message || '发布失败')
-      } finally {
-        publishingBlog.value = false
-      }
+  try {
+    if (dirty.value) {
+      await saveNote(true)
     }
-  })
+    if (!selectedId.value) {
+      message.warning('请先保存笔记再发布')
+      return
+    }
+    blogOpen.value = true
+  } catch (e: any) {
+    message.error(e?.message || '保存失败，无法发布')
+  }
+}
+
+function onBlogPublished(note: KbNoteItem) {
+  if (note?.haloPermalink) {
+    editHaloPermalink.value = note.haloPermalink
+  }
 }
 
 async function exportCurrentNote() {
@@ -3332,7 +3834,8 @@ async function submitTag() {
 let mobileMq: MediaQueryList | null = null
 function applyMobileViewMode() {
   if (typeof window === 'undefined') return
-  if (window.matchMedia('(max-width: 768px)').matches && viewMode.value === 'split') {
+  isNarrowScreen.value = window.matchMedia('(max-width: 768px)').matches
+  if (isNarrowScreen.value && viewMode.value === 'split') {
     viewMode.value = 'edit'
   }
 }
@@ -3350,6 +3853,7 @@ onMounted(async () => {
 onBeforeUnmount(() => {
   clearDebouncedAutoSave()
   unbindTreeViewport()
+  unbindMdSplitScroll()
   dragGhostCleanup?.()
   cleanupDragGhost()
   mobileMq?.removeEventListener('change', applyMobileViewMode)
@@ -3364,25 +3868,78 @@ watch(isExplorerTreeMode, (showTree) => {
   else unbindTreeViewport()
 })
 
+// 从收起态展开后重新量虚拟滚动视口，避免高度仍为 0
+watch(sidebarUiCollapsed, (collapsed) => {
+  if (collapsed || !isExplorerTreeMode.value) return
+  nextTick(() => {
+    measureTreeViewport()
+    bindTreeViewport()
+  })
+})
+
 // 新建 Markdown 默认分栏 → 小屏改编辑
 watch(viewMode, (mode) => {
   if (mode === 'split') applyMobileViewMode()
+  bindMdSplitScroll()
+})
+
+watch([selectedId, editFormat, isCreating], () => {
+  bindMdSplitScroll()
+})
+
+watch(selectedId, () => {
+  outlineCollapsedKeys.value = new Set()
+})
+
+watch(outlineNodes, (items) => {
+  const valid = new Set(items.filter((h) => h.hasChildren).map(outlineNodeKey))
+  let changed = false
+  const next = new Set<string>()
+  for (const key of outlineCollapsedKeys.value) {
+    if (valid.has(key)) next.add(key)
+    else changed = true
+  }
+  if (changed) outlineCollapsedKeys.value = next
 })
 </script>
 
 <style lang="scss" scoped>
 .kb-workspace {
   display: grid;
-  /* F1：目录树 + 编辑区两栏 */
-  grid-template-columns: minmax(280px, 340px) 1fr;
+  grid-template-columns: minmax(280px, 340px) minmax(0, 1fr);
+  grid-template-areas: 'sidebar editor';
   gap: 12px;
   height: 100%;
   min-height: 0;
   flex: 1;
 }
 
+.kb-workspace.has-outline {
+  grid-template-columns: minmax(280px, 340px) minmax(0, 1fr) minmax(180px, 232px);
+  grid-template-areas: 'sidebar editor outline';
+}
+
+.kb-workspace.has-outline.outline-collapsed {
+  grid-template-columns: minmax(280px, 340px) minmax(0, 1fr) 44px;
+}
+
+.kb-workspace.sidebar-collapsed {
+  grid-template-columns: 44px minmax(0, 1fr);
+  grid-template-areas: 'sidebar editor';
+}
+
+.kb-workspace.sidebar-collapsed.has-outline {
+  grid-template-columns: 44px minmax(0, 1fr) minmax(180px, 232px);
+  grid-template-areas: 'sidebar editor outline';
+}
+
+.kb-workspace.sidebar-collapsed.has-outline.outline-collapsed {
+  grid-template-columns: 44px minmax(0, 1fr) 44px;
+}
+
 .kb-sidebar,
-.kb-editor-pane {
+.kb-editor-pane,
+.kb-outline-pane {
   background: var(--surface-1);
   border: 1px solid var(--border-color);
   border-radius: 14px;
@@ -3394,6 +3951,15 @@ watch(viewMode, (mode) => {
 
 .kb-sidebar {
   position: relative;
+  grid-area: sidebar;
+}
+
+.kb-editor-pane {
+  grid-area: editor;
+}
+
+.kb-outline-pane {
+  grid-area: outline;
 }
 
 .quick-views {
@@ -3439,42 +4005,154 @@ watch(viewMode, (mode) => {
   }
   .outline-inline {
     margin-left: 12px;
+    border: 0;
+    background: transparent;
+    color: inherit;
+    padding: 0;
+    cursor: pointer;
+    font: inherit;
+
+    &:hover {
+      color: var(--text-primary);
+    }
   }
 }
 
-.doc-outline {
-  border-top: 1px solid var(--border-color);
-  max-height: 140px;
-  overflow: auto;
-  padding: 6px 10px 10px;
+.pane-rail-btn {
+  display: none;
+}
+
+.kb-sidebar.is-collapsed,
+.kb-outline-pane.is-collapsed {
+  > *:not(.pane-rail-btn) {
+    display: none !important;
+  }
+
+  .pane-rail-btn {
+    display: flex;
+    flex: 1;
+    flex-direction: column;
+    align-items: center;
+    justify-content: flex-start;
+    gap: 10px;
+    padding: 12px 0;
+    border: 0;
+    background: transparent;
+    color: var(--text-secondary);
+    cursor: pointer;
+
+    &:hover {
+      color: var(--text-primary);
+      background: var(--surface-2, rgba(0, 0, 0, 0.03));
+    }
+  }
+
+  .rail-label {
+    writing-mode: vertical-rl;
+    letter-spacing: 0.18em;
+    font-size: 12px;
+    font-weight: 600;
+  }
+}
+
+.desktop-sidebar-toggle {
+  flex-shrink: 0;
+  color: var(--text-secondary);
+}
+
+.kb-outline-pane {
+  min-width: 0;
+}
+
+.outline-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 12px 8px 8px 12px;
   flex-shrink: 0;
 }
 
+.outline-head-actions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
 .outline-title {
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 600;
-  opacity: 0.7;
-  margin-bottom: 4px;
+  color: var(--text-secondary);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.outline-count {
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+
+.outline-empty {
+  padding: 8px 12px 16px;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.outline-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: 0 8px 12px;
 }
 
 .outline-item {
-  display: block;
+  display: flex;
+  align-items: center;
+  gap: 2px;
   width: 100%;
+  min-width: 0;
+  padding: 1px 4px 1px 0;
+  border-radius: 6px;
+
+  &:hover {
+    background: var(--surface-2, rgba(0, 0, 0, 0.04));
+  }
+}
+
+.outline-twist {
+  width: 16px;
+  height: 22px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  border: 0;
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 10px;
+  padding: 0;
+  cursor: pointer;
+
+  &.spacer {
+    visibility: hidden;
+    pointer-events: none;
+  }
+}
+
+.outline-label {
+  flex: 1;
+  min-width: 0;
   text-align: left;
   border: 0;
   background: transparent;
   color: inherit;
   font-size: 12px;
-  padding: 3px 4px;
-  border-radius: 4px;
+  line-height: 1.4;
+  padding: 4px 4px 4px 0;
   cursor: pointer;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-}
-
-.outline-item:hover {
-  background: var(--surface-2, rgba(0, 0, 0, 0.04));
 }
 
 .rev-list {
@@ -5071,7 +5749,27 @@ watch(viewMode, (mode) => {
 
 @media (max-width: 1100px) {
   .kb-workspace {
-    grid-template-columns: minmax(240px, 300px) 1fr;
+    grid-template-columns: minmax(240px, 280px) minmax(0, 1fr);
+  }
+
+  .kb-workspace.has-outline {
+    grid-template-columns: minmax(240px, 280px) minmax(0, 1fr) minmax(160px, 200px);
+  }
+
+  .kb-workspace.has-outline.outline-collapsed {
+    grid-template-columns: minmax(240px, 280px) minmax(0, 1fr) 44px;
+  }
+
+  .kb-workspace.sidebar-collapsed {
+    grid-template-columns: 44px minmax(0, 1fr);
+  }
+
+  .kb-workspace.sidebar-collapsed.has-outline {
+    grid-template-columns: 44px minmax(0, 1fr) minmax(160px, 200px);
+  }
+
+  .kb-workspace.sidebar-collapsed.has-outline.outline-collapsed {
+    grid-template-columns: 44px minmax(0, 1fr) 44px;
   }
 }
 
@@ -5089,6 +5787,7 @@ watch(viewMode, (mode) => {
     display: flex;
     flex-direction: column;
     grid-template-columns: none;
+    grid-template-areas: none;
     gap: 0;
     height: 100%;
     min-height: 0;
@@ -5115,6 +5814,13 @@ watch(viewMode, (mode) => {
   /* 打开文档 / 新建 / 夹内概览：只看详情 */
   .kb-workspace.mobile-detail .kb-sidebar {
     display: none;
+  }
+
+  .kb-outline-pane,
+  .desktop-sidebar-toggle,
+  .sidebar-fold-btn,
+  .outline-fold-btn {
+    display: none !important;
   }
 
   .mobile-back-btn {

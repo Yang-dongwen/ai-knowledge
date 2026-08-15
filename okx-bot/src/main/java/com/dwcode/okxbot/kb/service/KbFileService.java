@@ -148,6 +148,35 @@ public class KbFileService {
         return toResponse(requireOwned(id, userId));
     }
 
+    public List<KbFileEntity> listEntitiesByNote(Long noteId, Long userId) {
+        if (noteId == null) {
+            return List.of();
+        }
+        return fileMapper.selectList(
+                new LambdaQueryWrapper<KbFileEntity>()
+                        .eq(KbFileEntity::getUserId, userId)
+                        .eq(KbFileEntity::getNoteId, noteId)
+                        .orderByDesc(KbFileEntity::getCreatedAt));
+    }
+
+    public KbFileEntity requireOwnedEntity(Long id, Long userId) {
+        return requireOwned(id, userId);
+    }
+
+    public byte[] readBytes(KbFileEntity e) {
+        if (e == null || !StringUtils.hasText(e.getObjectKey()) || "pending".equals(e.getObjectKey())) {
+            throw new BusinessException(404, "文件内容不存在");
+        }
+        if (!objectStorage.exists(e.getObjectKey())) {
+            throw new BusinessException(404, "文件内容不存在");
+        }
+        try (InputStream in = objectStorage.openStream(e.getObjectKey())) {
+            return in.readAllBytes();
+        } catch (IOException ex) {
+            throw new BusinessException(500, "读取附件失败: " + ex.getMessage());
+        }
+    }
+
     @Transactional
     public FileResponse bind(Long id, Long noteId) {
         Long userId = SecurityUtils.requireCurrentUserId();
