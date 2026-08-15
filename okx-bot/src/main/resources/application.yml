@@ -80,7 +80,7 @@ auth:
   wechat:
     mini:
       # true + 填写 app-id/secret 后走真实 jscode2session
-      # 密钥放环境变量 / deploy/env/app.env，勿写进仓库
+      # 密钥放环境变量，勿写进仓库
       # enabled=false 且 mock=true 时才本地 mock openid（禁止 enabled 时静默 mock）
       enabled: ${WX_MINI_ENABLED:false}
       mock: ${WX_MINI_MOCK:true}

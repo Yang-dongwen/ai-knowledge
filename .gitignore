@@ -6,6 +6,7 @@
 /kb-mobile/
 /docs/
 /.grok/
+/deploy/
 
 # Python
 __pycache__/

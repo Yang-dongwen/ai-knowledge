@@ -151,7 +151,7 @@ okx:
 CREATE DATABASE IF NOT EXISTS okx_bot DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci;
 ```
 
-或执行 `src/main/resources/db/schema.sql`（现仅含建库语句）。生产可用 `deploy/aws/init-rds.sh`（同样只建库）。
+或执行 `src/main/resources/db/schema.sql`（现仅含建库语句）。
 
 **MySQL 版本**：本地与生产均建议 **MySQL 8+**（Flyway Community 9.x 不支持 5.7）。本机已可按 `MySQL84` 服务使用 8.4。
 
@@ -313,19 +313,12 @@ ai:
 两者都用 **R2**，`env-prefix`: `local` / `ec2` 区分路径。
 
 ```powershell
-# 生成本地 yml（可从 deploy/env/app.env 填 R2/AI）
-python deploy/local/gen-local-yml.py
-
-# 本地启动
-powershell -File deploy/local/run.ps1
-
-# 只同步服务器密钥（deploy/env/app.env）
-powershell -File deploy/aws/sync-env.ps1
+copy src\main\resources\application-local.yml.example src\main\resources\application-local.yml
+# 改库账号 / AI Key 后：
+mvn spring-boot:run
 ```
 
-部署说明见 [deploy/README.md](../deploy/README.md)：本机 [deploy/local](../deploy/local/README.md)，AWS [deploy/aws](../deploy/aws/README.md)。
-
-IDE：Active profiles = `local`。
+本机从零步骤见仓库根 [README.md](../README.md)。IDE：Active profiles = `local`。
 
 ### 7.2 Whisper（二选一）
 
@@ -502,7 +495,7 @@ Base URL：`http://127.0.0.1:8080`
 | GET | `/oauth/{provider}/callback` | 平台回调 → 前端 ticket |
 | POST | `/oauth/exchange` | ticket 换 JWT |
 
-OAuth 配置：本地见 `application-local.yml`（真实 client，无 env）；生产见 `AUTH_OAUTH_*`（`deploy/env/app.env.example`）。
+OAuth 配置：本地写在 `application-local.yml`；服务器用环境变量 `AUTH_OAUTH_*`。
 
 ### 9.2 交易与系统（SUPER_ADMIN）
 

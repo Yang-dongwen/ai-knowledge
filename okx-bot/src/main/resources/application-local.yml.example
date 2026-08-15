@@ -1,0 +1,103 @@
+# 复制为 application-local.yml 后再改（该文件已 gitignore，勿提交）
+# IDE / mvn：spring.profiles.active=local
+
+server:
+  port: 8080
+
+spring:
+  datasource:
+    driver-class-name: com.mysql.cj.jdbc.Driver
+    url: jdbc:mysql://localhost:3306/okx_bot?useUnicode=true&characterEncoding=utf-8&serverTimezone=Asia/Shanghai&useSSL=false&allowPublicKeyRetrieval=true
+    username: root
+    password: 123456
+
+auth:
+  jwt:
+    secret: okx-bot-jwt-secret-change-me-in-production-2026-secure-key
+    expire-seconds: 7200
+    issuer: okx-bot
+  mail:
+    console-mode: true
+    from: noreply@example.com
+  admin:
+    seed-enabled: true
+    email: admin@okx-bot.local
+    password: Admin@123456
+    nickname: 超级管理员
+
+pay:
+  enabled: true
+  public-base-url: http://127.0.0.1:8080
+  mock-enabled: true
+
+ai:
+  default-provider: nvidia
+  providers:
+    openai:
+      name: OpenAI
+      base-url: https://api.openai.com/v1
+      api-key: ""
+      models: []
+    deepseek:
+      name: DeepSeek
+      base-url: https://api.deepseek.com/v1
+      api-key: ""
+      models: []
+    nvidia:
+      name: NVIDIA NIM
+      base-url: https://integrate.api.nvidia.com/v1
+      api-key: ""
+      models: []
+
+storage:
+  provider: r2
+  env-prefix: local
+  serve-mode: presign
+  local:
+    root: ./data/_objects
+  scratch:
+    root: ./data/_scratch
+    ttl-hours: 24
+  r2:
+    account-id: ""
+    bucket: ""
+    access-key-id: ""
+    secret-access-key: ""
+    endpoint: ""
+    region: auto
+    path-style: true
+    presign-ttl-seconds: 900
+    public-base-url: ""
+
+video:
+  work-dir: ./data/video
+  yt-dlp-path: yt-dlp
+  ffmpeg-path: ffmpeg
+  cleanup-media: false
+  whisper:
+    base-url: http://127.0.0.1:8000
+    model: small
+    managed:
+      enabled: true
+      working-dir: ./whisper-service
+
+aigen:
+  work-dir: ./data/aigen
+  remotion:
+    manage-process: true
+    project-dir: ../aigen-remotion
+
+imggen:
+  work-dir: ./data/imggen
+
+halo:
+  enabled: false
+  base-url: https://blog.dwcode.cloud
+  token: ""
+  public-base-url: https://blog.dwcode.cloud
+  publish-on-create: true
+
+logging:
+  level:
+    root: INFO
+    com.dwcode.okxbot: DEBUG

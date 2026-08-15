@@ -1,7 +1,6 @@
 # 知识库 → Halo 发文（代码入口）
 
-- **本机怎么跑**：[deploy/local/README.md](../../deploy/local/README.md)
-- **一键上 AWS**：[deploy/aws/README.md](../../deploy/aws/README.md)
+- **本机怎么跑**：仓库根 [README.md](../../README.md)
 
 ## 代码入口
 
