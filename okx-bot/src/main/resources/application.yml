@@ -349,6 +349,7 @@ halo:
   token: ${HALO_PAT:}
   public-base-url: ${HALO_PUBLIC_BASE_URL:https://blog.dwcode.cloud}
   publish-on-create: ${HALO_PUBLISH_ON_CREATE:true}
+  token-secret: ${HALO_TOKEN_SECRET:}
 
 # 文章/新闻提取
 article:

@@ -564,7 +564,7 @@ public class HaloHttpPublishAdapter implements HaloPublishPort {
         return n;
     }
 
-    static String trimSlash(String url) {
+    public static String trimSlash(String url) {
         if (url == null) {
             return "";
         }

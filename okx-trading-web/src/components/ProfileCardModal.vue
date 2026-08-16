@@ -2,7 +2,7 @@
   <a-modal
     :open="open"
     :footer="null"
-    :width="420"
+    :width="520"
     :centered="true"
     destroy-on-close
     class="profile-card-modal"
@@ -70,6 +70,50 @@
           </div>
         </div>
 
+        <div class="blog-bind">
+          <div class="blog-bind-head">关联博客</div>
+          <template v-if="blogBinding?.target === 'platform'">
+            <p class="blog-hint muted">{{ blogBinding.hint || '超级管理员发文到平台博客' }}</p>
+            <div v-if="blogBinding.bound" class="blog-site">{{ blogBinding.siteUrl }}</div>
+          </template>
+          <template v-else>
+            <p v-if="blogBinding?.bound" class="blog-site">
+              {{ blogBinding.publicUrl || blogBinding.siteUrl }}
+              <span v-if="blogBinding.haloUsername"> · {{ blogBinding.haloUsername }}</span>
+              <span v-if="blogBinding.tokenMasked"> · {{ blogBinding.tokenMasked }}</span>
+            </p>
+            <p v-else class="blog-hint muted">未关联则无法发布。填写你自己的 Halo 站点和个人令牌。</p>
+            <a-input
+              v-model:value="blogBaseUrl"
+              class="blog-input"
+              placeholder="站点地址 https://…"
+              allow-clear
+            />
+            <a-input
+              v-model:value="blogPublicUrl"
+              class="blog-input"
+              placeholder="对外地址（可空，默认与站点相同）"
+              allow-clear
+            />
+            <a-input-password
+              v-model:value="blogToken"
+              class="blog-input"
+              :placeholder="blogBinding?.bound ? '新令牌（不改可空）' : '个人令牌 pat_…'"
+            />
+            <div class="blog-actions">
+              <a-button type="primary" :loading="blogSaving" @click="saveBlog">保存关联</a-button>
+              <a-button
+                v-if="blogBinding?.bound"
+                danger
+                :loading="blogSaving"
+                @click="removeBlog"
+              >
+                解除
+              </a-button>
+            </div>
+          </template>
+        </div>
+
         <div class="profile-footer">
           <a-button type="primary" block @click="goMember">会员中心 / 开通续费</a-button>
         </div>
@@ -85,6 +129,7 @@ import { ref, computed, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { message } from 'ant-design-vue'
 import { authApi, roleLabel, type AuthUser } from '@/api/auth.api'
+import { kbApi, type HaloBinding } from '@/api/kb.api'
 import { useAuthStore } from '@/stores/auth.store'
 
 const props = defineProps<{ open: boolean }>()
@@ -94,6 +139,11 @@ const router = useRouter()
 const auth = useAuthStore()
 const loading = ref(false)
 const profile = ref<AuthUser | null>(null)
+const blogBinding = ref<HaloBinding | null>(null)
+const blogSaving = ref(false)
+const blogBaseUrl = ref('')
+const blogPublicUrl = ref('')
+const blogToken = ref('')
 
 const displayName = computed(
   () => profile.value?.nickname || profile.value?.email || '用户'
@@ -127,6 +177,51 @@ function goMember() {
   router.push('/member')
 }
 
+async function saveBlog() {
+  const baseUrl = blogBaseUrl.value.trim()
+  if (!baseUrl) {
+    message.warning('请填写站点地址')
+    return
+  }
+  if (!blogBinding.value?.bound && !blogToken.value.trim()) {
+    message.warning('请填写个人令牌')
+    return
+  }
+  blogSaving.value = true
+  try {
+    const res = await kbApi.saveHaloBinding({
+      baseUrl,
+      publicBaseUrl: blogPublicUrl.value.trim() || undefined,
+      token: blogToken.value.trim() || undefined
+    })
+    blogBinding.value = res.data
+    blogToken.value = ''
+    message.success('已保存博客关联')
+  } catch (e: any) {
+    message.error(e?.message || '保存失败')
+  } finally {
+    blogSaving.value = false
+  }
+}
+
+async function removeBlog() {
+  blogSaving.value = true
+  try {
+    await kbApi.deleteHaloBinding()
+    blogBinding.value = {
+      bound: false,
+      target: 'personal',
+      hint: '请先关联博客账户'
+    }
+    blogToken.value = ''
+    message.success('已解除关联')
+  } catch (e: any) {
+    message.error(e?.message || '解除失败')
+  } finally {
+    blogSaving.value = false
+  }
+}
+
 watch(
   () => props.open,
   async (v) => {
@@ -144,6 +239,15 @@ async function loadProfile() {
     if (res.data) {
       auth.user = res.data
       localStorage.setItem('okx_auth_user', JSON.stringify(res.data))
+    }
+    try {
+      const b = await kbApi.getHaloBinding()
+      blogBinding.value = b.data
+      blogBaseUrl.value = b.data?.siteUrl || ''
+      blogPublicUrl.value = b.data?.publicUrl || ''
+      blogToken.value = ''
+    } catch {
+      blogBinding.value = null
     }
   } catch (e: any) {
     // 失败时展示本地缓存，不强制登出（401 由 request 拦截器处理）
@@ -170,6 +274,40 @@ async function loadProfile() {
 
 .profile-footer {
   margin-top: 16px;
+}
+
+.blog-bind {
+  margin-top: 16px;
+  padding: 12px 14px;
+  border: 1px solid var(--border-color);
+  border-radius: 12px;
+}
+
+.blog-bind-head {
+  font-weight: 650;
+  font-size: 14px;
+  margin-bottom: 8px;
+}
+
+.blog-hint,
+.blog-site {
+  font-size: 12.5px;
+  margin: 0 0 10px;
+  line-height: 1.5;
+  word-break: break-all;
+}
+
+.blog-input {
+  margin-bottom: 8px;
+}
+
+.blog-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.muted {
+  color: var(--text-secondary);
 }
 
 .profile-hero {

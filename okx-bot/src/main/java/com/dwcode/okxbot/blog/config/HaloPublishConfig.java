@@ -1,20 +1,19 @@
 package com.dwcode.okxbot.blog.config;
 
-import com.dwcode.okxbot.blog.adapter.DisabledHaloPublishAdapter;
-import com.dwcode.okxbot.blog.adapter.HaloHttpPublishAdapter;
-import com.dwcode.okxbot.blog.port.HaloPublishPort;
-import com.fasterxml.jackson.databind.ObjectMapper;
+import com.dwcode.okxbot.auth.config.AuthProperties;
+import com.dwcode.okxbot.blog.HaloTokenCipher;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.util.StringUtils;
 
 @Configuration
 public class HaloPublishConfig {
 
     @Bean
-    public HaloPublishPort haloPublishPort(HaloProperties properties, ObjectMapper objectMapper) {
-        if (!properties.isConfigured()) {
-            return new DisabledHaloPublishAdapter();
-        }
-        return new HaloHttpPublishAdapter(properties, objectMapper);
+    public HaloTokenCipher haloTokenCipher(HaloProperties haloProperties, AuthProperties authProperties) {
+        String secret = StringUtils.hasText(haloProperties.getTokenSecret())
+                ? haloProperties.getTokenSecret()
+                : authProperties.getJwt().getSecret();
+        return new HaloTokenCipher(secret);
     }
 }

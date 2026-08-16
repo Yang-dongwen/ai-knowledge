@@ -1,6 +1,7 @@
 package com.dwcode.okxbot.kb.service;
 
 import com.dwcode.okxbot.auth.security.SecurityUtils;
+import com.dwcode.okxbot.blog.HaloClientResolver;
 import com.dwcode.okxbot.blog.SlugUtil;
 import com.dwcode.okxbot.blog.port.HaloAttachment;
 import com.dwcode.okxbot.blog.port.HaloPostTerms;
@@ -43,23 +44,28 @@ public class KbBlogPublishService {
     private final KbNoteMapper noteMapper;
     private final KbNoteService noteService;
     private final KbFileService fileService;
-    private final HaloPublishPort haloPublishPort;
+    private final HaloClientResolver haloClientResolver;
 
     public BlogPublishOptionsResponse options(Long id) {
         KbNoteEntity e = requireOwnedNote(id);
-        List<HaloTermResponse> categories = haloPublishPort.listCategories().stream().map(this::toTerm).toList();
-        List<HaloTermResponse> tags = haloPublishPort.listTags().stream().map(this::toTerm).toList();
-        HaloPostTerms selected = StringUtils.hasText(e.getHaloPostName())
-                ? haloPublishPort.getPostTerms(e.getHaloPostName())
+        HaloClientResolver.Resolved resolved = haloClientResolver.resolve();
+        HaloPublishPort port = resolved.port();
+        List<HaloTermResponse> categories = port.listCategories().stream().map(this::toTerm).toList();
+        List<HaloTermResponse> tags = port.listTags().stream().map(this::toTerm).toList();
+        boolean sameSite = haloClientResolver.sameSite(e.getHaloPermalink(), resolved.publicBaseUrl());
+        HaloPostTerms selected = sameSite && StringUtils.hasText(e.getHaloPostName())
+                ? port.getPostTerms(e.getHaloPostName())
                 : HaloPostTerms.empty();
         return BlogPublishOptionsResponse.builder()
-                .published(StringUtils.hasText(e.getHaloPermalink()))
-                .permalink(e.getHaloPermalink())
+                .published(sameSite && StringUtils.hasText(e.getHaloPermalink()))
+                .permalink(sameSite ? e.getHaloPermalink() : null)
                 .categories(categories)
                 .tags(tags)
                 .selectedCategoryNames(selected.categoryNames())
                 .selectedTagNames(selected.tagNames())
                 .mediaCount(collectMediaIds(e).size())
+                .target(resolved.target())
+                .siteUrl(resolved.siteUrl())
                 .build();
     }
 
@@ -73,17 +79,21 @@ public class KbBlogPublishService {
         String title = StringUtils.hasText(e.getTitle()) ? e.getTitle() : "未命名";
         String rawType = "markdown".equalsIgnoreCase(e.getContentFormat()) ? "markdown" : "HTML";
         String original = e.getContent() == null ? "" : e.getContent();
-        PreparedContent prepared = prepareContent(e, userId, original, rawType);
+        HaloClientResolver.Resolved resolved = haloClientResolver.resolve();
+        HaloPublishPort port = resolved.port();
+        PreparedContent prepared = prepareContent(e, userId, original, rawType, port);
 
         List<String> categoryNames = request == null ? null : request.getCategoryNames();
         List<String> tagNames = request == null ? null : request.getTagNames();
+        boolean sameSite = haloClientResolver.sameSite(e.getHaloPermalink(), resolved.publicBaseUrl());
+        String existingName = sameSite ? e.getHaloPostName() : null;
 
-        HaloPublishResult result = haloPublishPort.publish(new HaloPublishCommand(
+        HaloPublishResult result = port.publish(new HaloPublishCommand(
                 title,
                 SlugUtil.fromTitle(title, "post-" + id),
                 prepared.raw(),
                 rawType,
-                e.getHaloPostName(),
+                existingName,
                 categoryNames,
                 tagNames,
                 prepared.cover()));
@@ -102,7 +112,8 @@ public class KbBlogPublishService {
         return resp;
     }
 
-    private PreparedContent prepareContent(KbNoteEntity e, Long userId, String original, String rawType) {
+    private PreparedContent prepareContent(KbNoteEntity e, Long userId, String original, String rawType,
+                                           HaloPublishPort haloPublishPort) {
         Set<Long> inlineIds = KbHaloContentRewriter.collectFileIds(original);
         Map<Long, KbFileEntity> bound = KbHaloContentRewriter.indexById(
                 fileService.listEntitiesByNote(e.getId(), userId));

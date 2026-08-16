@@ -1,6 +1,7 @@
 package com.dwcode.okxbot.kb.service;
 
 import com.dwcode.okxbot.auth.security.SecurityUtils;
+import com.dwcode.okxbot.blog.HaloClientResolver;
 import com.dwcode.okxbot.blog.port.HaloPublishCommand;
 import com.dwcode.okxbot.blog.port.HaloPublishPort;
 import com.dwcode.okxbot.blog.port.HaloPublishResult;
@@ -50,7 +51,8 @@ class KbBlogPublishServiceTest {
 
         KbFileService files = mock(KbFileService.class);
         when(files.listEntitiesByNote(11L, 7L)).thenReturn(java.util.List.of());
-        KbBlogPublishService svc = new KbBlogPublishService(mapper, noteService, files, port);
+        HaloClientResolver resolver = resolverOf(port);
+        KbBlogPublishService svc = new KbBlogPublishService(mapper, noteService, files, resolver);
         try (MockedStatic<SecurityUtils> st = mockStatic(SecurityUtils.class)) {
             st.when(SecurityUtils::requireCurrentUserId).thenReturn(7L);
             NoteResponse resp = svc.publish(11L);
@@ -95,7 +97,8 @@ class KbBlogPublishServiceTest {
                 new HaloPublishResult("post-x", "https://blog.example.com/a", "/a"));
         when(noteService.get(11L)).thenReturn(NoteResponse.builder().id(11L).title("带图").build());
 
-        KbBlogPublishService svc = new KbBlogPublishService(mapper, noteService, files, port);
+        HaloClientResolver resolver = resolverOf(port);
+        KbBlogPublishService svc = new KbBlogPublishService(mapper, noteService, files, resolver);
         try (MockedStatic<SecurityUtils> st = mockStatic(SecurityUtils.class)) {
             st.when(SecurityUtils::requireCurrentUserId).thenReturn(7L);
             svc.publish(11L);
@@ -117,10 +120,18 @@ class KbBlogPublishServiceTest {
         when(mapper.selectById(2L)).thenReturn(e);
 
         KbBlogPublishService svc = new KbBlogPublishService(
-                mapper, mock(KbNoteService.class), mock(KbFileService.class), mock(HaloPublishPort.class));
+                mapper, mock(KbNoteService.class), mock(KbFileService.class), mock(HaloClientResolver.class));
         try (MockedStatic<SecurityUtils> st = mockStatic(SecurityUtils.class)) {
             st.when(SecurityUtils::requireCurrentUserId).thenReturn(1L);
             assertThrows(BusinessException.class, () -> svc.publish(2L));
         }
+    }
+
+    private static HaloClientResolver resolverOf(HaloPublishPort port) {
+        HaloClientResolver resolver = mock(HaloClientResolver.class);
+        when(resolver.resolve()).thenReturn(new HaloClientResolver.Resolved(
+                port, "https://blog.example.com", HaloClientResolver.TARGET_PERSONAL, "https://blog.example.com"));
+        when(resolver.sameSite(any(), any())).thenReturn(true);
+        return resolver;
     }
 }

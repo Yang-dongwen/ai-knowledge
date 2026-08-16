@@ -147,3 +147,10 @@
   min-height: 42px;
 }
 
+// a-input-password = 外壳 .ant-input-password + 内部 .ant-input。
+// 两边都写 min-height 会叠加上 large 的 padding，密码框会比邮箱框高一截。
+:deep(.ant-input-password .ant-input) {
+  min-height: 0;
+  height: auto;
+}
+

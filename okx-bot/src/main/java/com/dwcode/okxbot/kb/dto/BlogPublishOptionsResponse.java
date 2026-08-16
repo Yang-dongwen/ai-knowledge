@@ -25,4 +25,10 @@ public class BlogPublishOptionsResponse {
 
     /** 正文引用 + 绑定附件数 */
     private int mediaCount;
+
+    /** platform | personal */
+    private String target;
+
+    /** 发文目标站点 */
+    private String siteUrl;
 }

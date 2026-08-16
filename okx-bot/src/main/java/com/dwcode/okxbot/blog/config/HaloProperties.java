@@ -28,6 +28,11 @@ public class HaloProperties {
     /** 创建/更新后是否立即发布 */
     private boolean publishOnCreate = true;
 
+    /**
+     * 用户 PAT 落库加密密钥。空则回退 auth.jwt.secret。
+     */
+    private String tokenSecret = "";
+
     public boolean isConfigured() {
         return enabled && StringUtils.hasText(token) && StringUtils.hasText(baseUrl);
     }

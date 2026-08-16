@@ -121,6 +121,24 @@ export interface BlogPublishOptions {
   selectedCategoryNames: string[]
   selectedTagNames: string[]
   mediaCount: number
+  target?: 'platform' | 'personal' | string
+  siteUrl?: string | null
+}
+
+export interface HaloBinding {
+  bound: boolean
+  target: 'platform' | 'personal' | string
+  siteUrl?: string | null
+  publicUrl?: string | null
+  haloUsername?: string | null
+  tokenMasked?: string | null
+  hint?: string | null
+}
+
+export interface HaloBindingBody {
+  baseUrl: string
+  publicBaseUrl?: string
+  token?: string
 }
 
 export interface BlogPublishBody {
@@ -291,6 +309,18 @@ export const kbApi = {
 
   restoreNote(id: string): Promise<{ data: KbNoteItem }> {
     return request.post(`/v1/kb/notes/${id}/restore`)
+  },
+
+  getHaloBinding(): Promise<{ data: HaloBinding }> {
+    return request.get('/v1/kb/blog/binding')
+  },
+
+  saveHaloBinding(body: HaloBindingBody): Promise<{ data: HaloBinding }> {
+    return request.put('/v1/kb/blog/binding', body, { timeout: 30000 })
+  },
+
+  deleteHaloBinding(): Promise<{ data: null }> {
+    return request.delete('/v1/kb/blog/binding')
   },
 
   getBlogPublishOptions(id: string): Promise<{ data: BlogPublishOptions }> {
