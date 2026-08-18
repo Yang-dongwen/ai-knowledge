@@ -1,0 +1,49 @@
+/* 鼠标 I 形指针：Windows 深色系统 + 亮色编辑区时是白的，白底上等于消失。
+   用带白边的深色 I 形图，亮底/暗底都能看见。 */
+
+$kb-ibeam: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='20' viewBox='0 0 16 20'%3E%3Cpath d='M3 1h10M8 1v18M3 19h10' stroke='%23ffffff' stroke-width='3.2' stroke-linecap='square' fill='none'/%3E%3Cpath d='M3 1h10M8 1v18M3 19h10' stroke='%230f172a' stroke-width='1.4' stroke-linecap='square' fill='none'/%3E%3C/svg%3E")
+  8 10,
+  text;
+
+.kb-workspace {
+  .md-doc-edit,
+  .md-doc-title,
+  .md-input.ant-input,
+  .md-input textarea,
+  textarea.md-input,
+  .rich-wrap,
+  .rich-editor,
+  .w-e-text-container,
+  .w-e-text-container [contenteditable='true'],
+  .w-e-text-container [data-slate-editor],
+  .html-fast-shell,
+  .html-fast-shell .shell-body {
+    cursor: $kb-ibeam !important;
+  }
+}
+
+html[data-theme='light'] .kb-workspace {
+  .md-doc-title,
+  .md-input.ant-input,
+  .md-input textarea,
+  textarea.md-input,
+  .w-e-text-container,
+  .w-e-text-container [contenteditable='true'],
+  .w-e-text-container [data-slate-editor] {
+    color-scheme: only light;
+    caret-color: #2563eb !important;
+  }
+}
+
+html[data-theme='dark'] .kb-workspace {
+  .md-doc-title,
+  .md-input.ant-input,
+  .md-input textarea,
+  textarea.md-input,
+  .w-e-text-container,
+  .w-e-text-container [contenteditable='true'],
+  .w-e-text-container [data-slate-editor] {
+    color-scheme: only dark;
+    caret-color: #93c5fd !important;
+  }
+}

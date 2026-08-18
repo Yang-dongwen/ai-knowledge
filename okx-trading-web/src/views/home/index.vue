@@ -76,7 +76,8 @@ import {
   PictureOutlined,
   ThunderboltOutlined,
   CrownOutlined,
-  FileTextOutlined
+  FileTextOutlined,
+  ReadOutlined
 } from '@ant-design/icons-vue'
 
 const router = useRouter()
@@ -92,6 +93,15 @@ interface ToolCard {
 }
 
 const toolCards: ToolCard[] = [
+  {
+    key: 'news',
+    title: '今日资讯',
+    desc: 'Horizon 筛过的日报，看当天科技与行业要点。',
+    tags: ['Horizon', '时讯'],
+    accent: 'var(--primary-color)',
+    accentSoft: 'var(--surface-3)',
+    icon: markRaw(ReadOutlined)
+  },
   {
     key: 'ai-chat',
     title: 'AI 对话',

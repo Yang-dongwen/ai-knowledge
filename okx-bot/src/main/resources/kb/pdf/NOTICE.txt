@@ -1,0 +1,2 @@
+Typora Vue print CSS adapted from blinkfox/typora-vue-theme (Apache-2.0).
+Fonts: Source Sans Pro / Roboto Mono (theme pack), Noto Sans SC (OFL).

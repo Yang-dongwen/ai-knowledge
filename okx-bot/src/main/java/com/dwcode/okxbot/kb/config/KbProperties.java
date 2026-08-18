@@ -16,6 +16,7 @@ public class KbProperties {
     private final Category category = new Category();
     private final Search search = new Search();
     private final File file = new File();
+    private final Pdf pdf = new Pdf();
 
     @Data
     public static class Note {
@@ -53,5 +54,16 @@ public class KbProperties {
         private long maxImageBytes = 10L * 1024 * 1024;
         private long maxVideoBytes = 100L * 1024 * 1024;
         private long maxOtherBytes = 30L * 1024 * 1024;
+    }
+
+    @Data
+    public static class Pdf {
+        /** 空则自动探测本机 Edge / Chrome / Chromium */
+        private String chromePath = "";
+        private int timeoutSeconds = 60;
+        /** Docker / Linux 下无头 Chrome 通常需要 */
+        private boolean noSandbox = true;
+        /** 提交的 HTML 正文上限（含内联图片） */
+        private int maxHtmlChars = 16_000_000;
     }
 }

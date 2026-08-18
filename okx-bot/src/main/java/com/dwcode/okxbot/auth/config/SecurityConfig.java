@@ -79,6 +79,10 @@ public class SecurityConfig {
                         ).permitAll()
                         // 知识库公开分享阅读（无需登录）
                         .requestMatchers("/api/v1/kb/public/**").permitAll()
+                        // Horizon 日报 webhook：无 JWT，服务内验共享 token
+                        .requestMatchers(HttpMethod.POST, "/api/v1/horizon/digest").permitAll()
+                        // GET/HEAD：Halo 友情链接插件探活用 HEAD，只放行 GET 会 401 被标成 RSS 异常
+                        .requestMatchers("/api/v1/horizon/feed.xml").permitAll()
                         .requestMatchers("/error").permitAll()
                         // 用户管理 / 模型配置 CRUD / 模型连通性测试 / 全局 yt-dlp Cookie：仅超级管理员
                         .requestMatchers("/api/admin/**").hasRole("SUPER_ADMIN")

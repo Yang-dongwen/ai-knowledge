@@ -211,7 +211,8 @@ import {
   TeamOutlined,
   AppstoreOutlined,
   FileTextOutlined,
-  BookOutlined
+  BookOutlined,
+  ReadOutlined
 } from '@ant-design/icons-vue'
 import ProfileCardModal from '@/components/ProfileCardModal.vue'
 import ThemeToggle from '@/components/ThemeToggle.vue'
@@ -242,7 +243,7 @@ const TOOLS_KEYS = new Set([
   'ai-chat'
 ])
 /** 知识库独立一级菜单（与 AI 工具平级） */
-const KB_KEYS = new Set(['kb'])
+const KB_KEYS = new Set(['kb', 'news'])
 const ADMIN_KEYS = new Set(['user-manage'])
 const SUPER_ADMIN_ONLY_GROUPS = new Set(['admin'])
 
@@ -295,10 +296,16 @@ const ALL_MENU_GROUPS: MenuGroup[] = [
   {
     key: 'kb',
     title: '知识库',
-    description: '个人笔记整理与检索，独立于 AI 工具',
+    description: '时讯速递与个人笔记',
     icon: markRaw(BookOutlined),
     cols: 1,
     children: [
+      {
+        key: 'news',
+        title: '今日资讯',
+        description: 'Horizon 日报，筛选后的当日要点',
+        icon: markRaw(ReadOutlined)
+      },
       {
         key: 'kb',
         title: '知识库工作台',

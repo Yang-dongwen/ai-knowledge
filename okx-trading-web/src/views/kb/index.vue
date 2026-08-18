@@ -544,6 +544,7 @@
                 <template #overlay>
                   <a-menu @click="onDocMoreMenu">
                     <a-menu-item key="export">导出 Markdown</a-menu-item>
+                    <a-menu-item key="export-pdf">导出 PDF</a-menu-item>
                     <a-menu-item key="publish-blog">
                       {{ editHaloPermalink ? '更新到博客' : '发布到博客' }}
                     </a-menu-item>
@@ -597,6 +598,7 @@
                         分享
                       </a-menu-item>
                       <a-menu-item key="export">导出 Markdown</a-menu-item>
+                      <a-menu-item key="export-pdf">导出 PDF</a-menu-item>
                       <a-menu-item key="publish-blog">
                         {{ editHaloPermalink ? '更新到博客' : '发布到博客' }}
                       </a-menu-item>
@@ -752,6 +754,10 @@
                 type="text"
                 maxlength="200"
                 placeholder="标题"
+                spellcheck="false"
+                autocomplete="off"
+                autocorrect="off"
+                autocapitalize="off"
                 :disabled="editDeleted"
                 @input="onMarkdownTitleInput"
                 @blur="onMarkdownBlur"
@@ -784,6 +790,8 @@
                 v-model:value="mdBodyText"
                 class="md-input md-body-input"
                 placeholder="正文从这里开始… 可粘贴或拖入图片"
+                :spellcheck="false"
+                autocomplete="off"
                 :disabled="editDeleted"
                 :auto-size="false"
                 @blur="onMarkdownBlur"
@@ -1137,6 +1145,8 @@ import {
   scrollIndexIntoView
 } from './kbTreeVirtual'
 import { sanitizeHtml } from '@/utils/sanitizeHtml'
+import { exportNoteAsVuePdf } from './exportVuePdf'
+import './kbEditorCaret.scss'
 
 /** 异步加载，避免 turndown/wangeditor/docx 阻塞首屏路由 */
 const RichEditor = defineAsyncComponent(() => import('./RichEditor.vue'))
@@ -1401,7 +1411,14 @@ function onMobileMoreMenu({ key }: { key: string }) {
     shareOpen.value = true
     return
   }
-  if (key === 'export' || key === 'duplicate' || key === 'revisions' || key === 'convert' || key === 'publish-blog') {
+  if (
+    key === 'export' ||
+    key === 'export-pdf' ||
+    key === 'duplicate' ||
+    key === 'revisions' ||
+    key === 'convert' ||
+    key === 'publish-blog'
+  ) {
     onDocMoreMenu({ key })
     return
   }
@@ -1413,6 +1430,10 @@ function onMobileMoreMenu({ key }: { key: string }) {
 function onDocMoreMenu({ key }: { key: string }) {
   if (key === 'export') {
     void exportCurrentNote()
+    return
+  }
+  if (key === 'export-pdf') {
+    void exportCurrentNotePdf()
     return
   }
   if (key === 'publish-blog') {
@@ -3023,6 +3044,30 @@ async function exportCurrentNote() {
     message.success('已导出 Markdown')
   } catch (e: any) {
     message.error(e?.message || '导出失败')
+  }
+}
+
+async function exportCurrentNotePdf() {
+  if (!selectedId.value || isCreating.value) {
+    message.warning('请先保存笔记再导出 PDF')
+    return
+  }
+  if (editFormat.value === 'markdown') {
+    syncMarkdownFromParts()
+  }
+  const hide = message.loading('正在导出 PDF…', 0)
+  try {
+    await exportNoteAsVuePdf({
+      noteId: selectedId.value,
+      title: editTitle.value || '未命名笔记',
+      content: editContent.value || '',
+      format: editFormat.value
+    })
+    message.success('已导出 PDF')
+  } catch (e: any) {
+    message.error(e?.message || '导出 PDF 失败')
+  } finally {
+    if (typeof hide === 'function') hide()
   }
 }
 
@@ -5673,6 +5718,7 @@ watch(outlineNodes, (items) => {
   border-radius: 0 !important;
   box-shadow: none !important;
   background: var(--surface-1);
+  color: var(--text-primary);
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   font-size: 13.5px;
   line-height: 1.6;
@@ -5684,6 +5730,7 @@ watch(outlineNodes, (items) => {
     border: none;
     box-shadow: none !important;
     background: transparent;
+    color: var(--text-primary);
     font-family: inherit;
     font-size: inherit;
     line-height: inherit;

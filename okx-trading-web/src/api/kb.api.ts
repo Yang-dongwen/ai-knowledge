@@ -552,7 +552,57 @@ export const kbApi = {
     a.click()
     a.remove()
     URL.revokeObjectURL(url)
+  },
+
+  /** 导出 Vue 风格 PDF 并触发浏览器下载 */
+  async exportNotePdf(
+    id: string,
+    body: { title?: string; html: string },
+    filenameHint?: string
+  ): Promise<void> {
+    const token = localStorage.getItem(TOKEN_KEY)
+    const res = await axios.post(`/api/v1/kb/notes/${id}/export-pdf`, body, {
+      responseType: 'blob',
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+      timeout: 120000,
+      validateStatus: () => true
+    })
+    if (res.status === 401) {
+      handleAuthFailure(401, '未登录或登录已过期')
+      throw new Error('未登录')
+    }
+    const blob = res.data as Blob
+    if (res.status >= 400) {
+      throw new Error(await readBlobError(blob, '导出 PDF 失败'))
+    }
+    let name = filenameHint?.trim() || `note-${id}.pdf`
+    if (!name.toLowerCase().endsWith('.pdf')) name += '.pdf'
+    const cd = res.headers?.['content-disposition'] as string | undefined
+    if (cd) {
+      const m = /filename\*=UTF-8''([^;]+)|filename="?([^";]+)"?/i.exec(cd)
+      const raw = decodeURIComponent((m?.[1] || m?.[2] || '').trim())
+      if (raw) name = raw
+    }
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = name
+    document.body.appendChild(a)
+    a.click()
+    a.remove()
+    URL.revokeObjectURL(url)
   }
+}
+
+async function readBlobError(blob: Blob, fallback: string): Promise<string> {
+  try {
+    const text = await blob.text()
+    const j = JSON.parse(text) as { message?: string }
+    if (j?.message) return j.message
+  } catch {
+    /* not json */
+  }
+  return fallback
 }
 
 export interface KbShareStatus {

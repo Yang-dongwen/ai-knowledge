@@ -82,6 +82,12 @@ const routes: RouteRecordRaw[] = [
         meta: { title: 'AI 对话', group: 'tools', immersive: true }
       },
       {
+        path: 'news',
+        name: 'TodayNews',
+        component: () => import('@/views/news/index.vue'),
+        meta: { title: '今日资讯', group: 'kb' }
+      },
+      {
         path: 'kb',
         name: 'KnowledgeBase',
         component: () => import('@/views/kb/index.vue'),

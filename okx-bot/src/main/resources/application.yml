@@ -200,6 +200,10 @@ kb:
     max-image-bytes: 10485760
     max-video-bytes: 104857600
     max-other-bytes: 31457280
+  pdf:
+    chrome-path: ${KB_PDF_CHROME_PATH:}
+    timeout-seconds: 60
+    no-sandbox: true
 
 # 存储：provider/r2 凭证/env-prefix 在 local / ec2
 storage:
@@ -350,6 +354,12 @@ halo:
   public-base-url: ${HALO_PUBLIC_BASE_URL:https://blog.dwcode.cloud}
   publish-on-create: ${HALO_PUBLISH_ON_CREATE:true}
   token-secret: ${HALO_TOKEN_SECRET:}
+
+# Horizon：文件夹/标签/路径/cron 都写死。只留环境差。
+horizon:
+  refresh-enabled: ${HORIZON_REFRESH_ENABLED:false}
+  auto-publish: false
+  news-public-url: ${HORIZON_NEWS_PUBLIC_URL:https://dwcode.cloud/news}
 
 # 文章/新闻提取
 article:

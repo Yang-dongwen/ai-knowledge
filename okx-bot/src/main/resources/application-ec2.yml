@@ -127,6 +127,10 @@ halo:
   token: ${HALO_PAT:}
   public-base-url: ${HALO_PUBLIC_BASE_URL:https://blog.dwcode.cloud}
 
+horizon:
+  refresh-enabled: true
+  auto-publish: true
+
 article:
   safety:
     allow-loopback: false

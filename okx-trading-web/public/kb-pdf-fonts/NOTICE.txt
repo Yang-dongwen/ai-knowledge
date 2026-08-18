@@ -1,0 +1,4 @@
+Fonts for knowledge-base Vue-style PDF export.
+
+- Source Sans Pro, Roboto Mono: from blinkfox/typora-vue-theme (Apache-2.0)
+- Noto Sans SC: SIL Open Font License 1.1

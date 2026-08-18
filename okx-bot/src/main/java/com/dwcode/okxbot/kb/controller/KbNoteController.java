@@ -8,8 +8,10 @@ import com.dwcode.okxbot.kb.dto.NotePageResponse;
 import com.dwcode.okxbot.kb.dto.NoteResponse;
 import com.dwcode.okxbot.kb.dto.NoteRevisionResponse;
 import com.dwcode.okxbot.kb.dto.NoteUpdateRequest;
+import com.dwcode.okxbot.kb.dto.KbPdfExportRequest;
 import com.dwcode.okxbot.kb.service.KbBlogPublishService;
 import com.dwcode.okxbot.kb.service.KbNoteService;
+import com.dwcode.okxbot.kb.service.KbPdfExportService;
 import jakarta.servlet.http.HttpServletResponse;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -43,6 +45,7 @@ public class KbNoteController {
 
     private final KbNoteService noteService;
     private final KbBlogPublishService blogPublishService;
+    private final KbPdfExportService pdfExportService;
 
     @GetMapping
     public ApiResult<NotePageResponse> list(
@@ -147,11 +150,14 @@ public class KbNoteController {
         return ApiResult.ok(blogPublishService.publish(id, request));
     }
 
-    /** 导出 Markdown 文件 */
+    /** 导出 Markdown 或 PDF（PDF 为已保存正文） */
     @GetMapping("/{id}/export")
     public ResponseEntity<byte[]> export(
             @PathVariable Long id,
             @RequestParam(defaultValue = "md") String format) {
+        if ("pdf".equalsIgnoreCase(format)) {
+            return pdfAttachment(pdfExportService.export(id, null));
+        }
         String md = noteService.exportMarkdown(id);
         String filename = "note-" + id + ".md";
         try {
@@ -171,6 +177,22 @@ public class KbNoteController {
                 .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename*=UTF-8''" + encoded)
                 .contentType(new MediaType("text", "markdown", StandardCharsets.UTF_8))
                 .body(bytes);
+    }
+
+    /** 导出 PDF：可带当前编辑器已渲染 HTML，避免先保存 */
+    @PostMapping("/{id}/export-pdf")
+    public ResponseEntity<byte[]> exportPdf(
+            @PathVariable Long id,
+            @RequestBody(required = false) KbPdfExportRequest request) {
+        return pdfAttachment(pdfExportService.export(id, request));
+    }
+
+    private static ResponseEntity<byte[]> pdfAttachment(KbPdfExportService.PdfFile file) {
+        String encoded = URLEncoder.encode(file.filename(), StandardCharsets.UTF_8).replace("+", "%20");
+        return ResponseEntity.ok()
+                .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename*=UTF-8''" + encoded)
+                .contentType(MediaType.APPLICATION_PDF)
+                .body(file.bytes());
     }
 
     @GetMapping("/{id}/revisions")

@@ -35,3 +35,5 @@
 表：Flyway `V7__user_halo_binding.sql`。
 
 不要把 Halo 源码或 JAR 引进本模块。改博客页面用 Halo 主题，不改这里。
+
+知识库发博是「各人笔记 → 各人/平台 Halo」。Horizon 今日资讯是另一条公共链路（表 `horizon_digest`，不写 `kb_note`）：[Horizon时讯入库.md](./Horizon时讯入库.md)。

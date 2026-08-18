@@ -182,8 +182,20 @@ function applyDisplayHtml(display: string, opts?: { forceDefer?: boolean }) {
   }
 }
 
+function disableNativeChecks(root: ParentNode | null | undefined) {
+  if (!root || !('querySelector' in root)) return
+  const el = root.querySelector('[contenteditable="true"]') as HTMLElement | null
+  if (!el) return
+  el.setAttribute('spellcheck', 'false')
+  el.setAttribute('autocorrect', 'off')
+  el.setAttribute('autocapitalize', 'off')
+}
+
 function onCreated(editor: IDomEditor) {
   editorRef.value = editor
+  requestAnimationFrame(() => {
+    disableNativeChecks(document.querySelector('.rich-wrap'))
+  })
   if (props.disabled) editor.disable()
   const clean = stripKbMediaTokens(props.modelValue || '')
   lastEmittedClean = clean
@@ -287,10 +299,14 @@ defineExpose({ flushEmit })
   flex: 1;
   min-height: 0;
   overflow-y: auto;
-  contain: content;
 
   :deep(.w-e-text-container) {
     background: var(--surface-1) !important;
+    color: var(--text-primary) !important;
+  }
+
+  :deep(.w-e-text-container [contenteditable='true']) {
+    color: var(--text-primary);
   }
 
   :deep(.w-e-scroll) {

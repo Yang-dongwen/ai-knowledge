@@ -5,7 +5,8 @@
 const ALLOWED_TAGS = new Set([
   'a', 'abbr', 'b', 'blockquote', 'br', 'code', 'del', 'div', 'em', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6',
   'hr', 'i', 'img', 'li', 'ol', 'p', 'pre', 's', 'span', 'strong', 'sub', 'sup', 'table', 'tbody',
-  'td', 'th', 'thead', 'tr', 'u', 'ul', 'figure', 'figcaption', 'video', 'source', 'audio'
+  'td', 'th', 'thead', 'tr', 'u', 'ul', 'figure', 'figcaption', 'video', 'source', 'audio',
+  'details', 'summary'
 ])
 
 const ALLOWED_ATTR = new Set([
@@ -23,6 +24,14 @@ function isSafeUrl(value: string): boolean {
   if (/^javascript:/i.test(v) || /^vbscript:/i.test(v)) return false
   if (/^data:/i.test(v) && !/^data:image\//i.test(v)) return false
   return SAFE_URL.test(v) || v.startsWith('/')
+}
+
+/** Horizon 曾把撇号写成 &#x27;；Markdown 再转义后页面会原样露出实体。 */
+export function decodeMarkdownQuoteEntities(src: string): string {
+  if (!src) return ''
+  return src
+    .replace(/&\\?#(?:x27|39);|&apos;/gi, "'")
+    .replace(/&quot;/g, '"')
 }
 
 export function sanitizeHtml(dirty: string): string {

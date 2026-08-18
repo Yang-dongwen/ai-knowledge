@@ -274,6 +274,31 @@ public class HaloHttpPublishAdapter implements HaloPublishPort {
                 .toBodilessEntity();
     }
 
+    /** 把主导航里指定名称的项改到新地址（用于「资讯」指向当天日报）。 */
+    public void pointMenuItem(String displayName, String href) {
+        if (!StringUtils.hasText(displayName) || !StringUtils.hasText(href)) {
+            return;
+        }
+        JsonNode list = exchange("GET", "/api/v1alpha1/menuitems?page=0&size=200", null);
+        for (JsonNode it : list.path("items")) {
+            if (!displayName.equals(it.path("spec").path("displayName").asText())) {
+                continue;
+            }
+            String name = it.path("metadata").path("name").asText();
+            if (!StringUtils.hasText(name)) {
+                continue;
+            }
+            ObjectNode item = (ObjectNode) it;
+            ObjectNode spec = item.has("spec") && item.get("spec").isObject()
+                    ? (ObjectNode) item.get("spec") : item.putObject("spec");
+            spec.put("href", href);
+            exchange("PUT", "/api/v1alpha1/menuitems/" + name, item);
+            log.info("halo menu {} -> {}", displayName, href);
+            return;
+        }
+        log.warn("halo menu item not found: {}", displayName);
+    }
+
     private JsonNode exchange(String method, String path, JsonNode body) {
         RestClient.RequestBodySpec spec = client.method(org.springframework.http.HttpMethod.valueOf(method))
                 .uri(path)
