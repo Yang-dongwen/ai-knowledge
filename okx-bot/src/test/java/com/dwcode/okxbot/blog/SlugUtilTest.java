@@ -20,4 +20,14 @@ class SlugUtilTest {
     void blankUsesFallback() {
         assertEquals("post", SlugUtil.fromTitle("   ", "post"));
     }
+
+    @Test
+    void suffixSkipsTaken() {
+        assertEquals("hello", SlugUtil.withSuffix("hello", 1));
+        assertEquals("hello-2", SlugUtil.withSuffix("hello", 2));
+        assertEquals("hello-world",
+                SlugUtil.allocate("Hello World", "post", s -> false));
+        assertEquals("hello-world-2",
+                SlugUtil.allocate("Hello World", "post", "hello-world"::equals));
+    }
 }

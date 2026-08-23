@@ -30,6 +30,8 @@ public class KbProperties {
         private String defaultFormat = "html";
         /** 每笔记保留版本数上限 */
         private int maxRevisions = 50;
+        /** 自动保存两次版本快照的最小间隔（分钟） */
+        private int revisionMinIntervalMinutes = 5;
     }
 
     @Data

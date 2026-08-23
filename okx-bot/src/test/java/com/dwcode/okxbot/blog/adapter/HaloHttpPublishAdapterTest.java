@@ -15,6 +15,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.web.client.RestClient;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -53,6 +54,7 @@ class HaloHttpPublishAdapterTest {
         String published = """
                 {"metadata":{"name":"post-abc"},"spec":{"title":"Hi"},"status":{"permalink":"/archives/hi"}}
                 """;
+        enqueueEmptySlugLookup();
         server.enqueue(new MockResponse().setBody(created).addHeader("Content-Type", "application/json"));
         server.enqueue(new MockResponse().setBody(published).addHeader("Content-Type", "application/json"));
         server.enqueue(new MockResponse().setBody(published).addHeader("Content-Type", "application/json"));
@@ -62,6 +64,9 @@ class HaloHttpPublishAdapterTest {
         assertEquals("post-abc", r.postName());
         assertEquals("https://blog.example.com/archives/hi", r.publicUrl());
 
+        RecordedRequest lookup = server.takeRequest();
+        assertEquals("GET", lookup.getMethod());
+        assertTrue(lookup.getPath().contains("fieldSelector"));
         RecordedRequest create = server.takeRequest();
         assertEquals("POST", create.getMethod());
         assertTrue(create.getPath().endsWith("/apis/uc.api.content.halo.run/v1alpha1/posts"));
@@ -88,6 +93,7 @@ class HaloHttpPublishAdapterTest {
         String published = """
                 {"metadata":{"name":"post-abc"},"status":{"permalink":"/archives/new"}}
                 """;
+        enqueueEmptySlugLookup();
         server.enqueue(new MockResponse().setBody(existing).addHeader("Content-Type", "application/json"));
         server.enqueue(new MockResponse().setBody(existing).addHeader("Content-Type", "application/json"));
         server.enqueue(new MockResponse().setBody(draft).addHeader("Content-Type", "application/json"));
@@ -101,6 +107,7 @@ class HaloHttpPublishAdapterTest {
         assertEquals("post-abc", r.postName());
         assertEquals("https://blog.example.com/archives/new", r.publicUrl());
 
+        assertEquals("GET", server.takeRequest().getMethod());
         assertEquals("GET", server.takeRequest().getMethod());
         assertEquals("PUT", server.takeRequest().getMethod());
         RecordedRequest draftGet = server.takeRequest();
@@ -125,6 +132,7 @@ class HaloHttpPublishAdapterTest {
         String published = """
                 {"metadata":{"name":"post-abc"},"spec":{"title":"Hi"},"status":{"permalink":"/archives/hi"}}
                 """;
+        enqueueEmptySlugLookup();
         server.enqueue(new MockResponse().setBody(cats).addHeader("Content-Type", "application/json"));
         server.enqueue(new MockResponse().setBody(tags).addHeader("Content-Type", "application/json"));
         server.enqueue(new MockResponse().setBody(createdTag).addHeader("Content-Type", "application/json"));
@@ -135,6 +143,7 @@ class HaloHttpPublishAdapterTest {
         adapter.publish(new HaloPublishCommand("Hi", "hi", "# hi", "markdown", null,
                 java.util.List.of("技术"), java.util.List.of("Java")));
 
+        assertTrue(server.takeRequest().getPath().contains("fieldSelector"));
         assertTrue(server.takeRequest().getPath().contains("/categories"));
         assertTrue(server.takeRequest().getPath().contains("/tags"));
         RecordedRequest createTag = server.takeRequest();
@@ -161,12 +170,78 @@ class HaloHttpPublishAdapterTest {
     }
 
     @Test
+    void duplicateSlugGetsSuffix() throws Exception {
+        String taken = """
+                {"items":[{"metadata":{"name":"other-post"},"spec":{"slug":"hi","deleted":false}}]}
+                """;
+        String free = """
+                {"items":[]}
+                """;
+        String created = """
+                {"metadata":{"name":"post-abc"},"spec":{"title":"Hi","slug":"hi-2"},"status":{}}
+                """;
+        String published = """
+                {"metadata":{"name":"post-abc"},"spec":{"slug":"hi-2"},"status":{"permalink":"/archives/hi-2"}}
+                """;
+        server.enqueue(new MockResponse().setBody(taken).addHeader("Content-Type", "application/json"));
+        server.enqueue(new MockResponse().setBody(free).addHeader("Content-Type", "application/json"));
+        server.enqueue(new MockResponse().setBody(created).addHeader("Content-Type", "application/json"));
+        server.enqueue(new MockResponse().setBody(published).addHeader("Content-Type", "application/json"));
+        server.enqueue(new MockResponse().setBody(published).addHeader("Content-Type", "application/json"));
+
+        HaloPublishResult r = adapter.publish(new HaloPublishCommand("Hi", "hi", "# hi", "markdown", null));
+        assertEquals("https://blog.example.com/archives/hi-2", r.publicUrl());
+        server.takeRequest();
+        server.takeRequest();
+        RecordedRequest create = server.takeRequest();
+        assertTrue(create.getBody().readUtf8().contains("\"slug\":\"hi-2\""));
+    }
+
+    @Test
+    void updateKeepsOwnSlug() throws Exception {
+        String self = """
+                {"items":[{"metadata":{"name":"post-abc"},"spec":{"slug":"hi","deleted":false}}]}
+                """;
+        String existing = """
+                {"metadata":{"name":"post-abc","annotations":{}},"spec":{"title":"Old","slug":"hi"}}
+                """;
+        String draft = """
+                {"metadata":{"name":"snap","annotations":{}},"spec":{}}
+                """;
+        String published = """
+                {"metadata":{"name":"post-abc"},"status":{"permalink":"/archives/hi"}}
+                """;
+        server.enqueue(new MockResponse().setBody(self).addHeader("Content-Type", "application/json"));
+        server.enqueue(new MockResponse().setBody(existing).addHeader("Content-Type", "application/json"));
+        server.enqueue(new MockResponse().setBody(existing).addHeader("Content-Type", "application/json"));
+        server.enqueue(new MockResponse().setBody(draft).addHeader("Content-Type", "application/json"));
+        server.enqueue(new MockResponse().setBody(draft).addHeader("Content-Type", "application/json"));
+        server.enqueue(new MockResponse().setBody(published).addHeader("Content-Type", "application/json"));
+        server.enqueue(new MockResponse().setBody(published).addHeader("Content-Type", "application/json"));
+
+        HaloPublishResult r = adapter.publish(
+                new HaloPublishCommand("Hi", "hi", "<p>x</p>", "HTML", "post-abc"));
+        assertEquals("https://blog.example.com/archives/hi", r.publicUrl());
+    }
+
+    @Test
     void unauthorized() {
         server.enqueue(new MockResponse().setResponseCode(401).setBody("no"));
         BusinessException ex = assertThrows(BusinessException.class,
                 () -> adapter.publish(new HaloPublishCommand("T", "t", "b", "markdown", null)));
         assertEquals(502, ex.getCode());
         assertTrue(ex.getMessage().contains("鉴权"));
+    }
+
+    private void enqueueEmptySlugLookup() {
+        server.enqueue(new MockResponse().setBody("{\"items\":[]}").addHeader("Content-Type", "application/json"));
+    }
+
+    @Test
+    void permalinkLastSegmentIsSlug() {
+        assertTrue(HaloHttpPublishAdapter.permalinkMatchesSlug("/archives/hi-2", "hi-2"));
+        assertFalse(HaloHttpPublishAdapter.permalinkMatchesSlug("/archives/hi", "hi-2"));
+        assertFalse(HaloHttpPublishAdapter.permalinkMatchesSlug("/archives/shi", "hi"));
     }
 
     @Test

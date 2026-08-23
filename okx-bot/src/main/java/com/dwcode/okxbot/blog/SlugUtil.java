@@ -47,6 +47,34 @@ public final class SlugUtil {
         return sb.toString();
     }
 
+    /** 第 1 次用 base，冲突则 base-2、base-3… */
+    public static String withSuffix(String base, int attempt) {
+        String b = sanitizeFallback(base);
+        if (b.isBlank()) {
+            b = "post";
+        }
+        if (attempt <= 1) {
+            return b;
+        }
+        String suffix = "-" + attempt;
+        int maxBase = Math.max(1, 80 - suffix.length());
+        if (b.length() > maxBase) {
+            b = b.substring(0, maxBase).replaceAll("-+$", "");
+        }
+        return b + suffix;
+    }
+
+    public static String allocate(String desired, String fallback, java.util.function.Predicate<String> taken) {
+        String base = fromTitle(desired, fallback);
+        for (int i = 1; i <= 30; i++) {
+            String candidate = withSuffix(base, i);
+            if (!taken.test(candidate)) {
+                return candidate;
+            }
+        }
+        throw new IllegalStateException("无法分配未占用的文章 slug");
+    }
+
     private static String sanitizeFallback(String fallback) {
         if (fallback == null || fallback.isBlank()) {
             return "post";

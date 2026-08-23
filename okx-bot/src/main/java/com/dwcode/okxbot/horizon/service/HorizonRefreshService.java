@@ -221,9 +221,8 @@ public class HorizonRefreshService {
                         null));
         ingestService.rememberHalo(view.getDate(), result.postName(), result.publicUrl());
         lastPermalink = result.publicUrl();
-        String href = "/archives/horizon-" + view.getDate();
         try {
-            new HaloHttpPublishAdapter(haloProperties, objectMapper).pointMenuItem("资讯", href);
+            new HaloHttpPublishAdapter(haloProperties, objectMapper).pointMenuItem("资讯", "/news");
         } catch (Exception e) {
             log.warn("horizon menu 资讯 not updated: {}", e.getMessage());
         }

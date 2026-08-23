@@ -24,6 +24,8 @@ import org.springframework.web.client.RestClient;
 import org.springframework.web.client.RestClientResponseException;
 
 import java.net.Proxy;
+import java.net.URLEncoder;
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
@@ -36,6 +38,7 @@ public class HaloHttpPublishAdapter implements HaloPublishPort {
 
     static final String CONTENT_JSON = "content.halo.run/content-json";
     static final String POSTS = "/apis/uc.api.content.halo.run/v1alpha1/posts";
+    static final String CONTENT_POSTS = "/apis/content.halo.run/v1alpha1/posts";
     static final String CATEGORIES = "/apis/content.halo.run/v1alpha1/categories";
     static final String TAGS = "/apis/content.halo.run/v1alpha1/tags";
     static final String UC_ATTACH = "/apis/uc.api.storage.halo.run/v1alpha1/attachments";
@@ -76,12 +79,22 @@ public class HaloHttpPublishAdapter implements HaloPublishPort {
             throw new BusinessException(503, DisabledHaloPublishAdapter.MESSAGE);
         }
         try {
-            String contentJson = contentJson(command);
+            String slug = allocateUniqueSlug(command.slug(), command.title(), command.existingPostName());
+            HaloPublishCommand cmd = new HaloPublishCommand(
+                    command.title(),
+                    slug,
+                    command.raw(),
+                    command.rawType(),
+                    command.existingPostName(),
+                    command.categoryNames(),
+                    command.tagNames(),
+                    command.cover());
+            String contentJson = contentJson(cmd);
             JsonNode post;
-            if (StringUtils.hasText(command.existingPostName())) {
-                post = updateExisting(command, contentJson);
+            if (StringUtils.hasText(cmd.existingPostName())) {
+                post = updateExisting(cmd, contentJson);
             } else {
-                post = createNew(command, contentJson);
+                post = createNew(cmd, contentJson);
             }
             String name = text(post, "metadata", "name");
             if (!StringUtils.hasText(name)) {
@@ -91,8 +104,18 @@ public class HaloHttpPublishAdapter implements HaloPublishPort {
                 publishPost(name);
             }
             post = exchange("GET", POSTS + "/" + name, null);
-            String permalink = text(post, "status", "permalink");
-            return new HaloPublishResult(name, joinPublic(permalink), permalink);
+            String permalink = waitPostPermalink(post, name);
+            if (!StringUtils.hasText(permalink)) {
+                throw new BusinessException(502, "Halo 未返回文章公开地址，请稍后在博客后台确认是否发布成功");
+            }
+            if (StringUtils.hasText(slug) && !permalinkMatchesSlug(permalink, slug)) {
+                throw new BusinessException(502, "文章地址与 slug 不一致，可能与已有文章冲突: " + permalink);
+            }
+            String publicUrl = joinPublic(permalink);
+            if (!StringUtils.hasText(publicUrl) || publicUrl.equals(trimSlash(properties.getPublicBaseUrl()))) {
+                throw new BusinessException(502, "文章公开地址无效");
+            }
+            return new HaloPublishResult(name, publicUrl, permalink);
         } catch (BusinessException e) {
             throw e;
         } catch (RestClientResponseException e) {
@@ -319,9 +342,107 @@ public class HaloHttpPublishAdapter implements HaloPublishPort {
         }
     }
 
+    String allocateUniqueSlug(String desired, String title, String existingPostName) {
+        String fallback = StringUtils.hasText(desired) ? desired : "post";
+        try {
+            return SlugUtil.allocate(StringUtils.hasText(desired) ? desired : title, fallback,
+                    slug -> slugTakenByOther(slug, existingPostName));
+        } catch (IllegalStateException e) {
+            throw new BusinessException(502, "无法生成不重复的文章地址，请换一个标题后再发");
+        }
+    }
+
+    boolean slugTakenByOther(String slug, String existingPostName) {
+        if (!StringUtils.hasText(slug)) {
+            return true;
+        }
+        String owner = findPostNameBySlug(slug);
+        if (!StringUtils.hasText(owner)) {
+            return false;
+        }
+        return !owner.equals(existingPostName);
+    }
+
+    private String findPostNameBySlug(String slug) {
+        String selector = URLEncoder.encode("spec.slug=" + slug, StandardCharsets.UTF_8);
+        JsonNode root;
+        try {
+            root = exchange("GET",
+                    CONTENT_POSTS + "?fieldSelector=" + selector + "&page=0&size=20", null);
+        } catch (RestClientResponseException e) {
+            int code = e.getStatusCode().value();
+            if (code == 401 || code == 403) {
+                throw e;
+            }
+            log.warn("halo slug lookup failed: {}", e.getMessage());
+            return "";
+        }
+        JsonNode items = root.path("items");
+        if (!items.isArray()) {
+            return "";
+        }
+        for (JsonNode item : items) {
+            if (item.path("spec").path("deleted").asBoolean(false)) {
+                continue;
+            }
+            String found = item.path("spec").path("slug").asText("");
+            if (slug.equals(found)) {
+                return item.path("metadata").path("name").asText("");
+            }
+        }
+        return "";
+    }
+
+    private String waitPostPermalink(JsonNode post, String name) {
+        String permalink = text(post, "status", "permalink");
+        if (StringUtils.hasText(permalink) || !StringUtils.hasText(name)) {
+            return permalink;
+        }
+        for (int i = 0; i < 6; i++) {
+            try {
+                Thread.sleep(300);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                return permalink;
+            }
+            try {
+                JsonNode fresh = exchange("GET", POSTS + "/" + name, null);
+                permalink = text(fresh, "status", "permalink");
+                if (StringUtils.hasText(permalink)) {
+                    return permalink;
+                }
+            } catch (Exception ignored) {
+                // 再试
+            }
+        }
+        return permalink;
+    }
+
+    static boolean permalinkMatchesSlug(String permalink, String slug) {
+        if (!StringUtils.hasText(permalink) || !StringUtils.hasText(slug)) {
+            return false;
+        }
+        String path = permalink;
+        int scheme = path.indexOf("://");
+        if (scheme >= 0) {
+            int slash = path.indexOf('/', scheme + 3);
+            path = slash >= 0 ? path.substring(slash) : "/";
+        }
+        int q = path.indexOf('?');
+        if (q >= 0) {
+            path = path.substring(0, q);
+        }
+        if (path.endsWith("/")) {
+            path = path.substring(0, path.length() - 1);
+        }
+        int last = path.lastIndexOf('/');
+        String lastSeg = last >= 0 ? path.substring(last + 1) : path;
+        return slug.equals(lastSeg);
+    }
+
     private String joinPublic(String permalink) {
         if (!StringUtils.hasText(permalink)) {
-            return trimSlash(properties.getPublicBaseUrl());
+            return "";
         }
         if (permalink.startsWith("http://") || permalink.startsWith("https://")) {
             return permalink;

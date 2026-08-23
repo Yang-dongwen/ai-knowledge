@@ -192,6 +192,7 @@ kb:
     snippet-chars: 160
     default-title: 未命名笔记
     default-format: html
+    revision-min-interval-minutes: 5
   category:
     max-depth: 3
   search:

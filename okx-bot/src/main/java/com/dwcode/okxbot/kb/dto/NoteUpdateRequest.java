@@ -24,4 +24,10 @@ public class NoteUpdateRequest {
     private List<Long> tagIds;
 
     private Boolean pinned;
+
+    /**
+     * 是否写入版本快照。自动保存应 false；手动保存 / 离开文档为 true。
+     * 即便为 false，距上次快照超过间隔时仍会打一个检查点。
+     */
+    private Boolean createRevision;
 }

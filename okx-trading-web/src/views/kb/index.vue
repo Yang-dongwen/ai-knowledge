@@ -920,7 +920,7 @@
       destroy-on-close
     >
       <div v-if="revisionLoading" class="muted">加载中…</div>
-      <div v-else-if="!revisions.length" class="muted">暂无历史版本（保存正文变更后会出现）</div>
+      <div v-else-if="!revisions.length" class="muted">暂无历史版本（手动保存或离开文档时会生成）</div>
       <ul v-else class="rev-list">
         <li v-for="r in revisions" :key="r.id" class="rev-item">
           <div class="rev-meta">
@@ -1278,9 +1278,12 @@ const revisionLoading = ref(false)
 const revisions = ref<KbNoteRevision[]>([])
 const revisionRestoring = ref<string | null>(null)
 
-/** 防抖自动保存 */
+/** 停手后再落盘；持续输入则由 5 分钟巡检兜底 */
 let autoSaveTimer: ReturnType<typeof setTimeout> | null = null
-const AUTO_SAVE_MS = 1800
+let autoSaveTick: ReturnType<typeof setInterval> | null = null
+let lastTypedAt = 0
+const IDLE_PERSIST_MS = 30_000
+const AUTOSAVE_TICK_MS = 5 * 60_000
 
 type OutlineHeading = { level: number; text: string; anchor: string; line: number }
 type OutlineNode = OutlineHeading & { hasChildren: boolean }
@@ -1387,7 +1390,7 @@ const mobileDetailOpen = computed(() => {
 async function closeMobileDetail() {
   if (dirty.value && !editDeleted.value && selectedId.value && !isCreating.value) {
     try {
-      await saveNote(true)
+      await saveNote(true, true)
     } catch {
       /* keep going */
     }
@@ -2280,12 +2283,32 @@ function onMarkdownBodyInput() {
   scheduleDebouncedAutoSave()
 }
 
-function scheduleDebouncedAutoSave() {
+function markTyped() {
+  lastTypedAt = Date.now()
+  scheduleIdlePersist()
+}
+
+function scheduleIdlePersist() {
   if (autoSaveTimer) clearTimeout(autoSaveTimer)
   autoSaveTimer = setTimeout(() => {
     autoSaveTimer = null
-    autoSave()
-  }, AUTO_SAVE_MS)
+    persistIfIdle()
+  }, IDLE_PERSIST_MS)
+}
+
+function persistIfIdle() {
+  if (!dirty.value || applying.value || editDeleted.value || saving.value) return
+  if (Date.now() - lastTypedAt < IDLE_PERSIST_MS - 50) return
+  autoSave()
+}
+
+function persistIfDue() {
+  if (!dirty.value || applying.value || editDeleted.value || saving.value) return
+  autoSave()
+}
+
+function scheduleDebouncedAutoSave() {
+  markTyped()
 }
 
 function clearDebouncedAutoSave() {
@@ -3019,7 +3042,7 @@ async function publishCurrentNoteToBlog() {
   }
   try {
     if (dirty.value) {
-      await saveNote(true)
+      await saveNote(true, true)
     }
     if (!selectedId.value) {
       message.warning('请先保存笔记再发布')
@@ -3174,7 +3197,7 @@ async function selectNote(id: string) {
   // 仅自动保存「已有文档」的修改；新建空草稿绝不因切换而入库
   if (dirty.value && !editDeleted.value && selectedId.value && !isCreating.value) {
     try {
-      await saveNote(true)
+      await saveNote(true, true)
     } catch {
       /* keep going */
     }
@@ -3313,7 +3336,7 @@ async function createNote(format: KbContentFormat = 'html') {
     try {
       // 保存前显式 flush，卸载编辑器时不再回写
       richEditorRef.value?.flushEmit?.()
-      await saveNote(true)
+      await saveNote(true, true)
     } catch {
       /* ignore */
     }
@@ -3387,7 +3410,7 @@ async function createNote(format: KbContentFormat = 'html') {
   void seq
 }
 
-async function saveNote(silent = false) {
+async function saveNote(silent = false, createRevision = !silent) {
   if (editDeleted.value) return
   // 保存前把编辑器防抖中的最新内容刷出来
   richEditorRef.value?.flushEmit?.()
@@ -3439,7 +3462,8 @@ async function saveNote(silent = false) {
       categoryId: editCategoryId.value || null,
       clearCategory: !editCategoryId.value,
       tagIds: editTagIds.value,
-      pinned: editPinned.value
+      pinned: editPinned.value,
+      createRevision
     }
     let note: KbNoteItem
     if (creating) {
@@ -3543,6 +3567,13 @@ function onBeforeUnload(e: BeforeUnloadEvent) {
   }
 }
 
+function onVisibilityPersist() {
+  if (document.visibilityState !== 'hidden') return
+  if (dirty.value && !editDeleted.value && selectedId.value && !isCreating.value) {
+    void saveNote(true, true)
+  }
+}
+
 /** 不重排整树，只更新某文档显示名 */
 function patchTreeNoteTitle(noteId: string, title: string) {
   const walk = (nodes: KbExplorerNode[]): boolean => {
@@ -3565,9 +3596,9 @@ function patchTreeNoteTitle(noteId: string, title: string) {
 function autoSave() {
   if (applying.value || editDeleted.value || saving.value) return
   if (!dirty.value) return
-  // 仅更新已有文档；新建空草稿不在 blur 时入库
+  // 仅更新已有文档；新建空草稿不在定时器里入库
   if (selectedId.value && !isCreating.value) {
-    void saveNote(true)
+    void saveNote(true, false)
   }
 }
 
@@ -3581,7 +3612,7 @@ function markMetaDirtyAndSave() {
     return
   }
   if (selectedId.value || isCreating.value) {
-    void saveNote(true)
+    void saveNote(true, false)
   }
 }
 
@@ -3893,10 +3924,17 @@ onMounted(async () => {
   mobileMq.addEventListener('change', applyMobileViewMode)
   window.addEventListener('keydown', onKbKeydown)
   window.addEventListener('beforeunload', onBeforeUnload)
+  window.addEventListener('visibilitychange', onVisibilityPersist)
+  autoSaveTick = setInterval(persistIfDue, AUTOSAVE_TICK_MS)
 })
 
 onBeforeUnmount(() => {
   clearDebouncedAutoSave()
+  if (autoSaveTick) {
+    clearInterval(autoSaveTick)
+    autoSaveTick = null
+  }
+  window.removeEventListener('visibilitychange', onVisibilityPersist)
   unbindTreeViewport()
   unbindMdSplitScroll()
   dragGhostCleanup?.()

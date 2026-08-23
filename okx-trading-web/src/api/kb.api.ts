@@ -154,6 +154,8 @@ export interface NoteUpdateBody {
   clearCategory?: boolean
   tagIds?: string[]
   pinned?: boolean
+  /** 是否写入版本历史；自动保存应 false */
+  createRevision?: boolean
 }
 
 /** 知识库媒体路径（正文存库用干净路径，不含 token） */

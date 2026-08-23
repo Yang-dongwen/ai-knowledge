@@ -108,10 +108,9 @@ public class KbNoteService {
             String format = req.getContentFormat() != null
                     ? resolveFormat(req.getContentFormat())
                     : (StringUtils.hasText(e.getContentFormat()) ? e.getContentFormat() : "html");
-            // 正文变更前写入版本快照
             if (!Objects.equals(nullToEmpty(e.getContent()), content)
                     || !Objects.equals(nullToEmpty(e.getContentFormat()), format)) {
-                saveRevisionSnapshot(e, "save");
+                maybeSaveRevision(e, userId, Boolean.TRUE.equals(req.getCreateRevision()));
             }
             String plain = toPlainText(content, format);
             String snippet = truncatePlain(plain, kbProperties.getNote().getSnippetChars());
@@ -630,6 +629,35 @@ public class KbNoteService {
         } catch (Exception ex) {
             log.debug("ensureContentText skip id={}: {}", e.getId(), ex.getMessage());
         }
+    }
+
+    /**
+     * 手动保存立刻打快照；自动保存仅当距上次快照已超过间隔。
+     */
+    static boolean shouldWriteRevision(boolean requested, LocalDateTime lastCreated, int minMinutes) {
+        if (requested) {
+            return true;
+        }
+        if (lastCreated == null) {
+            return true;
+        }
+        int gap = Math.max(1, minMinutes);
+        return lastCreated.isBefore(LocalDateTime.now().minusMinutes(gap));
+    }
+
+    private void maybeSaveRevision(KbNoteEntity e, Long userId, boolean requested) {
+        KbNoteRevisionEntity last = revisionMapper.selectOne(
+                new LambdaQueryWrapper<KbNoteRevisionEntity>()
+                        .eq(KbNoteRevisionEntity::getNoteId, e.getId())
+                        .eq(KbNoteRevisionEntity::getUserId, userId)
+                        .orderByDesc(KbNoteRevisionEntity::getCreatedAt)
+                        .orderByDesc(KbNoteRevisionEntity::getId)
+                        .last("LIMIT 1"));
+        int min = kbProperties.getNote().getRevisionMinIntervalMinutes();
+        if (!shouldWriteRevision(requested, last == null ? null : last.getCreatedAt(), min)) {
+            return;
+        }
+        saveRevisionSnapshot(e, requested ? "save" : "autosave");
     }
 
     private void saveRevisionSnapshot(KbNoteEntity e, String source) {
