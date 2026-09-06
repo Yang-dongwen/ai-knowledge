@@ -666,6 +666,7 @@ Invoke-RestMethod -Uri "http://127.0.0.1:8080/api/v1/video/tasks?page=0&size=1" 
 
 | 文档 | 内容 |
 |------|------|
+| **`视频提取_任务流程与设计模式.md`** | **当前代码：提取任务全流程 + 链上用了哪些模式** |
 | **`VideoCoreExtractor_视频提取运行流程教程.md`** | **流程教程：工具职责、串联、Mermaid 一页纸** |
 | `VideoCoreExtractor_后端使用与验证手册.md` | 视频提取安装、分层验收、API |
 | `VideoCoreExtractor_核心逻辑与后端实现文档.md` | 实现细节 |
@@ -679,6 +680,8 @@ Invoke-RestMethod -Uri "http://127.0.0.1:8080/api/v1/video/tasks?page=0&size=1" 
 | `Auth_登录架构与安全设计.md` | 认证安全 |
 | `会员充值与支付宝微信支付对接架构设计方案.md` | 会员支付架构 |
 | `LangChain4j_三工具切换架构设计.md` | Chat 出站引擎切换 |
+| `后端设计模式落地说明.md` | 已落地模式（Port/策略/工厂/SSE Hub 等）与选用原因 |
+| `设计模式面试口述.md` | 每种模式：先理解模式，再讲项目里怎么用 |
 | [`Halo博客_知识库发文打通.md`](./doc/Halo博客_知识库发文打通.md) | 知识库发到旁挂 Halo（代码入口） |
 | `sql/*.sql` | 历史增量归档；新 DDL 写 `resources/db/migration/` |
 

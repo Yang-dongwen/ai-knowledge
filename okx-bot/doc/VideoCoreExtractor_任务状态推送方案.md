@@ -22,7 +22,10 @@
 Pipeline / Service 写库成功
         │
         ▼
-VideoTaskEventPublisher  (userId → SseEmitter 列表)
+VideoTaskEventPublisher.toLightData
+        │
+        ▼
+UserSseHub  (channel=video, userId → SseEmitter 列表)
         │  text/event-stream
         ▼
 前端 fetch 读流解析 SSE
@@ -31,7 +34,7 @@ VideoTaskEventPublisher  (userId → SseEmitter 列表)
         └─ 断线：智能轮询 + 指数退避重连 SSE
 ```
 
-单机：内存 fan-out。多实例后续可换 Redis Pub/Sub，接口不变。
+单机：内存 fan-out（`common.sse.UserSseHub`，channel 与 aigen/article/imggen 隔离）。多实例后续可换 Redis Pub/Sub，接口不变。
 
 ---
 
@@ -114,7 +117,8 @@ Accept: text/event-stream
 
 ## 8. 相关代码
 
-- `video/event/VideoTaskEventPublisher.java`  
+- `common/sse/UserSseHub.java`（连接、心跳、channel 隔离）
+- `video/event/VideoTaskEventPublisher.java`（实体 → 轻量 payload）  
 - `GET .../VideoProcessController` → `/events`  
 - `okx-trading-web/src/api/video.events.ts`  
 - `views/video-extract/index.vue`  

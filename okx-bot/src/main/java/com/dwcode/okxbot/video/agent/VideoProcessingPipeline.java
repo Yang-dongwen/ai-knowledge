@@ -1,62 +1,63 @@
 package com.dwcode.okxbot.video.agent;
 
-import com.dwcode.okxbot.common.exception.BusinessException;
+import com.dwcode.okxbot.video.agent.step.DownloadStep;
+import com.dwcode.okxbot.video.agent.step.SummarizeStep;
+import com.dwcode.okxbot.video.agent.step.TranscribeStep;
+import com.dwcode.okxbot.video.agent.step.UnderstandStep;
+import com.dwcode.okxbot.video.agent.step.VideoPipelineContext;
+import com.dwcode.okxbot.video.agent.step.VideoPipelineStep;
+import com.dwcode.okxbot.video.agent.step.VideoTexts;
 import com.dwcode.okxbot.video.config.VideoProperties;
-import com.dwcode.okxbot.video.dto.TranscriptDigest;
-import com.dwcode.okxbot.video.dto.TranscriptionResult;
-import com.dwcode.okxbot.video.dto.VideoSummaryPart;
 import com.dwcode.okxbot.video.dto.VideoSummaryResponse;
 import com.dwcode.okxbot.video.entity.VideoTaskEntity;
 import com.dwcode.okxbot.video.enums.UnderstandingMode;
 import com.dwcode.okxbot.video.enums.VideoTaskStatus;
 import com.dwcode.okxbot.video.event.VideoTaskEventPublisher;
-import com.dwcode.okxbot.video.exception.UnderstandingDegradedException;
 import com.dwcode.okxbot.video.mapper.VideoTaskMapper;
-import com.dwcode.okxbot.video.port.VideoUnderstandingCommand;
-import com.dwcode.okxbot.video.port.VisualUnderstandingResult;
-import com.dwcode.okxbot.common.ai.AiModelConfigService;
 import com.dwcode.okxbot.video.service.StorageService;
-import com.dwcode.okxbot.video.service.SummarizationService;
-import com.dwcode.okxbot.video.service.TranscriptionService;
-import com.dwcode.okxbot.video.service.VideoDownloadService;
-import com.dwcode.okxbot.video.service.VideoDownloadService.DownloadResult;
-import com.dwcode.okxbot.video.service.VideoUnderstandingService;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 
-import java.io.IOException;
-import java.nio.file.Files;
-import java.nio.file.Path;
 import java.time.LocalDateTime;
-import java.util.Comparator;
-import java.util.Locale;
-import java.util.stream.Stream;
+import java.util.List;
 
 /**
- * 视频处理流水线：
- * download_only: Download → SUCCESS
- * audio_only:    Download → Transcribe → Summarize
- * hybrid:        Download → Transcribe → Understanding → Fuse
- * omni_only:     Download → Understanding → Structure Summarize
+ * 视频处理流水线外壳：暂停边界、落库、SSE。
+ * 步骤由 {@link UnderstandingMode#stepsAfterDownload()} 选择。
  */
 @Slf4j
 @Component
-@RequiredArgsConstructor
 public class VideoProcessingPipeline {
 
-    private final VideoDownloadService downloadService;
-    private final TranscriptionService transcriptionService;
-    private final SummarizationService summarizationService;
-    private final VideoUnderstandingService videoUnderstandingService;
     private final StorageService storageService;
     private final VideoTaskMapper videoTaskMapper;
     private final ObjectMapper objectMapper;
     private final VideoProperties videoProperties;
-    private final AiModelConfigService aiModelConfigService;
     private final VideoTaskScheduler taskScheduler;
     private final VideoTaskEventPublisher eventPublisher;
+    private final DownloadStep downloadStep;
+    private final List<VideoPipelineStep> afterDownloadSteps;
+
+    public VideoProcessingPipeline(StorageService storageService,
+                                   VideoTaskMapper videoTaskMapper,
+                                   ObjectMapper objectMapper,
+                                   VideoProperties videoProperties,
+                                   VideoTaskScheduler taskScheduler,
+                                   VideoTaskEventPublisher eventPublisher,
+                                   DownloadStep downloadStep,
+                                   TranscribeStep transcribeStep,
+                                   UnderstandStep understandStep,
+                                   SummarizeStep summarizeStep) {
+        this.storageService = storageService;
+        this.videoTaskMapper = videoTaskMapper;
+        this.objectMapper = objectMapper;
+        this.videoProperties = videoProperties;
+        this.taskScheduler = taskScheduler;
+        this.eventPublisher = eventPublisher;
+        this.downloadStep = downloadStep;
+        this.afterDownloadSteps = List.of(transcribeStep, understandStep, summarizeStep);
+    }
 
     public void run(Long taskId) {
         VideoTaskEntity task = videoTaskMapper.selectById(taskId);
@@ -83,252 +84,117 @@ public class VideoProcessingPipeline {
         videoTaskMapper.updateById(task);
         eventPublisher.publishEntity(task, VideoTaskEventPublisher.TYPE_STATUS);
 
+        VideoPipelineContext ctx = new VideoPipelineContext();
+        ctx.setTaskId(taskId);
+        ctx.setTaskIdStr(taskIdStr);
+        ctx.setTask(task);
+        ctx.setPipelineStartMs(pipelineStart);
+        ctx.setPauseCheck(() -> taskScheduler.isPauseRequested(taskId));
+        ctx.setMode(UnderstandingMode.from(
+                task.getUnderstandingMode() != null
+                        ? task.getUnderstandingMode()
+                        : videoProperties.getUnderstanding().getMode()));
+
         try {
-            UnderstandingMode mode = UnderstandingMode.from(
-                    task.getUnderstandingMode() != null
-                            ? task.getUnderstandingMode()
-                            : videoProperties.getUnderstanding().getMode());
-
-            // Step 1: Download
             if (shouldPause(taskId, task, pipelineStart)) {
                 return;
             }
-            updateStatus(task, VideoTaskStatus.DOWNLOADING,
-                    mode.isDownloadOnly() ? "正在下载视频" : "正在下载视频并提取音频");
-            long t0 = System.currentTimeMillis();
-            DownloadResult download = downloadService.download(
-                    task.getSourceUrl(), taskIdStr, !mode.isDownloadOnly());
-            long downloadMs = System.currentTimeMillis() - t0;
-            task.setDownloadDurationMs(downloadMs);
-            task.setTitle(download.getTitle());
-            task.setDurationSeconds(download.getDurationSeconds());
-            task.setVideoPath(download.getVideoPath());
-            task.setAudioPath(download.getAudioPath());
-            task.setUpdatedAt(LocalDateTime.now());
-            videoTaskMapper.updateById(task);
-            eventPublisher.publishEntity(task, VideoTaskEventPublisher.TYPE_STATUS);
-            log.info("步骤耗时: taskId={}, download={}ms", taskId, downloadMs);
+            runStep(downloadStep, ctx);
+            persistStep(ctx);
+            if (shouldPause(taskId, ctx.getTask(), pipelineStart)) {
+                return;
+            }
 
-            // 仅下载：持久化到对象存储后结束
-            if (mode.isDownloadOnly()) {
-                if (shouldPause(taskId, task, pipelineStart)) {
+            if (ctx.getMode().isDownloadOnly()) {
+                finishDownloadOnly(ctx.getTask(), taskIdStr, pipelineStart);
+                return;
+            }
+
+            UnderstandingMode next = OmniDurationGuard.enforce(
+                    ctx.getMode(),
+                    ctx.getDownload() != null ? ctx.getDownload().getDurationSeconds() : task.getDurationSeconds(),
+                    videoProperties.getUnderstanding(),
+                    taskId);
+            if (next != ctx.getMode()) {
+                ctx.setMode(next);
+                ctx.getTask().setUnderstandingMode(next.wireValue());
+                ctx.getTask().setUpdatedAt(LocalDateTime.now());
+                videoTaskMapper.updateById(ctx.getTask());
+            }
+
+            if (shouldPause(taskId, ctx.getTask(), pipelineStart)) {
+                return;
+            }
+
+            for (VideoPipelineStep step : afterDownloadSteps) {
+                if (!step.applies(ctx.getMode())) {
+                    continue;
+                }
+                if (shouldPause(taskId, ctx.getTask(), pipelineStart)) {
                     return;
                 }
-                finishDownloadOnly(task, taskIdStr, pipelineStart);
-                return;
-            }
-
-            mode = enforceOmniDurationLimit(task, mode, download.getDurationSeconds());
-
-            if (shouldPause(taskId, task, pipelineStart)) {
-                return;
-            }
-
-            // Step 2: Transcribe (optional)
-            TranscriptionResult transcription = null;
-            if (mode.needsWhisper()) {
-                updateStatus(task, VideoTaskStatus.TRANSCRIBING, "正在转录音频");
-                t0 = System.currentTimeMillis();
-                transcription = transcriptionService.transcribe(
-                        download.getAudioPath(), task.getLanguage());
-                long transcribeMs = System.currentTimeMillis() - t0;
-                task.setTranscribeDurationMs(transcribeMs);
-                if (transcription.getDurationSeconds() != null) {
-                    task.setDurationSeconds(transcription.getDurationSeconds());
-                }
-                task.setTranscriptionJson(objectMapper.writeValueAsString(transcription));
-                task.setTranscriptionPath(storageService.saveJson(
-                        storageService.resolveTranscriptionPath(taskIdStr), transcription));
-                task.setUpdatedAt(LocalDateTime.now());
-                videoTaskMapper.updateById(task);
-                eventPublisher.publishEntity(task, VideoTaskEventPublisher.TYPE_STATUS);
-                log.info("步骤耗时: taskId={}, transcribe={}ms", taskId, transcribeMs);
-
-                if (shouldPause(taskId, task, pipelineStart)) {
+                runStep(step, ctx);
+                persistStep(ctx);
+                if (shouldPause(taskId, ctx.getTask(), pipelineStart)) {
                     return;
                 }
             }
 
-            // Step 3: Understanding (optional)
-            VisualUnderstandingResult visual = null;
-            boolean degraded = false;
-            String degradeReason = null;
-            if (mode.needsOmni()) {
-                updateStatus(task, VideoTaskStatus.UNDERSTANDING, "正在多模态理解画面");
-                t0 = System.currentTimeMillis();
-                try {
-                    if (task.getOmniProvider() == null || task.getOmniProvider().isBlank()
-                            || task.getOmniModel() == null || task.getOmniModel().isBlank()) {
-                        throw new IllegalStateException(
-                                "任务未指定视频理解模型（omniProvider/omniModel），请重新提交并选择模型");
-                    }
-                    // 协议优先用库表模型配置，其次 yml 默认（非模型 ID）
-                    String omniProtocol = videoProperties.getUnderstanding().getProtocol();
-                    try {
-                        var omniCfg = aiModelConfigService.findEnabledVideoOmniModel(
-                                task.getOmniProvider(), task.getOmniModel());
-                        if (omniCfg != null && omniCfg.getProtocol() != null
-                                && !omniCfg.getProtocol().isBlank()) {
-                            omniProtocol = omniCfg.getProtocol();
-                        }
-                    } catch (Exception ignored) {
-                        // 沿用 yml protocol
-                    }
-                    VideoUnderstandingCommand cmd = VideoUnderstandingCommand.builder()
-                            .taskId(taskIdStr)
-                            .videoPath(download.getVideoPath())
-                            .audioPath(download.getAudioPath())
-                            .durationSeconds(task.getDurationSeconds())
-                            .language(task.getLanguage())
-                            .providerKey(task.getOmniProvider())
-                            .modelId(task.getOmniModel())
-                            .protocol(omniProtocol)
-                            .stripAudio(mode == UnderstandingMode.HYBRID
-                                    && videoProperties.getUnderstanding().isStripAudioOnVisualChunks())
-                            .useAudioInVideo(mode == UnderstandingMode.OMNI_ONLY)
-                            .priorTranscriptText(transcription != null ? transcription.getText() : null)
-                            .build();
-                    visual = videoUnderstandingService.understand(
-                            cmd, transcription, () -> taskScheduler.isPauseRequested(taskId));
-                    long understandMs = System.currentTimeMillis() - t0;
-                    task.setUnderstandDurationMs(understandMs);
-                    task.setVisualJson(objectMapper.writeValueAsString(visual));
-                    task.setVisualPath(storageService.saveJson(
-                            storageService.resolveVisualPath(taskIdStr), visual));
-                    log.info("步骤耗时: taskId={}, understand={}ms, chunks={}",
-                            taskId, understandMs, visual.getChunkCount());
-                } catch (UnderstandingDegradedException de) {
-                    degraded = true;
-                    degradeReason = de.getReason();
-                    task.setDegraded(1);
-                    task.setDegradeReason(truncate(degradeReason, 500));
-                    task.setUnderstandDurationMs(System.currentTimeMillis() - t0);
-                    log.warn("视觉理解降级: taskId={}, reason={}", taskId, degradeReason);
-                }
-                task.setUpdatedAt(LocalDateTime.now());
-                videoTaskMapper.updateById(task);
-                eventPublisher.publishEntity(task, VideoTaskEventPublisher.TYPE_STATUS);
-
-                if (shouldPause(taskId, task, pipelineStart)) {
-                    return;
-                }
-            }
-
-            // Step 4: Summarize / Fuse
-            VideoTaskEntity latest = videoTaskMapper.selectById(taskId);
-            if (latest != null) {
-                task.setLlmProvider(latest.getLlmProvider());
-                task.setLlmModel(latest.getLlmModel());
-            }
-
-            updateStatus(task, VideoTaskStatus.SUMMARIZING,
-                    "正在生成结构化摘要" + (task.getLlmModel() != null ? "（" + task.getLlmModel() + "）" : ""));
-            t0 = System.currentTimeMillis();
-            boolean mindMap = task.getExtractMindMap() == null || task.getExtractMindMap() == 1;
-            boolean repurpose = task.getGenerateRepurposeScript() == null || task.getGenerateRepurposeScript() == 1;
-
-            TranscriptDigest digest = null;
-            if (transcription != null) {
-                digest = summarizationService.prepareTranscriptDigest(
-                        transcription, task.getLanguage(), task.getLlmProvider(), task.getLlmModel());
-            }
-
-            VideoSummaryPart summaryPart;
-            if (visual != null && !degraded) {
-                summaryPart = summarizationService.summarizeFused(
-                        task.getTitle(), digest, visual, mindMap, repurpose, task.getLanguage(),
-                        task.getLlmProvider(), task.getLlmModel());
-            } else if (digest != null) {
-                summaryPart = summarizationService.summarizeFromDigest(
-                        task.getTitle(), digest, mindMap, repurpose, task.getLanguage(),
-                        task.getLlmProvider(), task.getLlmModel());
-            } else if (visual != null) {
-                summaryPart = summarizationService.summarizeFused(
-                        task.getTitle(), null, visual, mindMap, repurpose, task.getLanguage(),
-                        task.getLlmProvider(), task.getLlmModel());
-            } else {
-                throw new BusinessException("无转录且无视觉理解结果，无法总结");
-            }
-
-            summaryPart.setUnderstandingMode(mode.wireValue());
-            summaryPart.setDegraded(degraded);
-            summaryPart.setDegradeReason(degradeReason);
-            if (visual != null) {
-                summaryPart.setMultimodal(true);
-                summaryPart.setPartialVisual(visual.isPartial());
-            }
-
-            long summarizeMs = System.currentTimeMillis() - t0;
-            task.setSummarizeDurationMs(summarizeMs);
-            log.info("步骤耗时: taskId={}, summarize={}ms", taskId, summarizeMs);
-
-            if (shouldPause(taskId, task, pipelineStart)) {
-                return;
-            }
-
-            task.setSummaryJson(objectMapper.writeValueAsString(summaryPart));
-            task.setSummaryPath(storageService.saveJson(
-                    storageService.resolveSummaryPath(taskIdStr), summaryPart));
-
-            VideoSummaryResponse response = new VideoSummaryResponse();
-            response.setVideoId(taskIdStr);
-            response.setTitle(task.getTitle());
-            response.setDuration(task.getDurationSeconds());
-            response.setSourceUrl(task.getSourceUrl());
-            response.setUnderstandingMode(mode.wireValue());
-            response.setDegraded(degraded);
-            response.setDegradeReason(degradeReason);
-            response.setSummary(summaryPart);
-            response.setTranscription(transcription);
-
-            task.setResultJson(objectMapper.writeValueAsString(response));
-            if (degraded) {
-                task.setDegraded(1);
-                task.setDegradeReason(truncate(degradeReason, 500));
-            } else {
-                task.setDegraded(0);
-            }
-
-            // 上传 durable 产物到对象存储（local/R2），路径改为 object key，并清 scratch
-            storageService.persistAndCleanupAfterSuccess(task);
-
-            task.setStatus(VideoTaskStatus.SUCCESS.name());
-            task.setCurrentStep(degraded ? "完成（已降级为纯音频总结）" : "完成");
-            task.setFinishedAt(LocalDateTime.now());
-            task.setTotalDurationMs(System.currentTimeMillis() - pipelineStart);
-            task.setUpdatedAt(LocalDateTime.now());
-            task.setErrorMessage(null);
-            videoTaskMapper.updateById(task);
-            eventPublisher.publishEntity(task, VideoTaskEventPublisher.TYPE_STATUS);
-
-            log.info("视频任务完成: taskId={}, title={}, mode={}, degraded={}, total={}ms, videoKey={}",
-                    taskId, task.getTitle(), mode.wireValue(), degraded, task.getTotalDurationMs(),
-                    task.getVideoPath());
+            finishSuccess(ctx);
         } catch (Exception e) {
             if (taskScheduler.isPauseRequested(taskId) || isPausedInDb(taskId)) {
-                markPaused(task, pipelineStart, "用户暂停（当前步骤被中断）");
-                storageService.cleanupAfterFailure(task);
+                markPaused(ctx.getTask(), pipelineStart, "用户暂停（当前步骤被中断）");
+                storageService.cleanupAfterFailure(ctx.getTask());
                 return;
             }
             log.error("视频任务失败: taskId={}", taskId, e);
-            task.setStatus(VideoTaskStatus.FAILED.name());
-            task.setCurrentStep("失败");
-            task.setErrorMessage(truncate(e.getMessage(), 1000));
-            task.setFinishedAt(LocalDateTime.now());
-            task.setTotalDurationMs(System.currentTimeMillis() - pipelineStart);
-            task.setUpdatedAt(LocalDateTime.now());
-            videoTaskMapper.updateById(task);
-            eventPublisher.publishEntity(task, VideoTaskEventPublisher.TYPE_STATUS);
-            storageService.cleanupAfterFailure(task);
+            VideoTaskEntity failed = ctx.getTask();
+            failed.setStatus(VideoTaskStatus.FAILED.name());
+            failed.setCurrentStep("失败");
+            failed.setErrorMessage(VideoTexts.truncate(e.getMessage(), 1000));
+            failed.setFinishedAt(LocalDateTime.now());
+            failed.setTotalDurationMs(System.currentTimeMillis() - pipelineStart);
+            failed.setUpdatedAt(LocalDateTime.now());
+            videoTaskMapper.updateById(failed);
+            eventPublisher.publishEntity(failed, VideoTaskEventPublisher.TYPE_STATUS);
+            storageService.cleanupAfterFailure(failed);
         } finally {
             taskScheduler.markFinished(taskId);
         }
     }
 
-    /**
-     * 仅下载模式收尾：写最小 resultJson，状态 SUCCESS，保留视频文件。
-     */
-    private void finishDownloadOnly(VideoTaskEntity task, String taskIdStr, long pipelineStart) throws Exception {
+    private void runStep(VideoPipelineStep step, VideoPipelineContext ctx) throws Exception {
+        VideoTaskEntity task = ctx.getTask();
+        step.prepare(ctx);
+        updateStatus(task, step.runningStatus(), step.stepLabel(ctx));
+        step.execute(ctx);
+    }
+
+    private void persistStep(VideoPipelineContext ctx) {
+        VideoTaskEntity task = ctx.getTask();
+        task.setUpdatedAt(LocalDateTime.now());
+        videoTaskMapper.updateById(task);
+        eventPublisher.publishEntity(task, VideoTaskEventPublisher.TYPE_STATUS);
+    }
+
+    private void finishSuccess(VideoPipelineContext ctx) throws Exception {
+        VideoTaskEntity task = ctx.getTask();
+        storageService.persistAndCleanupAfterSuccess(task);
+        task.setStatus(VideoTaskStatus.SUCCESS.name());
+        task.setCurrentStep(ctx.isDegraded() ? "完成（已降级为纯音频总结）" : "完成");
+        task.setFinishedAt(LocalDateTime.now());
+        task.setTotalDurationMs(System.currentTimeMillis() - ctx.getPipelineStartMs());
+        task.setUpdatedAt(LocalDateTime.now());
+        task.setErrorMessage(null);
+        videoTaskMapper.updateById(task);
+        eventPublisher.publishEntity(task, VideoTaskEventPublisher.TYPE_STATUS);
+        log.info("视频任务完成: taskId={}, title={}, mode={}, degraded={}, total={}ms, videoKey={}",
+                task.getId(), task.getTitle(), ctx.getMode().wireValue(), ctx.isDegraded(),
+                task.getTotalDurationMs(), task.getVideoPath());
+    }
+
+    private void finishDownloadOnly(VideoTaskEntity task, String taskIdStr, long pipelineStart)
+            throws Exception {
         VideoSummaryResponse response = new VideoSummaryResponse();
         response.setVideoId(taskIdStr);
         response.setTitle(task.getTitle() != null ? task.getTitle() : "未知标题");
@@ -339,7 +205,6 @@ public class VideoProcessingPipeline {
 
         task.setResultJson(objectMapper.writeValueAsString(response));
         task.setDegraded(0);
-        // 上传视频到对象存储并清理本地 scratch
         storageService.persistAndCleanupAfterSuccess(task);
 
         task.setStatus(VideoTaskStatus.SUCCESS.name());
@@ -352,34 +217,6 @@ public class VideoProcessingPipeline {
         eventPublisher.publishEntity(task, VideoTaskEventPublisher.TYPE_STATUS);
         log.info("仅下载任务完成: taskId={}, title={}, total={}ms, videoKey={}",
                 task.getId(), task.getTitle(), task.getTotalDurationMs(), task.getVideoPath());
-    }
-
-    private UnderstandingMode enforceOmniDurationLimit(VideoTaskEntity task, UnderstandingMode mode, Double durationSec) {
-        if (!mode.needsOmni() || durationSec == null) {
-            return mode;
-        }
-        VideoProperties.Understanding u = videoProperties.getUnderstanding();
-        int max = u.getOmniMaxDurationSeconds() > 0
-                ? u.getOmniMaxDurationSeconds()
-                : u.getHybridMaxDurationSeconds();
-        if (max <= 0) {
-            return mode;
-        }
-        if (durationSec <= max) {
-            return mode;
-        }
-        String action = u.getOnOmniTooLong() != null
-                ? u.getOnOmniTooLong().toLowerCase(Locale.ROOT) : "reject";
-        if ("force_audio".equals(action) && mode == UnderstandingMode.HYBRID) {
-            log.warn("视频超 Omni 软顶，强制 audio_only: taskId={}, duration={}, max={}",
-                    task.getId(), durationSec, max);
-            task.setUnderstandingMode(UnderstandingMode.AUDIO_ONLY.wireValue());
-            task.setUpdatedAt(LocalDateTime.now());
-            videoTaskMapper.updateById(task);
-            return UnderstandingMode.AUDIO_ONLY;
-        }
-        throw new BusinessException("视频时长 " + durationSec.intValue()
-                + "s 超过多模态上限 " + max + "s，请缩短视频或改用 audio_only");
     }
 
     private boolean shouldPause(Long taskId, VideoTaskEntity task, long pipelineStart) {
@@ -415,7 +252,6 @@ public class VideoProcessingPipeline {
         task.setCurrentStep(latest.getCurrentStep());
         task.setTotalDurationMs(latest.getTotalDurationMs());
         eventPublisher.publishEntity(latest, VideoTaskEventPublisher.TYPE_STATUS);
-        // 暂停也清 scratch（未完成的中间文件）；已上传对象较少，不强制删 R2
         storageService.cleanupAfterFailure(latest);
         log.info("任务已暂停: taskId={}, step={}", task.getId(), step);
     }
@@ -430,48 +266,5 @@ public class VideoProcessingPipeline {
         videoTaskMapper.updateById(task);
         eventPublisher.publishEntity(task, VideoTaskEventPublisher.TYPE_STATUS);
         log.info("任务状态更新: taskId={}, status={}, step={}", task.getId(), status, step);
-    }
-
-    /** @deprecated PR3 起由 persistAndCleanupAfterSuccess 统一清理 */
-    @SuppressWarnings("unused")
-    private void cleanupMediaOnly(String taskIdStr) {
-        Path dir = storageService.resolveTaskDir(taskIdStr);
-        if (!Files.isDirectory(dir)) {
-            return;
-        }
-        try (Stream<Path> walk = Files.list(dir)) {
-            walk.forEach(p -> {
-                String name = p.getFileName().toString().toLowerCase(Locale.ROOT);
-                if (name.endsWith(".json")) {
-                    return;
-                }
-                try {
-                    if (Files.isDirectory(p)) {
-                        try (Stream<Path> nested = Files.walk(p)) {
-                            nested.sorted(Comparator.reverseOrder()).forEach(n -> {
-                                try {
-                                    Files.deleteIfExists(n);
-                                } catch (IOException ignored) {
-                                    // ignore
-                                }
-                            });
-                        }
-                    } else {
-                        Files.deleteIfExists(p);
-                    }
-                } catch (IOException e) {
-                    log.debug("清理媒体忽略: {}", e.getMessage());
-                }
-            });
-        } catch (IOException e) {
-            log.warn("清理任务媒体失败: {}", e.getMessage());
-        }
-    }
-
-    private static String truncate(String text, int max) {
-        if (text == null) {
-            return "";
-        }
-        return text.length() <= max ? text : text.substring(0, max);
     }
 }

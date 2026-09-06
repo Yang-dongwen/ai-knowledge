@@ -6,6 +6,7 @@ import com.dwcode.okxbot.article.entity.ArticleTaskEntity;
 import com.dwcode.okxbot.article.enums.ArticleTaskStatus;
 import com.dwcode.okxbot.article.event.ArticleTaskEventPublisher;
 import com.dwcode.okxbot.article.mapper.ArticleTaskMapper;
+import com.dwcode.okxbot.common.task.TaskSlotKernel;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.boot.context.event.ApplicationReadyEvent;
 import org.springframework.context.annotation.Lazy;
@@ -14,11 +15,9 @@ import org.springframework.stereotype.Component;
 
 import java.time.LocalDateTime;
 import java.util.List;
-import java.util.Set;
-import java.util.concurrent.ConcurrentHashMap;
 
 /**
- * 文章任务调度：全局槽 + 每用户上限 + 孤儿恢复（对齐 ImgGenTaskScheduler）。
+ * 文章任务调度：全局槽 + 每用户上限 + 孤儿恢复。
  */
 @Slf4j
 @Component
@@ -28,10 +27,7 @@ public class ArticleTaskScheduler {
     private final ArticleTaskAsyncRunner asyncRunner;
     private final ArticleProperties properties;
     private final ArticleTaskEventPublisher eventPublisher;
-
-    private final Set<Long> activeTaskIds = ConcurrentHashMap.newKeySet();
-    private final Set<Long> cancelRequested = ConcurrentHashMap.newKeySet();
-    private final Set<Long> pauseRequested = ConcurrentHashMap.newKeySet();
+    private final TaskSlotKernel slots = new TaskSlotKernel("article");
 
     public ArticleTaskScheduler(ArticleTaskMapper taskMapper,
                                 @Lazy ArticleTaskAsyncRunner asyncRunner,
@@ -81,42 +77,40 @@ public class ArticleTaskScheduler {
     }
 
     public void markRunning(Long taskId) {
-        activeTaskIds.add(taskId);
+        slots.markRunning(taskId);
     }
 
     public void markFinished(Long taskId) {
-        activeTaskIds.remove(taskId);
-        cancelRequested.remove(taskId);
-        pauseRequested.remove(taskId);
+        slots.release(taskId);
         tryStartNext();
     }
 
     public void requestCancel(Long taskId) {
-        cancelRequested.add(taskId);
+        slots.requestCancel(taskId);
     }
 
     public boolean isCancelRequested(Long taskId) {
-        return cancelRequested.contains(taskId);
+        return slots.isCancelRequested(taskId);
     }
 
     public void clearCancelRequest(Long taskId) {
-        cancelRequested.remove(taskId);
+        slots.clearCancelRequest(taskId);
     }
 
     public void requestPause(Long taskId) {
-        pauseRequested.add(taskId);
+        slots.requestPause(taskId);
     }
 
     public boolean isPauseRequested(Long taskId) {
-        return pauseRequested.contains(taskId);
+        return slots.isPauseRequested(taskId);
     }
 
     public void clearPauseRequest(Long taskId) {
-        pauseRequested.remove(taskId);
+        slots.clearPauseRequest(taskId);
     }
 
     public boolean isActive(Long taskId) {
-        return taskId != null && activeTaskIds.contains(taskId);
+        return slots.isActive(taskId);
     }
 
     public synchronized void tryStartNext() {
@@ -124,11 +118,9 @@ public class ArticleTaskScheduler {
             return;
         }
         int max = Math.max(1, properties.getMaxConcurrentTasks());
-        int perUser = Math.max(1, properties.getMaxConcurrentTasksPerUser());
         int runningLike = countRunningInDb(null);
-        int occupied = Math.max(runningLike, activeTaskIds.size());
-        int slots = max - occupied;
-        if (slots <= 0) {
+        int slotsFree = slots.freeSlots(max, runningLike);
+        if (slotsFree <= 0) {
             return;
         }
 
@@ -136,46 +128,30 @@ public class ArticleTaskScheduler {
                 new LambdaQueryWrapper<ArticleTaskEntity>()
                         .eq(ArticleTaskEntity::getStatus, ArticleTaskStatus.PENDING.name())
                         .orderByAsc(ArticleTaskEntity::getCreatedAt)
-                        .last("LIMIT " + Math.max(slots * 4, 8))
+                        .last("LIMIT " + TaskSlotKernel.pendingFetchLimitPerUser(slotsFree))
         );
 
-        int started = 0;
-        for (ArticleTaskEntity task : pending) {
-            if (started >= slots) {
-                break;
-            }
-            Long id = task.getId();
-            Long userId = task.getUserId();
-            if (id == null || userId == null) {
-                continue;
-            }
-            int userRunning = countRunningInDb(userId);
-            // 本轮已占用 active 且属该用户的也计入
-            for (Long activeId : activeTaskIds) {
-                ArticleTaskEntity a = taskMapper.selectById(activeId);
-                if (a != null && userId.equals(a.getUserId())) {
-                    // 若 DB 已是 running 会重复计；active 仅作下限保护
-                    // 简化：若 active 任务 user 匹配且 status 仍 PENDING（刚 add 未更新），加 1
-                    if (ArticleTaskStatus.PENDING.name().equals(a.getStatus())) {
-                        userRunning++;
-                    }
-                }
-            }
-            if (userRunning >= perUser) {
-                continue;
-            }
-            if (!activeTaskIds.add(id)) {
-                continue;
-            }
-            log.info("调度 article 任务: taskId={} userId={}", id, userId);
-            try {
-                asyncRunner.runAsync(id);
-                started++;
-            } catch (Exception e) {
-                activeTaskIds.remove(id);
-                log.error("启动 article 异步任务失败: taskId={}", id, e);
+        int perUser = Math.max(1, properties.getMaxConcurrentTasksPerUser());
+        slots.startPending(max, runningLike, pending,
+                ArticleTaskEntity::getId,
+                task -> acceptForUser(task, perUser),
+                t -> asyncRunner.runAsync(t.getId()));
+    }
+
+    private boolean acceptForUser(ArticleTaskEntity task, int perUser) {
+        Long userId = task.getUserId();
+        if (task.getId() == null || userId == null) {
+            return false;
+        }
+        int userRunning = countRunningInDb(userId);
+        for (Long activeId : slots.activeIds()) {
+            ArticleTaskEntity a = taskMapper.selectById(activeId);
+            if (a != null && userId.equals(a.getUserId())
+                    && ArticleTaskStatus.PENDING.name().equals(a.getStatus())) {
+                userRunning++;
             }
         }
+        return userRunning < perUser;
     }
 
     /**

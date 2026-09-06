@@ -2,6 +2,7 @@ package com.dwcode.okxbot.video.enums;
 
 import com.dwcode.okxbot.common.exception.BusinessException;
 
+import java.util.List;
 import java.util.Locale;
 
 /**
@@ -34,6 +35,19 @@ public enum UnderstandingMode {
     /** 仅下载，流水线在 DOWNLOADING 后直接 SUCCESS */
     public boolean isDownloadOnly() {
         return this == DOWNLOAD_ONLY;
+    }
+
+    /**
+     * 下载完成后还要跑的步骤名（transcribe / understand / summarize）。
+     * 时长超限强制 audio_only 之后应重新取此列表。
+     */
+    public List<String> stepsAfterDownload() {
+        return switch (this) {
+            case DOWNLOAD_ONLY -> List.of();
+            case AUDIO_ONLY -> List.of("transcribe", "summarize");
+            case HYBRID -> List.of("transcribe", "understand", "summarize");
+            case OMNI_ONLY -> List.of("understand", "summarize");
+        };
     }
 
     /**

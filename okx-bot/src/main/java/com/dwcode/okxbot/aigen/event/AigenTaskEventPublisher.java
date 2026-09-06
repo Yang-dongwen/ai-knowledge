@@ -1,82 +1,40 @@
 package com.dwcode.okxbot.aigen.event;
 
 import com.dwcode.okxbot.aigen.entity.AigenTaskEntity;
-import com.fasterxml.jackson.databind.ObjectMapper;
+import com.dwcode.okxbot.common.sse.SseEventTypes;
+import com.dwcode.okxbot.common.sse.UserSseHub;
+import com.dwcode.okxbot.storage.ObjectKeyBuilder;
 import lombok.RequiredArgsConstructor;
-import lombok.extern.slf4j.Slf4j;
-import org.springframework.http.MediaType;
-import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
-import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
-import java.util.ArrayList;
 import java.util.LinkedHashMap;
-import java.util.List;
 import java.util.Map;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.CopyOnWriteArrayList;
 
 /**
- * AI 视频生成任务 SSE（按 userId fan-out）。
- * 单机内存实现，模式对齐 VideoTaskEventPublisher。
+ * AI 视频生成任务 SSE。连接管理在 {@link UserSseHub}（channel=aigen）。
  */
-@Slf4j
 @Component
 @RequiredArgsConstructor
 public class AigenTaskEventPublisher {
 
-    public static final String TYPE_CONNECTED = "connected";
-    public static final String TYPE_PING = "ping";
-    public static final String TYPE_CREATED = "task.created";
-    public static final String TYPE_STATUS = "task.status";
-    public static final String TYPE_DELETED = "task.deleted";
+    public static final String CHANNEL = "aigen";
+    public static final String TYPE_CONNECTED = SseEventTypes.CONNECTED;
+    public static final String TYPE_PING = SseEventTypes.PING;
+    public static final String TYPE_CREATED = SseEventTypes.CREATED;
+    public static final String TYPE_STATUS = SseEventTypes.STATUS;
+    public static final String TYPE_DELETED = SseEventTypes.DELETED;
 
-    private static final long SSE_TIMEOUT_MS = 60L * 60 * 1000;
-    private static final int MAX_EMITTERS_PER_USER = 3;
     private static final DateTimeFormatter DT_FMT = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
 
-    private final ObjectMapper objectMapper;
-    private final ConcurrentHashMap<Long, CopyOnWriteArrayList<SseEmitter>> userEmitters =
-            new ConcurrentHashMap<>();
+    private final UserSseHub sseHub;
 
     public SseEmitter subscribe(Long userId) {
-        SseEmitter emitter = new SseEmitter(SSE_TIMEOUT_MS);
-        CopyOnWriteArrayList<SseEmitter> list =
-                userEmitters.computeIfAbsent(userId, k -> new CopyOnWriteArrayList<>());
-
-        while (list.size() >= MAX_EMITTERS_PER_USER) {
-            SseEmitter old = list.remove(0);
-            try {
-                old.complete();
-            } catch (Exception ignored) {
-                // ignore
-            }
-        }
-        list.add(emitter);
-
-        Runnable cleanup = () -> removeEmitter(userId, emitter);
-        emitter.onCompletion(cleanup);
-        emitter.onTimeout(cleanup);
-        emitter.onError(e -> cleanup.run());
-
-        try {
-            Map<String, Object> payload = baseEnvelope(TYPE_CONNECTED, null);
-            payload.put("data", Map.of("message", "ok", "userId", String.valueOf(userId)));
-            // 必须用 TEXT_PLAIN 发送已序列化 JSON：APPLICATION_JSON 会把 String 再包一层引号，前端解析失败
-            emitter.send(SseEmitter.event()
-                    .name(TYPE_CONNECTED)
-                    .data(objectMapper.writeValueAsString(payload), MediaType.TEXT_PLAIN));
-        } catch (IOException e) {
-            cleanup.run();
-            log.debug("aigen SSE 初始推送失败 userId={}: {}", userId, e.getMessage());
-        }
-        log.debug("aigen SSE 订阅: userId={}, connections={}", userId, list.size());
-        return emitter;
+        return sseHub.subscribe(CHANNEL, userId);
     }
 
     public void publishEntity(AigenTaskEntity entity, String type) {
@@ -97,102 +55,20 @@ public class AigenTaskEventPublisher {
     }
 
     public void publish(Long userId, String type, String taskId, Map<String, Object> data) {
-        if (userId == null) {
-            return;
-        }
-        CopyOnWriteArrayList<SseEmitter> list = userEmitters.get(userId);
-        if (list == null || list.isEmpty()) {
-            return;
-        }
-        Map<String, Object> envelope = baseEnvelope(type, taskId);
-        envelope.put("data", data != null ? data : Map.of());
-        String json;
-        try {
-            json = objectMapper.writeValueAsString(envelope);
-        } catch (Exception e) {
-            log.warn("aigen SSE 序列化失败: {}", e.getMessage());
-            return;
-        }
-        List<SseEmitter> dead = new ArrayList<>();
-        for (SseEmitter emitter : list) {
-            try {
-                emitter.send(SseEmitter.event().name(type).data(json, MediaType.TEXT_PLAIN));
-            } catch (Exception e) {
-                dead.add(emitter);
-            }
-        }
-        for (SseEmitter d : dead) {
-            removeEmitter(userId, d);
-            try {
-                d.complete();
-            } catch (Exception ignored) {
-                // ignore
-            }
-        }
-    }
-
-    @Scheduled(fixedRate = 20_000)
-    public void heartbeat() {
-        if (userEmitters.isEmpty()) {
-            return;
-        }
-        Map<String, Object> envelope = baseEnvelope(TYPE_PING, null);
-        envelope.put("data", Map.of("ts", System.currentTimeMillis()));
-        String json;
-        try {
-            json = objectMapper.writeValueAsString(envelope);
-        } catch (Exception e) {
-            return;
-        }
-        for (Map.Entry<Long, CopyOnWriteArrayList<SseEmitter>> e : userEmitters.entrySet()) {
-            List<SseEmitter> dead = new ArrayList<>();
-            for (SseEmitter emitter : e.getValue()) {
-                try {
-                    emitter.send(SseEmitter.event().name(TYPE_PING).data(json, MediaType.TEXT_PLAIN));
-                } catch (Exception ex) {
-                    dead.add(emitter);
-                }
-            }
-            for (SseEmitter d : dead) {
-                removeEmitter(e.getKey(), d);
-            }
-        }
-    }
-
-    private void removeEmitter(Long userId, SseEmitter emitter) {
-        CopyOnWriteArrayList<SseEmitter> list = userEmitters.get(userId);
-        if (list == null) {
-            return;
-        }
-        list.remove(emitter);
-        if (list.isEmpty()) {
-            userEmitters.remove(userId, list);
-        }
-    }
-
-    private static Map<String, Object> baseEnvelope(String type, String taskId) {
-        Map<String, Object> m = new LinkedHashMap<>();
-        m.put("type", type);
-        m.put("ts", System.currentTimeMillis());
-        if (taskId != null) {
-            m.put("taskId", taskId);
-            m.put("id", taskId);
-        }
-        return m;
+        sseHub.publish(CHANNEL, userId, type, taskId, data, true);
     }
 
     private Map<String, Object> toLightData(AigenTaskEntity e) {
         boolean outputAvailable = false;
         String op = e.getOutputPath();
         if (op != null && !op.isBlank()) {
-            if (com.dwcode.okxbot.storage.ObjectKeyBuilder.looksLikeLocalAbsolutePath(op)) {
+            if (ObjectKeyBuilder.looksLikeLocalAbsolutePath(op)) {
                 try {
                     outputAvailable = Files.isRegularFile(Path.of(op));
                 } catch (Exception ignored) {
                     outputAvailable = false;
                 }
             } else {
-                // object key：非空即视为可用（避免 SSE 频繁 head）
                 outputAvailable = true;
             }
         }
@@ -216,7 +92,6 @@ public class AigenTaskEventPublisher {
         d.put("llmModel", e.getLlmModel());
         d.put("imageProvider", e.getImageProvider());
         d.put("imageModel", e.getImageModel());
-        // 空串而非 null，配合全局 non_null 序列化，保证前端能清掉旧错误
         d.put("errorMessage", e.getErrorMessage() == null ? "" : e.getErrorMessage());
         d.put("durationSeconds", e.getDurationSeconds());
         d.put("outputAvailable", outputAvailable);

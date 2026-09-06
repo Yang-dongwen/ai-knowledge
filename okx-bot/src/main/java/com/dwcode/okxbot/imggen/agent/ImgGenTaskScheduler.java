@@ -1,6 +1,7 @@
 package com.dwcode.okxbot.imggen.agent;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.dwcode.okxbot.common.task.TaskSlotKernel;
 import com.dwcode.okxbot.imggen.config.ImgGenProperties;
 import com.dwcode.okxbot.imggen.entity.ImgGenTaskEntity;
 import com.dwcode.okxbot.imggen.enums.ImgGenTaskStatus;
@@ -14,8 +15,6 @@ import org.springframework.stereotype.Component;
 
 import java.time.LocalDateTime;
 import java.util.List;
-import java.util.Set;
-import java.util.concurrent.ConcurrentHashMap;
 
 @Slf4j
 @Component
@@ -25,10 +24,7 @@ public class ImgGenTaskScheduler {
     private final ImgGenTaskAsyncRunner asyncRunner;
     private final ImgGenProperties properties;
     private final ImgGenTaskEventPublisher eventPublisher;
-
-    private final Set<Long> activeTaskIds = ConcurrentHashMap.newKeySet();
-    private final Set<Long> cancelRequested = ConcurrentHashMap.newKeySet();
-    private final Set<Long> pauseRequested = ConcurrentHashMap.newKeySet();
+    private final TaskSlotKernel slots = new TaskSlotKernel("imggen");
 
     public ImgGenTaskScheduler(ImgGenTaskMapper taskMapper,
                                @Lazy ImgGenTaskAsyncRunner asyncRunner,
@@ -73,38 +69,36 @@ public class ImgGenTaskScheduler {
     }
 
     public void markRunning(Long taskId) {
-        activeTaskIds.add(taskId);
+        slots.markRunning(taskId);
     }
 
     public void markFinished(Long taskId) {
-        activeTaskIds.remove(taskId);
-        cancelRequested.remove(taskId);
-        pauseRequested.remove(taskId);
+        slots.release(taskId);
         tryStartNext();
     }
 
     public void requestCancel(Long taskId) {
-        cancelRequested.add(taskId);
+        slots.requestCancel(taskId);
     }
 
     public boolean isCancelRequested(Long taskId) {
-        return cancelRequested.contains(taskId);
+        return slots.isCancelRequested(taskId);
     }
 
     public void clearCancelRequest(Long taskId) {
-        cancelRequested.remove(taskId);
+        slots.clearCancelRequest(taskId);
     }
 
     public void requestPause(Long taskId) {
-        pauseRequested.add(taskId);
+        slots.requestPause(taskId);
     }
 
     public boolean isPauseRequested(Long taskId) {
-        return pauseRequested.contains(taskId);
+        return slots.isPauseRequested(taskId);
     }
 
     public void clearPauseRequest(Long taskId) {
-        pauseRequested.remove(taskId);
+        slots.clearPauseRequest(taskId);
     }
 
     public synchronized void tryStartNext() {
@@ -113,37 +107,18 @@ public class ImgGenTaskScheduler {
         }
         int max = Math.max(1, properties.getMaxConcurrentTasks());
         int runningLike = countRunningInDb();
-        int occupied = Math.max(runningLike, activeTaskIds.size());
-        int slots = max - occupied;
-        if (slots <= 0) {
+        int slotsFree = slots.freeSlots(max, runningLike);
+        if (slotsFree <= 0) {
             return;
         }
-
         List<ImgGenTaskEntity> pending = taskMapper.selectList(
                 new LambdaQueryWrapper<ImgGenTaskEntity>()
                         .eq(ImgGenTaskEntity::getStatus, ImgGenTaskStatus.PENDING.name())
                         .orderByAsc(ImgGenTaskEntity::getCreatedAt)
-                        .last("LIMIT " + Math.max(slots * 2, 4))
+                        .last("LIMIT " + TaskSlotKernel.pendingFetchLimit(slotsFree))
         );
-
-        int started = 0;
-        for (ImgGenTaskEntity task : pending) {
-            if (started >= slots) {
-                break;
-            }
-            Long id = task.getId();
-            if (id == null || !activeTaskIds.add(id)) {
-                continue;
-            }
-            log.info("调度 imggen 任务: taskId={}", id);
-            try {
-                asyncRunner.runAsync(id);
-                started++;
-            } catch (Exception e) {
-                activeTaskIds.remove(id);
-                log.error("启动 imggen 异步任务失败: taskId={}", id, e);
-            }
-        }
+        slots.startPending(max, runningLike, pending,
+                ImgGenTaskEntity::getId, null, t -> asyncRunner.runAsync(t.getId()));
     }
 
     private int countRunningInDb() {

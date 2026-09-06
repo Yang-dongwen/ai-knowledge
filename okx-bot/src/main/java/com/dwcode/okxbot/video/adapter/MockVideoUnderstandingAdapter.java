@@ -2,6 +2,7 @@ package com.dwcode.okxbot.video.adapter;
 
 import com.dwcode.okxbot.video.port.VideoUnderstandingCommand;
 import com.dwcode.okxbot.video.port.VideoUnderstandingPort;
+import com.dwcode.okxbot.video.port.VideoUnderstandingProtocol;
 import com.dwcode.okxbot.video.port.VisualUnderstandingResult;
 import com.dwcode.okxbot.video.port.VisualUnderstandingResult.ChunkUnderstanding;
 import com.dwcode.okxbot.video.port.VisualUnderstandingResult.OnScreenTextItem;
@@ -16,6 +17,11 @@ import org.springframework.stereotype.Component;
 @Slf4j
 @Component
 public class MockVideoUnderstandingAdapter implements VideoUnderstandingPort {
+
+    @Override
+    public String protocolId() {
+        return VideoUnderstandingProtocol.MOCK;
+    }
 
     @Override
     public VisualUnderstandingResult understand(VideoUnderstandingCommand cmd) {

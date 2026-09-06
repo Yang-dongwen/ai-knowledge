@@ -5,6 +5,8 @@ import com.dwcode.okxbot.chat.config.AiProperties.ProviderConfig;
 import com.dwcode.okxbot.common.ai.LlmContentHelper;
 import com.dwcode.okxbot.common.exception.BusinessException;
 import com.dwcode.okxbot.video.config.VideoProperties;
+import com.dwcode.okxbot.video.port.VideoUnderstandingPort;
+import com.dwcode.okxbot.video.port.VideoUnderstandingProtocol;
 import com.dwcode.okxbot.video.port.VisualUnderstandingResult.ChunkUnderstanding;
 import com.dwcode.okxbot.video.port.VisualUnderstandingResult.OnScreenTextItem;
 import com.dwcode.okxbot.video.port.VisualUnderstandingResult.SceneItem;
@@ -33,7 +35,12 @@ import java.util.concurrent.TimeUnit;
  */
 @Slf4j
 @Component
-public class NvidiaOmniVideoAdapter {
+public class NvidiaOmniVideoAdapter implements VideoUnderstandingPort {
+
+    @Override
+    public String protocolId() {
+        return VideoUnderstandingProtocol.OMNI;
+    }
 
     private static final MediaType JSON = MediaType.parse("application/json; charset=utf-8");
 

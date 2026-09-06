@@ -1,6 +1,7 @@
 package com.dwcode.okxbot.video.agent;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.dwcode.okxbot.common.task.TaskSlotKernel;
 import com.dwcode.okxbot.video.entity.VideoTaskEntity;
 import com.dwcode.okxbot.video.enums.VideoTaskStatus;
 import com.dwcode.okxbot.video.mapper.VideoTaskMapper;
@@ -12,16 +13,9 @@ import org.springframework.stereotype.Component;
 
 import java.time.LocalDateTime;
 import java.util.List;
-import java.util.Set;
-import java.util.concurrent.ConcurrentHashMap;
 
 /**
- * 视频任务调度：
- * <ul>
- *   <li>控制并发（与异步线程池大致对齐）</li>
- *   <li>PENDING 排队，有空闲槽位时启动</li>
- *   <li>暂停请求标记，供流水线协作式中断</li>
- * </ul>
+ * 视频任务调度：并发槽位 + PENDING FIFO + 暂停协作标记。
  */
 @Slf4j
 @Component
@@ -32,18 +26,13 @@ public class VideoTaskScheduler {
 
     private final VideoTaskMapper videoTaskMapper;
     private final VideoTaskAsyncRunner asyncRunner;
+    private final TaskSlotKernel slots = new TaskSlotKernel("video");
 
     public VideoTaskScheduler(VideoTaskMapper videoTaskMapper,
                               @Lazy VideoTaskAsyncRunner asyncRunner) {
         this.videoTaskMapper = videoTaskMapper;
         this.asyncRunner = asyncRunner;
     }
-
-    /** 已调度或正在执行的任务，防止重复 runAsync */
-    private final Set<Long> activeTaskIds = ConcurrentHashMap.newKeySet();
-
-    /** 用户请求暂停的任务 */
-    private final Set<Long> pauseRequested = ConcurrentHashMap.newKeySet();
 
     /**
      * 进程重启后 DB 可能残留进行中状态，占满并发槽；标记 FAILED 并继续排队。
@@ -71,85 +60,50 @@ public class VideoTaskScheduler {
             t.setFinishedAt(now);
             t.setUpdatedAt(now);
             videoTaskMapper.updateById(t);
-            activeTaskIds.remove(t.getId());
-            pauseRequested.remove(t.getId());
+            slots.release(t.getId());
         }
         tryStartNext();
     }
 
-    /**
-     * 任务进入 PENDING 后调用，尝试启动排队中的任务。
-     */
     public void notifyPending() {
         tryStartNext();
     }
 
-    /**
-     * 流水线真正开始执行时标记（幂等）。
-     */
     public void markRunning(Long taskId) {
-        activeTaskIds.add(taskId);
+        slots.markRunning(taskId);
     }
 
-    /**
-     * 流水线结束（成功/失败/暂停）后释放槽位，并启动下一批排队任务。
-     */
     public void markFinished(Long taskId) {
-        activeTaskIds.remove(taskId);
-        pauseRequested.remove(taskId);
+        slots.release(taskId);
         tryStartNext();
     }
 
     public void requestPause(Long taskId) {
-        pauseRequested.add(taskId);
-        log.info("已标记暂停: taskId={}", taskId);
+        slots.requestPause(taskId);
     }
 
     public boolean isPauseRequested(Long taskId) {
-        return pauseRequested.contains(taskId);
+        return slots.isPauseRequested(taskId);
     }
 
     public void clearPauseRequest(Long taskId) {
-        pauseRequested.remove(taskId);
+        slots.clearPauseRequest(taskId);
     }
 
-    /**
-     * 在空闲槽位下启动最早的 PENDING 任务。
-     */
     public synchronized void tryStartNext() {
         int runningLike = countRunningInDb();
-        // active 可能略大于 DB（刚启动尚未更新状态），取较大值估占用
-        int occupied = Math.max(runningLike, activeTaskIds.size());
-        int slots = MAX_CONCURRENT - occupied;
-        if (slots <= 0) {
-            log.debug("无空闲槽位: occupied={}, max={}", occupied, MAX_CONCURRENT);
+        int slotsFree = slots.freeSlots(MAX_CONCURRENT, runningLike);
+        if (slotsFree <= 0) {
             return;
         }
-
         List<VideoTaskEntity> pending = videoTaskMapper.selectList(
                 new LambdaQueryWrapper<VideoTaskEntity>()
                         .eq(VideoTaskEntity::getStatus, VideoTaskStatus.PENDING.name())
                         .orderByAsc(VideoTaskEntity::getCreatedAt)
-                        .last("LIMIT " + Math.max(slots * 2, 4))
+                        .last("LIMIT " + TaskSlotKernel.pendingFetchLimit(slotsFree))
         );
-
-        int started = 0;
-        for (VideoTaskEntity task : pending) {
-            if (started >= slots) {
-                break;
-            }
-            Long id = task.getId();
-            if (id == null) {
-                continue;
-            }
-            if (!activeTaskIds.add(id)) {
-                // 已在执行/已调度
-                continue;
-            }
-            log.info("调度启动排队任务: taskId={}, slot={}/{}", id, started + 1, slots);
-            asyncRunner.runAsync(id);
-            started++;
-        }
+        slots.startPending(MAX_CONCURRENT, runningLike, pending,
+                VideoTaskEntity::getId, null, t -> asyncRunner.runAsync(t.getId()));
     }
 
     private int countRunningInDb() {
