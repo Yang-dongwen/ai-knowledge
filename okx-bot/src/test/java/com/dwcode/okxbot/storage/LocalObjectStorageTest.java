@@ -43,6 +43,17 @@ class LocalObjectStorageTest {
     }
 
     @Test
+    void putStreamWritesExactBytes() throws Exception {
+        byte[] data = "stream-body".getBytes(StandardCharsets.UTF_8);
+        String key = "dev/kb/1/t/a.bin";
+        storage.putStream(key, new java.io.ByteArrayInputStream(data), data.length, "application/octet-stream");
+        assertTrue(storage.exists(key));
+        try (var in = storage.openStream(key)) {
+            assertEquals("stream-body", new String(in.readAllBytes(), StandardCharsets.UTF_8));
+        }
+    }
+
+    @Test
     void putFileAndGetToFile() throws Exception {
         Path src = temp.resolve("src.mp4");
         Files.writeString(src, "fake-mp4");

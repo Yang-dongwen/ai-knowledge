@@ -46,6 +46,14 @@ class ScratchWorkspaceTest {
     }
 
     @Test
+    void openKbModule() throws Exception {
+        Path dir = scratch.openTaskScratch("kb", "up1001");
+        assertTrue(Files.isDirectory(dir));
+        assertTrue(scratch.cleanupScratch("kb", "up1001") >= 0);
+        assertFalse(Files.isDirectory(dir));
+    }
+
+    @Test
     void openArticleModule() throws Exception {
         Path dir = scratch.openTaskScratch("article", "task-a1");
         assertTrue(Files.isDirectory(dir));

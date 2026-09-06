@@ -62,7 +62,7 @@ class KbMediaTypesTest {
     }
 
     @Test
-    void baseMimeAndBlockedUploadExt() {
+    void baseMimeStripsCharset() {
         assertEquals("text/html", KbFileService.baseMime("text/html; charset=utf-8"));
         assertEquals("image/svg+xml", KbFileService.baseMime("image/svg+xml"));
     }

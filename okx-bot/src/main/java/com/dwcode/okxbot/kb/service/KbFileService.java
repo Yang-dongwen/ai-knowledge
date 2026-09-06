@@ -27,32 +27,12 @@ import java.io.InputStream;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
-import java.util.Locale;
 import java.util.Objects;
-import java.util.Set;
 
 @Slf4j
 @Service
 @RequiredArgsConstructor
 public class KbFileService {
-
-    /** 可执行/脚本/可在浏览器内执行的活动内容，禁止上传 */
-    private static final Set<String> BLOCKED_EXT = Set.of(
-            "exe", "bat", "cmd", "sh", "ps1", "js", "msi", "dll", "com", "scr", "vbs",
-            "html", "htm", "svg", "xhtml", "xml", "mhtml", "shtml", "xht"
-    );
-
-    /** 客户端声明的危险 MIME（同 origin 下可能被浏览器当文档执行） */
-    private static final Set<String> BLOCKED_MIME = Set.of(
-            "text/html",
-            "image/svg+xml",
-            "application/xhtml+xml",
-            "text/xml",
-            "application/xml",
-            "application/javascript",
-            "text/javascript",
-            "text/css"
-    );
 
     private final KbFileMapper fileMapper;
     private final KbNoteMapper noteMapper;
@@ -60,46 +40,24 @@ public class KbFileService {
     private final ObjectKeyBuilder objectKeyBuilder;
     private final KbProperties kbProperties;
 
-    @Transactional
+    /**
+     * 整包 multipart 上传（小文件 / 小程序兼容）。大文件走 {@link KbFileUploadService} 分片。
+     */
     public FileResponse upload(MultipartFile file, Long noteId) {
         Long userId = SecurityUtils.requireCurrentUserId();
         if (file == null || file.isEmpty()) {
             throw new BusinessException(400, "文件不能为空");
         }
-        String original = file.getOriginalFilename();
-        if (!StringUtils.hasText(original)) {
-            original = "file.bin";
-        }
-        original = original.replace("\\", "/");
-        if (original.contains("/")) {
-            original = original.substring(original.lastIndexOf('/') + 1);
-        }
-        if (original.length() > 200) {
-            original = original.substring(original.length() - 200);
-        }
-
-        String ext = extensionOf(original);
-        if (BLOCKED_EXT.contains(ext)) {
-            throw new BusinessException(400, "不允许上传该类型文件");
-        }
-
-        String contentType = file.getContentType();
-        if (!StringUtils.hasText(contentType)) {
-            contentType = "application/octet-stream";
-        }
-        String mimeBase = baseMime(contentType);
-        if (BLOCKED_MIME.contains(mimeBase)) {
-            throw new BusinessException(400, "不允许上传该类型文件");
-        }
-        String kind = detectKind(ext, contentType);
+        String original = KbFileRules.sanitizeOriginalName(file.getOriginalFilename());
+        String contentType = KbFileRules.normalizeContentType(file.getContentType());
+        String kind = KbFileRules.detectKind(KbFileRules.extensionOf(original), contentType);
         long size = file.getSize();
-        validateSize(kind, size);
+        KbFileRules.requireSize(size, kbProperties.getFile().getMaxDirectBytes(), "file");
 
         if (noteId != null) {
             requireNoteOwned(noteId, userId);
         }
 
-        // 先拿 id：MyBatis ASSIGN_ID 在 insert 时生成
         KbFileEntity entity = new KbFileEntity();
         entity.setUserId(userId);
         entity.setNoteId(noteId);
@@ -110,15 +68,20 @@ public class KbFileService {
         entity.setObjectKey("pending");
         fileMapper.insert(entity);
 
-        String safeName = sanitizeFileName(original);
+        String safeName = KbFileRules.sanitizeFileName(original);
         String key = objectKeyBuilder.build("kb", userId, String.valueOf(entity.getId()), safeName);
-        try {
-            objectStorage.putBytes(key, file.getBytes(), contentType);
+        try (InputStream in = file.getInputStream()) {
+            objectStorage.putStream(key, in, size, contentType);
         } catch (IOException e) {
             fileMapper.deleteById(entity.getId());
             throw new BusinessException(500, "上传失败: " + e.getMessage());
         } catch (RuntimeException e) {
             fileMapper.deleteById(entity.getId());
+            try {
+                objectStorage.delete(key);
+            } catch (Exception del) {
+                log.warn("direct upload 回滚删对象失败 fileId={}: {}", entity.getId(), del.getMessage());
+            }
             throw e;
         }
         entity.setObjectKey(key);
@@ -317,71 +280,13 @@ public class KbFileService {
         }
     }
 
-    private void validateSize(String kind, long size) {
-        KbProperties.File conf = kbProperties.getFile();
-        long max = switch (kind) {
-            case "image" -> conf.getMaxImageBytes();
-            case "video" -> conf.getMaxVideoBytes();
-            default -> conf.getMaxOtherBytes();
-        };
-        if (size > max) {
-            throw new BusinessException(400, "文件过大，上限 " + (max / 1024 / 1024) + "MB");
-        }
-    }
-
     /** 去掉 charset 等参数，仅保留 type/subtype */
     static String baseMime(String contentType) {
-        if (contentType == null) {
-            return "";
-        }
-        String ct = contentType.trim().toLowerCase(Locale.ROOT);
-        int semi = ct.indexOf(';');
-        if (semi >= 0) {
-            ct = ct.substring(0, semi).trim();
-        }
-        return ct;
+        return KbFileRules.baseMime(contentType);
     }
 
     static String detectKind(String ext, String contentType) {
-        String ct = contentType == null ? "" : contentType.toLowerCase(Locale.ROOT);
-        // svg 已在 BLOCKED_EXT 拒绝，不归类为 image
-        if (ct.startsWith("image/") || Set.of("jpg", "jpeg", "png", "gif", "webp", "bmp").contains(ext)) {
-            return "image";
-        }
-        if (ct.startsWith("video/") || Set.of("mp4", "webm", "mov", "mkv").contains(ext)) {
-            return "video";
-        }
-        if (ct.startsWith("audio/") || Set.of("mp3", "wav", "ogg", "m4a").contains(ext)) {
-            return "audio";
-        }
-        if ("pdf".equals(ext) || ct.contains("pdf")) {
-            return "pdf";
-        }
-        if (Set.of("doc", "docx", "xls", "xlsx", "ppt", "pptx", "odt", "ods", "odp").contains(ext)
-                || ct.contains("officedocument") || ct.contains("msword") || ct.contains("ms-excel")
-                || ct.contains("ms-powerpoint")) {
-            return "office";
-        }
-        return "other";
-    }
-
-    private static String extensionOf(String name) {
-        int i = name.lastIndexOf('.');
-        if (i < 0 || i == name.length() - 1) {
-            return "";
-        }
-        return name.substring(i + 1).toLowerCase(Locale.ROOT);
-    }
-
-    private static String sanitizeFileName(String name) {
-        String n = name.replaceAll("[^A-Za-z0-9._@+-]", "_");
-        if (n.isBlank()) {
-            n = "file.bin";
-        }
-        if (n.length() > 120) {
-            n = n.substring(n.length() - 120);
-        }
-        return n;
+        return KbFileRules.detectKind(ext, contentType);
     }
 
     private FileResponse toResponse(KbFileEntity e) {

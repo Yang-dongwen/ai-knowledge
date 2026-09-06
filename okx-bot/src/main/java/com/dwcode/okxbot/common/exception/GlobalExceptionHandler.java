@@ -11,6 +11,7 @@ import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.validation.BindException;
 import org.springframework.web.HttpMediaTypeNotSupportedException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
+import org.springframework.web.multipart.MaxUploadSizeExceededException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
@@ -99,6 +100,13 @@ public class GlobalExceptionHandler {
      * 常见于 PowerShell Invoke-RestMethod 未指定 -ContentType application/json，
      * 默认发出 text/plain;charset=UTF-8。
      */
+    @ExceptionHandler(MaxUploadSizeExceededException.class)
+    @ResponseStatus(HttpStatus.PAYLOAD_TOO_LARGE)
+    public ApiResult<Void> handleMaxUpload(MaxUploadSizeExceededException e) {
+        log.warn("上传超过 Spring multipart 上限: {}", e.getMessage());
+        return ApiResult.fail(413, "文件过大，整包上传上限 100MB，更大文件请使用分片上传");
+    }
+
     @ExceptionHandler(HttpMediaTypeNotSupportedException.class)
     @ResponseStatus(HttpStatus.UNSUPPORTED_MEDIA_TYPE)
     public ApiResult<Void> handleMediaTypeNotSupported(HttpMediaTypeNotSupportedException e) {

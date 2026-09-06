@@ -198,9 +198,15 @@ kb:
   search:
     mode: like
   file:
-    max-image-bytes: 10485760
-    max-video-bytes: 104857600
-    max-other-bytes: 31457280
+    max-bytes: 2147483648
+    max-direct-bytes: 104857600
+    chunk-size-bytes: 8388608
+    max-parts: 512
+    session-ttl-hours: 24
+    max-sessions-per-user: 3
+    max-concurrent-parts-per-user: 6
+    max-concurrent-parts-global: 16
+    max-concurrent-complete-global: 2
   pdf:
     chrome-path: ${KB_PDF_CHROME_PATH:}
     timeout-seconds: 60
@@ -217,7 +223,7 @@ storage:
     region: auto
     path-style: true
     presign-ttl-seconds: 900
-    multipart-threshold-bytes: 104857600
+    multipart-threshold-bytes: 8388608
     multipart-part-size-bytes: 8388608
 
 # 视频提取（路径、cookie、whisper 启停在 local / ec2）

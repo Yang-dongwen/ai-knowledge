@@ -24,6 +24,13 @@ public interface ObjectStoragePort {
     void putBytes(String key, byte[] data, String contentType);
 
     /**
+     * 从流写入对象；调用方负责关闭 {@code in}。
+     *
+     * @param contentLength 精确字节数（S3 需要已知长度）
+     */
+    void putStream(String key, InputStream in, long contentLength, String contentType);
+
+    /**
      * 下载到本地文件（父目录自动创建）。
      */
     void getToFile(String key, Path localFile);

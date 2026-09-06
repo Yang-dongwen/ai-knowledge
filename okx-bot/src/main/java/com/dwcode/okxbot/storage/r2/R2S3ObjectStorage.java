@@ -96,6 +96,39 @@ public class R2S3ObjectStorage implements ObjectStoragePort {
     }
 
     @Override
+    public void putStream(String key, InputStream in, long contentLength, String contentType) {
+        String k = normalizeKey(key);
+        if (in == null) {
+            throw new BusinessException(400, "putStream input 不能为 null");
+        }
+        if (contentLength < 0) {
+            throw new BusinessException(400, "putStream contentLength 不能为负");
+        }
+        try {
+            String ct = contentType != null && !contentType.isBlank()
+                    ? contentType
+                    : LocalObjectStorage.guessContentType(k);
+            long threshold = r2.getMultipartThresholdBytes();
+            if (threshold > 0 && contentLength >= threshold) {
+                putMultipartFromStream(k, in, contentLength, ct);
+            } else {
+                PutObjectRequest req = PutObjectRequest.builder()
+                        .bucket(r2.getBucket())
+                        .key(k)
+                        .contentType(ct)
+                        .contentLength(contentLength)
+                        .build();
+                s3.putObject(req, RequestBody.fromInputStream(in, contentLength));
+                log.info("r2 putStream: key={}, bytes={}", k, contentLength);
+            }
+        } catch (BusinessException e) {
+            throw e;
+        } catch (Exception e) {
+            throw new BusinessException("R2 putStream 失败: " + k + " — " + e.getMessage());
+        }
+    }
+
+    @Override
     public void putBytes(String key, byte[] data, String contentType) {
         String k = normalizeKey(key);
         if (data == null) {
@@ -115,6 +148,69 @@ public class R2S3ObjectStorage implements ObjectStoragePort {
             log.info("r2 putBytes: key={}, bytes={}", k, data.length);
         } catch (Exception e) {
             throw new BusinessException("R2 putBytes 失败: " + k + " — " + e.getMessage());
+        }
+    }
+
+    private void putMultipartFromStream(String key, InputStream in, long size, String contentType)
+            throws IOException {
+        long partSize = Math.max(5L * 1024 * 1024, r2.getMultipartPartSizeBytes());
+        CreateMultipartUploadResponse created = s3.createMultipartUpload(b -> b
+                .bucket(r2.getBucket())
+                .key(key)
+                .contentType(contentType));
+        String uploadId = created.uploadId();
+        List<CompletedPart> completed = new ArrayList<>();
+        try {
+            int partNumber = 1;
+            long remaining = size;
+            byte[] buffer = new byte[(int) Math.min(partSize, Integer.MAX_VALUE)];
+            while (remaining > 0) {
+                int len = (int) Math.min(buffer.length, remaining);
+                int read = 0;
+                while (read < len) {
+                    int n = in.read(buffer, read, len - read);
+                    if (n < 0) {
+                        throw new BusinessException(400, "putStream 提前结束");
+                    }
+                    read += n;
+                }
+                final int pn = partNumber;
+                UploadPartResponse partResp = s3.uploadPart(UploadPartRequest.builder()
+                        .bucket(r2.getBucket())
+                        .key(key)
+                        .uploadId(uploadId)
+                        .partNumber(pn)
+                        .contentLength((long) len)
+                        .build(), RequestBody.fromBytes(copyOf(buffer, len)));
+                completed.add(CompletedPart.builder()
+                        .partNumber(pn)
+                        .eTag(partResp.eTag())
+                        .build());
+                remaining -= len;
+                partNumber++;
+            }
+            s3.completeMultipartUpload(b -> b
+                    .bucket(r2.getBucket())
+                    .key(key)
+                    .uploadId(uploadId)
+                    .multipartUpload(CompletedMultipartUpload.builder().parts(completed).build()));
+            log.info("r2 multipart putStream: key={}, bytes={}, parts={}", key, size, completed.size());
+        } catch (Exception e) {
+            try {
+                s3.abortMultipartUpload(b -> b
+                        .bucket(r2.getBucket())
+                        .key(key)
+                        .uploadId(uploadId));
+            } catch (Exception abortEx) {
+                log.warn("abort multipart 失败: key={} — {}", key, abortEx.getMessage());
+            }
+            if (e instanceof IOException io) {
+                throw io;
+            }
+            if (e instanceof RuntimeException rt) {
+                throw rt;
+            }
+            throw new IOException(e);
         }
     }
 

@@ -53,9 +53,23 @@ public class KbProperties {
 
     @Data
     public static class File {
+        /** 分片上传总上限（默认 2GB） */
+        private long maxBytes = 2L * 1024 * 1024 * 1024;
+        /** 兼容旧版整包 POST 上限，须小于网关/Spring multipart */
+        private long maxDirectBytes = 100L * 1024 * 1024;
+        /** @deprecated 使用 maxBytes；保留配置项以免旧 yml 绑失败 */
         private long maxImageBytes = 10L * 1024 * 1024;
         private long maxVideoBytes = 100L * 1024 * 1024;
         private long maxOtherBytes = 30L * 1024 * 1024;
+        /** 分片大小，须 ≥ 5MB（对齐 S3 非末片） */
+        private int chunkSizeBytes = 8 * 1024 * 1024;
+        private int maxParts = 512;
+        private int sessionTtlHours = 24;
+        private int maxSessionsPerUser = 3;
+        private int maxConcurrentPartsPerUser = 6;
+        private int maxConcurrentPartsGlobal = 16;
+        private int maxConcurrentCompleteGlobal = 2;
+        private String cleanupCron = "0 */15 * * * ?";
     }
 
     @Data

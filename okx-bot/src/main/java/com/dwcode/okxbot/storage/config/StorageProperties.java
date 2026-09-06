@@ -73,7 +73,7 @@ public class StorageProperties {
          * 超过该字节数使用 Multipart Upload（默认 100MB）。
          * 0 表示始终单次 PutObject。
          */
-        private long multipartThresholdBytes = 100L * 1024 * 1024;
+        private long multipartThresholdBytes = 8L * 1024 * 1024;
         /** 分片大小（默认 8MB，需 ≥5MB 符合 S3 规范） */
         private long multipartPartSizeBytes = 8L * 1024 * 1024;
     }

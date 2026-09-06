@@ -54,6 +54,34 @@ public class LocalObjectStorage implements ObjectStoragePort {
     }
 
     @Override
+    public void putStream(String key, InputStream in, long contentLength, String contentType) {
+        if (in == null) {
+            throw new BusinessException(400, "putStream input 不能为 null");
+        }
+        if (contentLength < 0) {
+            throw new BusinessException(400, "putStream contentLength 不能为负");
+        }
+        Path dest = resolveKeyPath(key);
+        try {
+            Files.createDirectories(dest.getParent());
+            long copied;
+            try (InputStream input = in; OutputStream out = Files.newOutputStream(dest)) {
+                copied = input.transferTo(out);
+            }
+            if (copied != contentLength) {
+                Files.deleteIfExists(dest);
+                throw new BusinessException(400, "putStream 长度不匹配: expected="
+                        + contentLength + " actual=" + copied);
+            }
+            log.debug("local put stream: key={}, bytes={}", key, copied);
+        } catch (BusinessException e) {
+            throw e;
+        } catch (IOException e) {
+            throw new BusinessException("local putStream 失败: " + key + " — " + e.getMessage());
+        }
+    }
+
+    @Override
     public void putBytes(String key, byte[] data, String contentType) {
         if (data == null) {
             throw new BusinessException(400, "putBytes data 不能为 null");

@@ -261,6 +261,349 @@ export function isKbFileContentUrl(url: string): boolean {
   return KB_FILE_CONTENT_RE.test(url || '')
 }
 
+/** 分片上传总上限（与后端 kb.file.max-bytes 对齐） */
+export const KB_MAX_FILE_BYTES = 2 * 1024 * 1024 * 1024
+
+export class KbUploadPausedError extends Error {
+  constructor() {
+    super('上传已暂停')
+    this.name = 'KbUploadPausedError'
+  }
+}
+
+export class KbUploadCanceledError extends Error {
+  constructor() {
+    super('上传已取消')
+    this.name = 'KbUploadCanceledError'
+  }
+}
+
+export function isKbUploadPaused(e: unknown): boolean {
+  return e instanceof KbUploadPausedError || (e as { name?: string })?.name === 'KbUploadPausedError'
+}
+
+export function isKbUploadCanceled(e: unknown): boolean {
+  return e instanceof KbUploadCanceledError || (e as { name?: string })?.name === 'KbUploadCanceledError'
+}
+
+const PART_CONCURRENCY = 3
+
+interface KbUploadSession {
+  uploadId: string
+  chunkSize: number
+  totalParts: number
+  status: string
+  receivedParts?: number[]
+  uploadedBytes?: number
+}
+
+function kbAuthHeaders(): Record<string, string> {
+  const token = localStorage.getItem(TOKEN_KEY)
+  return token ? { Authorization: `Bearer ${token}` } : {}
+}
+
+function unwrapUpload<T>(res: { data?: { success?: boolean; message?: string; data?: T } }): T {
+  const body = res.data
+  if (!body?.success || body.data == null) {
+    throw new Error(body?.message || '上传失败')
+  }
+  return body.data
+}
+
+function rethrowUpload(e: any): never {
+  const status = e?.response?.status
+  if (status === 401) {
+    handleAuthFailure(401, e?.response?.data?.message)
+  }
+  const msg = e?.response?.data?.message || e?.message || '上传失败'
+  throw new Error(msg)
+}
+
+let partActive = 0
+const partWaiters: Array<() => void> = []
+
+function acquirePartSlot(): Promise<void> {
+  if (partActive < PART_CONCURRENCY) {
+    partActive++
+    return Promise.resolve()
+  }
+  return new Promise((resolve) => {
+    partWaiters.push(() => {
+      partActive++
+      resolve()
+    })
+  })
+}
+
+function releasePartSlot() {
+  partActive = Math.max(0, partActive - 1)
+  const next = partWaiters.shift()
+  if (next) next()
+}
+
+async function sleep(ms: number) {
+  await new Promise((r) => setTimeout(r, ms))
+}
+
+function throwIfUploadAborted(signal?: AbortSignal): void {
+  if (!signal?.aborted) return
+  if (signal.reason === 'pause') {
+    throw new KbUploadPausedError()
+  }
+  throw new KbUploadCanceledError()
+}
+
+function isCanceledRequest(e: any): boolean {
+  return (
+    e?.code === 'ERR_CANCELED' ||
+    e?.name === 'CanceledError' ||
+    e?.name === 'AbortError' ||
+    axios.isCancel?.(e)
+  )
+}
+
+function uploadFingerprint(file: File, noteId?: string | null): string {
+  return `kb-upload:${file.name}:${file.size}:${file.lastModified}:${noteId || ''}`
+}
+
+async function abortUploadSession(uploadId: string): Promise<void> {
+  try {
+    await axios.delete(`/api/v1/kb/files/uploads/${uploadId}`, {
+      headers: kbAuthHeaders(),
+      timeout: 15000
+    })
+  } catch {
+    /* 会话可能已过期 */
+  }
+}
+
+export type KbUploadPhase = 'uploading' | 'completing' | 'done'
+
+export type KbUploadProgress = {
+  percent: number
+  phase: KbUploadPhase
+  uploadedBytes: number
+  totalBytes: number
+}
+
+function partBytesLoaded(ev: { loaded?: number; total?: number; progress?: number }, partSize: number): number {
+  const size = Math.max(0, partSize)
+  if (typeof ev.progress === 'number' && ev.progress >= 0 && ev.progress <= 1) {
+    return Math.min(size, Math.round(ev.progress * size))
+  }
+  const loaded = Math.max(0, ev.loaded || 0)
+  const total = ev.total || 0
+  if (total > 0) {
+    return Math.min(size, Math.round((loaded / total) * size))
+  }
+  return Math.min(size, loaded)
+}
+
+const heldUploadFiles = new Map<string, File>()
+
+export function holdKbUploadFile(uploadId: string, file: File) {
+  if (uploadId) heldUploadFiles.set(String(uploadId), file)
+}
+
+export function takeKbUploadFile(uploadId: string): File | undefined {
+  return heldUploadFiles.get(String(uploadId))
+}
+
+export function dropKbUploadFile(uploadId: string) {
+  heldUploadFiles.delete(String(uploadId))
+}
+
+async function uploadFileChunked(
+  file: File,
+  noteId?: string | null,
+  opts?: {
+    onProgress?: (p: KbUploadProgress) => void
+    onSession?: (uploadId: string) => void
+    resumeUploadId?: string
+    signal?: AbortSignal
+  }
+): Promise<{ data: KbFileItem }> {
+  if (!file || file.size <= 0) {
+    throw new Error('文件不能为空')
+  }
+  if (file.size > KB_MAX_FILE_BYTES) {
+    throw new Error('文件过大，上限 2GB')
+  }
+  throwIfUploadAborted(opts?.signal)
+  const headers = kbAuthHeaders()
+  const fp = uploadFingerprint(file, noteId)
+  let session: KbUploadSession | null = null
+  const resumeId = opts?.resumeUploadId || sessionStorage.getItem(fp)
+  const storedId = resumeId
+  if (storedId) {
+    try {
+      session = unwrapUpload(
+        await axios.get(`/api/v1/kb/files/uploads/${storedId}`, {
+          headers,
+          signal: opts?.signal
+        })
+      )
+      if (session.status !== 'pending') {
+        session = null
+        sessionStorage.removeItem(fp)
+      }
+    } catch (e: any) {
+      if (isCanceledRequest(e) || opts?.signal?.aborted) {
+        throwIfUploadAborted(opts?.signal)
+        throw new KbUploadCanceledError()
+      }
+      session = null
+      sessionStorage.removeItem(fp)
+    }
+  }
+  if (!session) {
+    try {
+      session = unwrapUpload(
+        await axios.post(
+          '/api/v1/kb/files/uploads',
+          {
+            originalName: file.name,
+            sizeBytes: file.size,
+            contentType: file.type || 'application/octet-stream',
+            ...(noteId ? { noteId } : {})
+          },
+          { headers, timeout: 30000, signal: opts?.signal }
+        )
+      )
+      sessionStorage.setItem(fp, String(session.uploadId))
+    } catch (e: any) {
+      if (isCanceledRequest(e)) throwIfUploadAborted(opts?.signal)
+      rethrowUpload(e)
+    }
+  }
+  const uploadId = String(session!.uploadId)
+  holdKbUploadFile(uploadId, file)
+  opts?.onSession?.(uploadId)
+  const chunkSize = session!.chunkSize
+  const totalParts = session!.totalParts
+  const received = new Set(session!.receivedParts || [])
+  let committed = session!.uploadedBytes || 0
+  const inflightParts = new Map<number, number>()
+  const emit = (phase: KbUploadPhase) => {
+    // 暂停/取消：只按已成功落盘的分片算进度，丢掉中途 abort 的那一截
+    const extra = phase === 'uploading' && !opts?.signal?.aborted
+      ? [...inflightParts.values()].reduce((a, b) => a + b, 0)
+      : 0
+    const uploaded = Math.min(file.size, Math.max(0, committed + extra))
+    let pct = file.size ? Math.floor((uploaded / file.size) * 100) : 0
+    pct = Math.max(0, Math.min(100, pct))
+    if (phase === 'completing') pct = Math.min(99, Math.max(pct, 99))
+    if (phase === 'done') pct = 100
+    if (phase === 'uploading') pct = Math.min(99, pct)
+    opts?.onProgress?.({
+      percent: Number.isFinite(pct) ? pct : 0,
+      phase,
+      uploadedBytes: uploaded,
+      totalBytes: file.size
+    })
+  }
+  emit('uploading')
+
+  const putOne = async (partNumber: number) => {
+    throwIfUploadAborted(opts?.signal)
+    const start = (partNumber - 1) * chunkSize
+    const end = Math.min(start + chunkSize, file.size)
+    const blob = file.slice(start, end)
+    let lastErr: unknown
+    for (let attempt = 0; attempt < 3; attempt++) {
+      throwIfUploadAborted(opts?.signal)
+      await acquirePartSlot()
+      try {
+        throwIfUploadAborted(opts?.signal)
+        const res = await axios.put(
+          `/api/v1/kb/files/uploads/${uploadId}/parts/${partNumber}`,
+          blob,
+          {
+            headers: {
+              ...headers,
+              'Content-Type': 'application/octet-stream'
+            },
+            timeout: 180000,
+            signal: opts?.signal,
+            onUploadProgress: (ev) => {
+              if (opts?.signal?.aborted) return
+              inflightParts.set(partNumber, partBytesLoaded(ev, blob.size))
+              emit('uploading')
+            }
+          }
+        )
+        unwrapUpload(res)
+        inflightParts.delete(partNumber)
+        committed += blob.size
+        received.add(partNumber)
+        emit('uploading')
+        return
+      } catch (e: any) {
+        lastErr = e
+        inflightParts.delete(partNumber)
+        if (isCanceledRequest(e) || opts?.signal?.aborted) {
+          emit('uploading')
+          throwIfUploadAborted(opts?.signal)
+          throw new KbUploadCanceledError()
+        }
+        const status = e?.response?.status
+        if (status === 401 || status === 400 || status === 404 || status === 409 || status === 410) {
+          rethrowUpload(e)
+        }
+        await sleep(400 * (attempt + 1))
+      } finally {
+        releasePartSlot()
+      }
+    }
+    rethrowUpload(lastErr)
+  }
+
+  const missing: number[] = []
+  for (let i = 1; i <= totalParts; i++) {
+    if (!received.has(i)) missing.push(i)
+  }
+  // 有界工人池：暂停时不再领取新分片；已发出的 PUT 靠 AbortSignal 掐掉
+  let next = 0
+  const worker = async () => {
+    while (true) {
+      throwIfUploadAborted(opts?.signal)
+      const idx = next++
+      if (idx >= missing.length) return
+      await putOne(missing[idx])
+    }
+  }
+  const workers = Math.min(PART_CONCURRENCY, Math.max(1, missing.length))
+  if (missing.length) {
+    await Promise.all(Array.from({ length: workers }, () => worker()))
+  }
+  throwIfUploadAborted(opts?.signal)
+
+  emit('completing')
+  try {
+    const data = unwrapUpload<KbFileItem>(
+      await axios.post(`/api/v1/kb/files/uploads/${uploadId}/complete`, null, {
+        headers,
+        timeout: 600000,
+        signal: opts?.signal
+      })
+    )
+    sessionStorage.removeItem(fp)
+    opts?.onProgress?.({
+      percent: 100,
+      phase: 'done',
+      uploadedBytes: file.size,
+      totalBytes: file.size
+    })
+    return { data }
+  } catch (e: any) {
+    if (isCanceledRequest(e) || opts?.signal?.aborted) {
+      throwIfUploadAborted(opts?.signal)
+      throw new KbUploadCanceledError()
+    }
+    rethrowUpload(e)
+  }
+}
+
 /**
  * 个人知识库 API（/api/v1/kb/*）
  */
@@ -470,30 +813,48 @@ export const kbApi = {
     return request.delete(`/v1/kb/tags/${id}`)
   },
 
-  async uploadFile(file: File, noteId?: string | null): Promise<{ data: KbFileItem }> {
-    const fd = new FormData()
-    fd.append('file', file)
-    if (noteId) fd.append('noteId', noteId)
-    const token = localStorage.getItem(TOKEN_KEY)
-    try {
-      const res = await axios.post('/api/v1/kb/files', fd, {
-        headers: {
-          ...(token ? { Authorization: `Bearer ${token}` } : {})
-        },
-        timeout: 120000
-      })
-      const body = res.data
-      if (!body?.success) {
-        throw new Error(body?.message || '上传失败')
-      }
-      return { data: body.data }
-    } catch (e: any) {
-      const status = e?.response?.status
-      if (status === 401) {
-        handleAuthFailure(401, e?.response?.data?.message)
-      }
-      throw e
+  /**
+   * 分片上传（上限 2GB）。onProgress 为 0–100。
+   * 同一文件（名+大小+mtime）会续传未完成分片。
+   */
+  async uploadFile(
+    file: File,
+    noteId?: string | null,
+    opts?: {
+      onProgress?: (p: KbUploadProgress) => void
+      onSession?: (uploadId: string) => void
+      resumeUploadId?: string
+      signal?: AbortSignal
     }
+  ): Promise<{ data: KbFileItem }> {
+    return uploadFileChunked(file, noteId, opts)
+  },
+
+  listUploads(params: { noteId?: string | null; unbound?: boolean } = {}): Promise<{
+    data: Array<{
+      uploadId: string
+      originalName: string
+      totalBytes: number
+      uploadedBytes: number
+      status: string
+    }>
+  }> {
+    return request.get('/v1/kb/files/uploads', {
+      params: {
+        ...(params.unbound || !params.noteId
+          ? { unbound: true }
+          : { noteId: params.noteId })
+      }
+    })
+  },
+
+  async abortUpload(uploadId: string): Promise<void> {
+    await abortUploadSession(uploadId)
+  },
+
+  clearUploadResume(file: File | undefined, noteId?: string | null) {
+    if (!file) return
+    sessionStorage.removeItem(uploadFingerprint(file, noteId))
   },
 
   listFiles(noteId: string): Promise<{ data: KbFileItem[] }> {

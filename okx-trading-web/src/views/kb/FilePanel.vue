@@ -11,24 +11,65 @@
       <span class="title">附件</span>
       <div class="head-actions">
         <span class="drop-hint muted">可直接拖入文件</span>
+        <input
+          ref="resumeInputRef"
+          type="file"
+          class="resume-file-input"
+          @change="onResumeFilePicked"
+        />
         <a-upload
           :show-upload-list="false"
-          :disabled="disabled || uploading"
+          :disabled="disabled"
           :before-upload="beforeUpload"
           multiple
         >
-          <a-button size="small" type="primary" ghost :loading="uploading" :disabled="disabled">
+          <a-button size="small" type="primary" ghost :disabled="disabled">
             选择文件
           </a-button>
         </a-upload>
       </div>
     </div>
+    <ul v-if="inflight.length" class="list inflight-list">
+      <li v-for="u in inflight" :key="u.id" class="item">
+        <div class="meta">
+          <span class="kind">{{ inflightKind(u.status) }}</span>
+          <span class="name" :title="u.name">{{ u.name }}</span>
+          <span class="size muted">{{ inflightHint(u) }}</span>
+        </div>
+        <a-progress
+          v-if="u.status !== 'error'"
+          :percent="u.percent"
+          size="small"
+          :show-info="false"
+          class="up-progress"
+        />
+        <div v-if="u.status !== 'completing'" class="ops">
+          <a-button
+            v-if="u.status === 'uploading'"
+            type="link"
+            size="small"
+            @click="pauseUpload(u.id)"
+          >
+            暂停
+          </a-button>
+          <a-button
+            v-if="u.status === 'paused' || u.status === 'error'"
+            type="link"
+            size="small"
+            @click="resumeUpload(u.id)"
+          >
+            {{ u.status === 'error' ? '重试' : u.file ? '继续' : '选择文件继续' }}
+          </a-button>
+          <a-button type="link" size="small" danger @click="cancelUpload(u.id)">取消</a-button>
+        </div>
+      </li>
+    </ul>
     <div v-if="!noteId" class="hint muted">
       尚未保存笔记：拖入的文件会先上传，保存笔记后自动关联。
     </div>
     <div v-else-if="loading" class="hint muted">加载中…</div>
     <div v-else-if="!files.length" class="drop-zone-empty muted">
-      拖拽 Word / Excel / PDF / 图片等到此处，或点「选择文件」
+      拖拽任意文件到此处，或点「选择文件」（单文件最大 2GB）
     </div>
     <ul v-else class="list">
       <li v-for="f in files" :key="f.id" class="item">
@@ -94,7 +135,30 @@
 <script setup lang="ts">
 import { nextTick, onBeforeUnmount, ref, watch } from 'vue'
 import { message } from 'ant-design-vue'
-import { kbApi, kbMediaUrl, type KbFileItem } from '@/api/kb.api'
+import {
+  kbApi,
+  kbMediaUrl,
+  KB_MAX_FILE_BYTES,
+  dropKbUploadFile,
+  isKbUploadCanceled,
+  isKbUploadPaused,
+  takeKbUploadFile,
+  type KbFileItem
+} from '@/api/kb.api'
+
+type InflightStatus = 'uploading' | 'completing' | 'paused' | 'error'
+
+type InflightItem = {
+  id: string
+  name: string
+  percent: number
+  status: InflightStatus
+  error?: string
+  file?: File
+  sizeBytes?: number
+  controller: AbortController
+  uploadId?: string
+}
 
 const props = defineProps<{
   noteId?: string | null
@@ -110,9 +174,15 @@ const emit = defineEmits<{
 
 const files = ref<KbFileItem[]>([])
 const loading = ref(false)
-const uploading = ref(false)
+const inflight = ref<InflightItem[]>([])
 const dragOver = ref(false)
 let dragDepth = 0
+const running = new Map<string, Promise<void>>()
+const FILE_CONCURRENCY = 2
+let fileActive = 0
+const fileWaiters: Array<() => void> = []
+const resumeInputRef = ref<HTMLInputElement | null>(null)
+let resumePickId: string | null = null
 
 const previewOpen = ref(false)
 const previewFile = ref<KbFileItem | null>(null)
@@ -144,6 +214,22 @@ function formatSize(n: number) {
   return `${(n / 1024 / 1024).toFixed(1)} MB`
 }
 
+function inflightKind(status: InflightStatus) {
+  if (status === 'paused') return '停'
+  if (status === 'error') return '败'
+  if (status === 'completing') return '合'
+  return '传'
+}
+
+function inflightHint(u: InflightItem) {
+  if (u.status === 'error') return u.error || '上传失败'
+  if (u.status === 'paused') {
+    return u.file ? `已暂停 ${u.percent}%` : `已暂停 ${u.percent}% · 请选择同一文件继续`
+  }
+  if (u.status === 'completing') return '正在写入存储…'
+  return `${u.percent}%`
+}
+
 function revokeObjectUrl() {
   if (objectUrl) {
     URL.revokeObjectURL(objectUrl)
@@ -169,8 +255,13 @@ async function reload() {
 
 watch(
   () => props.noteId,
-  () => {
-    reload()
+  async () => {
+    for (const u of inflight.value) {
+      if (u.status === 'uploading') u.controller.abort('pause')
+    }
+    inflight.value = []
+    await reload()
+    await restorePending()
   },
   { immediate: true }
 )
@@ -197,21 +288,99 @@ async function onDrop(e: DragEvent) {
   if (props.disabled) return
   const list = e.dataTransfer?.files
   if (!list?.length) return
-  const arr = Array.from(list)
-  for (const file of arr) {
-    await doUpload(file)
-  }
+  await Promise.all(Array.from(list).map((file) => enqueueUpload(file)))
 }
 
 function beforeUpload(file: File) {
-  void doUpload(file)
+  void enqueueUpload(file)
   return false
 }
 
-async function doUpload(file: File) {
-  uploading.value = true
+function acquireFileSlot(): Promise<void> {
+  if (fileActive < FILE_CONCURRENCY) {
+    fileActive++
+    return Promise.resolve()
+  }
+  return new Promise((resolve) => {
+    fileWaiters.push(() => {
+      fileActive++
+      resolve()
+    })
+  })
+}
+
+function releaseFileSlot() {
+  fileActive = Math.max(0, fileActive - 1)
+  const next = fileWaiters.shift()
+  if (next) next()
+}
+
+async function enqueueUpload(file: File, reuseId?: string) {
+  if (file.size > KB_MAX_FILE_BYTES) {
+    message.error(`「${file.name}」超过 2GB 上限`)
+    return
+  }
+  const id = reuseId || `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
+  const controller = new AbortController()
+  const existing = inflight.value.find((u) => u.id === id)
+  if (existing) {
+    patchInflight(id, { status: 'uploading', error: undefined, controller })
+  } else {
+    inflight.value = [
+      ...inflight.value,
+      { id, name: file.name, percent: 0, status: 'uploading', file, controller }
+    ]
+  }
+  const job = (async () => {
+    await acquireFileSlot()
+    try {
+      const row = inflight.value.find((u) => u.id === id)
+      if (!row || row.status !== 'uploading') return
+      await doUpload(id, file, row.controller)
+    } finally {
+      releaseFileSlot()
+    }
+  })()
+  running.set(id, job)
   try {
-    const res = await kbApi.uploadFile(file, props.noteId || undefined)
+    await job
+  } finally {
+    running.delete(id)
+  }
+}
+
+function patchInflight(id: string, patch: Partial<InflightItem>) {
+  inflight.value = inflight.value.map((u) => (u.id === id ? { ...u, ...patch } : u))
+}
+
+async function doUpload(id: string, file: File, controller: AbortController) {
+  try {
+    const current = inflight.value.find((u) => u.id === id)
+    let sessionId = current?.uploadId
+    const res = await kbApi.uploadFile(file, props.noteId || undefined, {
+      resumeUploadId: sessionId,
+      onProgress: (p) => {
+        const row = inflight.value.find((u) => u.id === id)
+        if (!row || row.status === 'error') return
+        if (row.status === 'paused') {
+          patchInflight(id, { percent: p.percent })
+          return
+        }
+        if (p.phase === 'completing') {
+          patchInflight(id, { percent: p.percent, status: 'completing' })
+          return
+        }
+        if (row.status === 'completing' && p.phase !== 'done') return
+        patchInflight(id, { percent: p.percent })
+      },
+      onSession: (uploadId) => {
+        sessionId = uploadId
+        patchInflight(id, { uploadId })
+      },
+      signal: controller.signal
+    })
+    inflight.value = inflight.value.filter((u) => u.id !== id)
+    if (sessionId) dropKbUploadFile(sessionId)
     if (!props.noteId) {
       emit('pendingUploaded', res.data.id)
       message.success(`已接收「${file.name}」，保存笔记后自动关联`)
@@ -220,9 +389,113 @@ async function doUpload(file: File) {
       await reload()
     }
   } catch (e: any) {
+    const row = inflight.value.find((u) => u.id === id)
+    if (!row || row.status === 'paused' || isKbUploadPaused(e) || controller.signal.reason === 'pause') {
+      if (row) patchInflight(id, { status: 'paused' })
+      return
+    }
+    if (isKbUploadCanceled(e) || controller.signal.reason === 'cancel') {
+      inflight.value = inflight.value.filter((u) => u.id !== id)
+      return
+    }
+    patchInflight(id, { status: 'error', error: e?.message || '上传失败' })
     message.error(e?.message || '上传失败')
-  } finally {
-    uploading.value = false
+  }
+}
+
+function pauseUpload(id: string) {
+  const row = inflight.value.find((u) => u.id === id)
+  if (!row || row.status !== 'uploading') return
+  row.controller.abort('pause')
+}
+
+async function resumeUpload(id: string) {
+  const row = inflight.value.find((u) => u.id === id)
+  if (!row || (row.status !== 'paused' && row.status !== 'error')) return
+  const prev = running.get(id)
+  if (prev) await Promise.allSettled([prev])
+  const latest = inflight.value.find((u) => u.id === id)
+  if (!latest || latest.status === 'uploading') return
+  if (!latest.file) {
+    resumePickId = latest.id
+    const input = resumeInputRef.value
+    if (input) {
+      input.value = ''
+      input.click()
+    }
+    return
+  }
+  void enqueueUpload(latest.file, id)
+}
+
+function onResumeFilePicked(e: Event) {
+  const input = e.target as HTMLInputElement
+  const file = input.files?.[0]
+  input.value = ''
+  const id = resumePickId
+  resumePickId = null
+  if (!file || !id) return
+  const row = inflight.value.find((u) => u.id === id)
+  if (!row) return
+  const expectSize = row.sizeBytes ?? row.file?.size
+  if (file.name !== row.name || (expectSize != null && file.size !== expectSize)) {
+    message.error(`请选择同一个文件「${row.name}」`)
+    return
+  }
+  patchInflight(id, { file })
+  void enqueueUpload(file, id)
+}
+
+async function restorePending() {
+  try {
+    const res = await kbApi.listUploads({
+      noteId: props.noteId || undefined,
+      unbound: !props.noteId
+    })
+    const seen = new Set(inflight.value.map((u) => u.uploadId).filter(Boolean) as string[])
+    const extra: InflightItem[] = []
+    for (const s of res.data || []) {
+      const uid = String(s.uploadId)
+      if (!uid || seen.has(uid)) continue
+      seen.add(uid)
+      const total = s.totalBytes || 0
+      const uploaded = s.uploadedBytes || 0
+      extra.push({
+        id: `srv-${uid}`,
+        name: s.originalName,
+        percent: total ? Math.min(99, Math.floor((uploaded / total) * 100)) : 0,
+        status: 'paused',
+        file: takeKbUploadFile(uid),
+        sizeBytes: total,
+        controller: new AbortController(),
+        uploadId: uid
+      })
+    }
+    if (extra.length) {
+      inflight.value = [...inflight.value, ...extra]
+    }
+  } catch {
+    /* 未登录或接口不可用时忽略 */
+  }
+}
+
+async function cancelUpload(id: string) {
+  const row = inflight.value.find((u) => u.id === id)
+  if (!row) return
+  row.controller.abort('cancel')
+  inflight.value = inflight.value.filter((u) => u.id !== id)
+  if (row.uploadId) {
+    dropKbUploadFile(row.uploadId)
+    await kbApi.abortUpload(row.uploadId)
+  }
+  kbApi.clearUploadResume(row.file, props.noteId || undefined)
+  message.success(`已取消「${row.name}」`)
+}
+
+async function flushUploads() {
+  const jobs = [...running.values()]
+  if (jobs.length) {
+    await Promise.allSettled(jobs)
   }
 }
 
@@ -354,12 +627,21 @@ async function remove(f: KbFileItem) {
 
 onBeforeUnmount(() => {
   revokeObjectUrl()
+  for (const u of inflight.value) {
+    if (u.status === 'uploading') {
+      u.controller.abort('pause')
+    }
+  }
 })
 
-defineExpose({ reload })
+defineExpose({ reload, flushUploads })
 </script>
 
 <style scoped lang="scss">
+.resume-file-input {
+  display: none;
+}
+
 .file-panel {
   border-top: 1px solid var(--border-color);
   padding: 10px 12px 12px;
@@ -452,6 +734,16 @@ defineExpose({ reload })
 .size {
   font-size: 11px;
   flex-shrink: 0;
+}
+
+.up-progress {
+  width: 120px;
+  flex-shrink: 0;
+}
+
+.inflight-list .item {
+  flex-wrap: wrap;
+  gap: 6px;
 }
 
 .ops {

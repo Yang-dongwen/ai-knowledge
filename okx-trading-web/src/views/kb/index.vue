@@ -1509,7 +1509,9 @@ const createFormatOpen = ref(false)
 const shareOpen = ref(false)
 /** 未关联笔记的附件 id（拖入时 note 尚未保存） */
 const pendingFileIds = ref<string[]>([])
-const filePanelRef = ref<{ reload: () => Promise<void> } | null>(null)
+const filePanelRef = ref<{ reload: () => Promise<void>; flushUploads?: () => Promise<void> } | null>(
+  null
+)
 const richEditorRef = ref<{ flushEmit?: () => void } | null>(null)
 
 /** 打开笔记：快速 HTML 壳 → 再挂富文本编辑器 */
@@ -3446,6 +3448,9 @@ async function saveNote(silent = false, createRevision = !silent) {
   saving.value = true
   saveHint.value = '保存中…'
   try {
+    if (filePanelRef.value?.flushUploads) {
+      await filePanelRef.value.flushUploads()
+    }
     // 正文只存干净媒体路径（HTML 属性 + Markdown ![]() 均去 token）
     let contentToSave = stripKbMediaTokensAll(editContent.value || '')
     // 保证存库时正文含首行标题
