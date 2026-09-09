@@ -13,10 +13,11 @@ import com.dwcode.okxbot.kb.entity.KbNoteEntity;
 import com.dwcode.okxbot.kb.entity.KbTagEntity;
 import com.dwcode.okxbot.kb.mapper.KbFileMapper;
 import com.dwcode.okxbot.kb.mapper.KbNoteMapper;
+import com.dwcode.okxbot.common.web.MediaRangeSupport;
 import com.dwcode.okxbot.storage.ObjectStoragePort;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.core.io.InputStreamResource;
+import org.springframework.core.io.Resource;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
@@ -25,8 +26,6 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 
 import java.io.InputStream;
-import java.net.URLEncoder;
-import java.nio.charset.StandardCharsets;
 import java.security.SecureRandom;
 import java.time.LocalDateTime;
 import java.util.Base64;
@@ -147,7 +146,7 @@ public class KbShareService {
                 .build();
     }
 
-    public ResponseEntity<InputStreamResource> streamPublicFile(String token, Long fileId) {
+    public ResponseEntity<Resource> streamPublicFile(String token, Long fileId, String rangeHeader) {
         KbNoteEntity note = requirePublicNote(token);
         KbFileEntity file = fileMapper.selectById(fileId);
         if (file == null || !Objects.equals(file.getUserId(), note.getUserId())) {
@@ -175,19 +174,31 @@ public class KbShareService {
         boolean inline = KbMediaTypes.isSafeInline(resolved);
         MediaType mediaType = KbMediaTypes.responseMediaType(resolved);
         String safeName = file.getOriginalName() == null ? "file" : file.getOriginalName().replace("\"", "");
-        String encoded = URLEncoder.encode(safeName, StandardCharsets.UTF_8).replace("+", "%20");
         long len = file.getSizeBytes() != null ? file.getSizeBytes() : -1;
+        if (resolved != null && "video".equalsIgnoreCase(resolved.getType()) && len > 0) {
+            try {
+                in.close();
+            } catch (Exception ignored) {
+                // reopen ranged stream below
+            }
+            final String key = file.getObjectKey();
+            return MediaRangeSupport.build(
+                    rangeHeader,
+                    len,
+                    mediaType.toString(),
+                    safeName,
+                    (start, end) -> objectStorage.openStream(key, start, end),
+                    !inline);
+        }
         var builder = ResponseEntity.ok()
-                .header(HttpHeaders.CONTENT_DISPOSITION,
-                        (inline ? "inline" : "attachment")
-                                + "; filename=\"" + safeName + "\"; filename*=UTF-8''" + encoded)
+                .header(HttpHeaders.CONTENT_DISPOSITION, MediaRangeSupport.contentDisposition(!inline, safeName))
                 .header(HttpHeaders.CACHE_CONTROL, "public, max-age=300")
                 .header("X-Content-Type-Options", "nosniff")
                 .contentType(mediaType);
         if (len >= 0) {
             builder = builder.contentLength(len);
         }
-        return builder.body(new InputStreamResource(in));
+        return builder.body(MediaRangeSupport.streamingResource(in, len, safeName));
     }
 
     private static byte[] peekHeader(java.io.BufferedInputStream in, int n) {

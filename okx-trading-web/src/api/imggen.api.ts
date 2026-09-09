@@ -88,6 +88,20 @@ export const imggenApi = {
     return attachAccessTokenIfProxy(res.data)
   },
 
+  async resolveImageDownloadUrl(taskId: string, fileName: string): Promise<{ url: string; mode: string }> {
+    try {
+      const res = await request.get(`/v1/imggen/tasks/${taskId}/media-url`, {
+        params: { fileName, disposition: 'attachment' }
+      })
+      return attachAccessTokenIfProxy(res.data)
+    } catch {
+      return attachAccessTokenIfProxy({
+        url: `/api/v1/imggen/tasks/${taskId}/media/${encodeURIComponent(fileName)}?download=true`,
+        mode: 'proxy'
+      })
+    }
+  },
+
   /**
    * 拉取图片 Blob。优先 R2 直链，失败回退代理。
    */

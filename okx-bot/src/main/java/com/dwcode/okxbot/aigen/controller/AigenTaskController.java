@@ -104,7 +104,7 @@ public class AigenTaskController {
     }
 
     /**
-     * PR5：成片直链（R2 预签名）。
+     * PR5：成片直链（R2 预签名）。核心逻辑见 {@code okx-bot/doc/媒体直链_media-url.md}。
      *
      * @param disposition inline | attachment
      */
@@ -132,8 +132,9 @@ public class AigenTaskController {
     @GetMapping("/tasks/{taskId}/media/output")
     public ResponseEntity<Resource> mediaOutput(
             @PathVariable Long taskId,
-            @RequestHeader(value = org.springframework.http.HttpHeaders.RANGE, required = false) String range) {
-        return aigenTaskService.openOutputMedia(taskId, range);
+            @RequestHeader(value = org.springframework.http.HttpHeaders.RANGE, required = false) String range,
+            @RequestParam(defaultValue = "false") boolean download) {
+        return aigenTaskService.openOutputMedia(taskId, range, download);
     }
 
     @PostMapping("/tasks/{taskId}/cancel")

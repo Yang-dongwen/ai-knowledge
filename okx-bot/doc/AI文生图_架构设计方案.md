@@ -311,7 +311,7 @@ okx-trading-web/src/
  │                     │◄═════════════════════│  (poll if async) ◄───────│
  │                     │                      │ save png + thumbs        │
  │                     │◄═════════════════════│ SUCCESS + preview urls   │
- │  预览/下载          │  GET media           │                          │
+ │  预览/下载          │  GET media-url / media │                        │
  │◄────────────────────│◄─────────────────────│                          │
 ```
 

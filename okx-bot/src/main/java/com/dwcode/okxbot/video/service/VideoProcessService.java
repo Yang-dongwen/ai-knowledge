@@ -471,8 +471,11 @@ public class VideoProcessService {
      */
     public com.dwcode.okxbot.storage.dto.MediaUrlResponse resolveVideoMediaUrl(Long taskId, String disposition) {
         VideoTaskEntity entity = requireOwnedTask(taskId);
-        ResolvedMedia loc = resolvePlayableVideo(entity, taskId);
         boolean attachment = disposition != null && disposition.equalsIgnoreCase("attachment");
+        // 另存为走源文件，禁止懒转码；播放才解析 browser 可播副本
+        ResolvedMedia loc = attachment
+                ? resolveDownloadableVideo(entity)
+                : resolvePlayableVideo(entity, taskId);
         String proxyPath = "/api/v1/video/tasks/" + taskId + "/video";
         String downloadName = loc.filename() != null ? loc.filename() : "video.mp4";
         return mediaUrlService.resolve(loc.keyOrPath(), proxyPath, attachment, downloadName);
@@ -481,14 +484,17 @@ public class VideoProcessService {
     /**
      * 下载/播放视频流（支持本地绝对路径或对象存储 key）。
      * <p>支持 HTTP Range（206），浏览器可边下边播、拖动进度条。
-     * <p>HEVC 等不友好编码会懒转 H.264 并回写 browser 对象。
+     * <p>播放（download=false）时 HEVC 等会懒转 H.264；另存为（download=true）只出源文件、不转码。
      * <p>PR5 起播放/下载优先走 {@link #resolveVideoMediaUrl} 直连 R2；本接口作回退代理。
      *
      * @param rangeHeader 请求头 {@code Range}，可为 null
+     * @param download    true 时 Content-Disposition=attachment
      */
-    public ResponseEntity<Resource> downloadVideo(Long taskId, String rangeHeader) {
+    public ResponseEntity<Resource> downloadVideo(Long taskId, String rangeHeader, boolean download) {
         VideoTaskEntity entity = requireOwnedTask(taskId);
-        ResolvedMedia loc = resolvePlayableVideo(entity, taskId);
+        ResolvedMedia loc = download
+                ? resolveDownloadableVideo(entity)
+                : resolvePlayableVideo(entity, taskId);
         String streamKeyOrPath = loc.keyOrPath();
         String filename = loc.filename() != null ? loc.filename() : "video.mp4";
         long len = loc.sizeBytes();
@@ -509,16 +515,68 @@ public class VideoProcessService {
                 } catch (Exception ex) {
                     throw new BusinessException("读取本地视频失败: " + ex.getMessage());
                 }
-            });
+            }, download);
         }
 
         final String streamLoc = streamKeyOrPath;
         String ct = filename.toLowerCase().endsWith(".webm") ? "video/webm" : "video/mp4";
         return MediaRangeSupport.build(rangeHeader, len, ct, filename,
-                (start, end) -> storageService.openMediaStream(streamLoc, start, end));
+                (start, end) -> storageService.openMediaStream(streamLoc, start, end), download);
     }
 
     private record ResolvedMedia(String keyOrPath, String filename, long sizeBytes) {
+    }
+
+    /**
+     * 另存为：源文件（yt-dlp 合并的 video.mp4 等），不跑 HEVC→H.264 懒转码。
+     * <p>{@code videoPath} 成功持久化后常指向 {@code video.browser.mp4}，此时找同目录源片。
+     */
+    private ResolvedMedia resolveDownloadableVideo(VideoTaskEntity entity) {
+        String loc = entity.getVideoPath();
+        if (loc == null || loc.isBlank()) {
+            throw new BusinessException(404, "视频路径为空");
+        }
+
+        if (com.dwcode.okxbot.storage.ObjectKeyBuilder.looksLikeLocalAbsolutePath(loc)) {
+            Path path = preferOriginalLocal(storageService.requireExistingFile(loc, "视频文件"));
+            String filename = path.getFileName() != null ? path.getFileName().toString() : "video.mp4";
+            long len = 0L;
+            try {
+                len = Files.size(path);
+            } catch (Exception ignored) {
+                // ignore
+            }
+            return new ResolvedMedia(path.toAbsolutePath().toString(), filename, len);
+        }
+
+        String streamKey = loc;
+        try {
+            boolean foundOriginal = false;
+            for (String candidate : siblingOriginalObjectKeys(loc)) {
+                if (storageService.objectStorage().exists(candidate)) {
+                    streamKey = candidate;
+                    foundOriginal = true;
+                    break;
+                }
+            }
+            if (!foundOriginal && !storageService.objectStorage().exists(loc)) {
+                throw new BusinessException(404, "视频对象不存在: " + loc);
+            }
+        } catch (BusinessException e) {
+            throw e;
+        } catch (Exception e) {
+            throw new BusinessException("读取视频对象失败: " + e.getMessage());
+        }
+
+        long len = 0L;
+        String filename = "video.mp4";
+        var meta = storageService.headMedia(streamKey);
+        if (meta.isPresent()) {
+            len = meta.get().getSizeBytes();
+            int slash = streamKey.lastIndexOf('/');
+            filename = slash >= 0 ? streamKey.substring(slash + 1) : streamKey;
+        }
+        return new ResolvedMedia(streamKey, filename, len);
     }
 
     /**
@@ -612,6 +670,48 @@ public class VideoProcessService {
             return prefix + "video.browser.mp4";
         }
         return null;
+    }
+
+    /** {@code .../video.browser.mp4} → 同目录源片候选；当前已是源片则空数组。 */
+    static String[] siblingOriginalObjectKeys(String key) {
+        if (key == null || key.isBlank()) {
+            return new String[0];
+        }
+        int slash = key.lastIndexOf('/');
+        String name = slash >= 0 ? key.substring(slash + 1) : key;
+        String prefix = slash >= 0 ? key.substring(0, slash + 1) : "";
+        if (!"video.browser.mp4".equalsIgnoreCase(name)) {
+            return new String[0];
+        }
+        return new String[] { prefix + "video.mp4", prefix + "video.webm" };
+    }
+
+    /** 本地路径若是 browser 副本，优先旁路源片 {@code video.mp4} / {@code video.webm}。 */
+    static Path preferOriginalLocal(Path path) {
+        if (path == null) {
+            return null;
+        }
+        String name = path.getFileName() != null ? path.getFileName().toString() : "";
+        if (!name.toLowerCase(java.util.Locale.ROOT).contains("browser")) {
+            return path;
+        }
+        Path mp4 = path.resolveSibling("video.mp4");
+        try {
+            if (Files.isRegularFile(mp4) && Files.size(mp4) > 0) {
+                return mp4;
+            }
+        } catch (Exception ignored) {
+            // fall through
+        }
+        Path webm = path.resolveSibling("video.webm");
+        try {
+            if (Files.isRegularFile(webm) && Files.size(webm) > 0) {
+                return webm;
+            }
+        } catch (Exception ignored) {
+            // fall through
+        }
+        return path;
     }
 
     /**

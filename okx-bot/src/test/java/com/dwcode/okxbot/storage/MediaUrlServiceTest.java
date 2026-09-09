@@ -74,4 +74,18 @@ class MediaUrlServiceTest {
                 "video.mp4");
         assertEquals("proxy", r.getMode());
     }
+
+    @Test
+    void proxyAttachmentAddsDownloadQuery() {
+        props.setServeMode("proxy");
+        when(objectStorage.providerId()).thenReturn("local");
+        MediaUrlResponse r = service.resolve(
+                "D:\\data\\video.mp4",
+                "/api/v1/video/tasks/1/video",
+                true,
+                "video.mp4");
+        assertEquals("proxy", r.getMode());
+        assertEquals("/api/v1/video/tasks/1/video?download=true", r.getUrl());
+        assertEquals("/api/v1/video/tasks/1/video?download=true", r.getProxyPath());
+    }
 }

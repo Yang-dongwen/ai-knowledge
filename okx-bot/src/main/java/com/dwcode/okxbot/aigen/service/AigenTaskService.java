@@ -25,8 +25,6 @@ import com.dwcode.okxbot.common.ai.AiModelConfigService;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.core.io.FileSystemResource;
-import org.springframework.core.io.InputStreamResource;
 import org.springframework.core.io.Resource;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
@@ -599,8 +597,9 @@ public class AigenTaskService {
      * PR5 后作回退；优先 {@link #resolveOutputMediaUrl}。
      *
      * @param rangeHeader 请求头 Range，可为 null
+     * @param download    true 时 Content-Disposition=attachment
      */
-    public ResponseEntity<Resource> openOutputMedia(Long taskId, String rangeHeader) {
+    public ResponseEntity<Resource> openOutputMedia(Long taskId, String rangeHeader, boolean download) {
         AigenTaskEntity entity = requireOwnedTask(taskId);
         long len = storageService.headOutput(entity).map(m -> m.getSizeBytes()).orElse(0L);
         return com.dwcode.okxbot.common.web.MediaRangeSupport.build(
@@ -608,7 +607,8 @@ public class AigenTaskService {
                 len,
                 "video/mp4",
                 "output.mp4",
-                (start, end) -> storageService.openOutputMedia(entity, start, end));
+                (start, end) -> storageService.openOutputMedia(entity, start, end),
+                download);
     }
 
     public Map<String, Object> getStoryboard(Long taskId) {
@@ -677,16 +677,17 @@ public class AigenTaskService {
         MediaType mt = name.endsWith(".png") ? MediaType.IMAGE_PNG
                 : name.endsWith(".webp") ? MediaType.parseMediaType("image/webp")
                 : MediaType.IMAGE_JPEG;
-        final String outName = fileName;
-        Resource resource = new InputStreamResource(in) {
-            @Override
-            public String getFilename() {
-                return outName;
-            }
-        };
+        long len;
+        try {
+            len = path != null && Files.isRegularFile(path) ? Files.size(path) : -1L;
+        } catch (IOException e) {
+            len = -1L;
+        }
+        Resource resource = com.dwcode.okxbot.common.web.MediaRangeSupport.streamingResource(in, len, fileName);
         return ResponseEntity.ok()
                 .contentType(mt)
-                .header(HttpHeaders.CONTENT_DISPOSITION, "inline; filename=\"" + outName + "\"")
+                .header(HttpHeaders.CONTENT_DISPOSITION,
+                        com.dwcode.okxbot.common.web.MediaRangeSupport.contentDisposition(false, fileName))
                 .body(resource);
     }
 

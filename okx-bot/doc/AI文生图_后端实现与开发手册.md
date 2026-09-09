@@ -41,7 +41,7 @@
           ├─（可选）EnhanceStep           LLM 润色 prompt
           └─ GenerateStep                 ImageGenPort 出图
     → SUCCESS / FAILED + SSE 推送
-前端 GET media 拉 PNG/JPEG
+前端 GET media-url（预签名 / 代理）预览；下载走 attachment 原生流（见 媒体下载_流式另存为方案.md）
 ```
 
 **设计口号**：业务只依赖 Port；出图用 NVIDIA GenAI；润色用 Chat；编排用 Spring 任务机。

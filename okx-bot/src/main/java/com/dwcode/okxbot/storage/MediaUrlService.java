@@ -58,6 +58,8 @@ public class MediaUrlService {
                 && !ObjectKeyBuilder.looksLikeLocalAbsolutePath(objectKeyOrPath)
                 && (mode == ServeMode.PRESIGN || mode == ServeMode.HYBRID);
 
+        String proxy = withDownloadQuery(proxyPath, attachment);
+
         if (canPresign) {
             try {
                 if (!objectStorage.exists(objectKeyOrPath)) {
@@ -76,7 +78,7 @@ public class MediaUrlService {
                         .expiresAtMs(exp)
                         .ttlSeconds(ttl)
                         .objectKey(objectKeyOrPath)
-                        .proxyPath(proxyPath)
+                        .proxyPath(proxy)
                         .build();
             } catch (BusinessException e) {
                 if (mode == ServeMode.PRESIGN && e.getCode() == 404) {
@@ -89,17 +91,28 @@ public class MediaUrlService {
         }
 
         return MediaUrlResponse.builder()
-                .url(proxyPath)
+                .url(proxy)
                 .mode("proxy")
                 .expiresAtMs(0L)
                 .ttlSeconds(0)
                 .objectKey(ObjectKeyBuilder.looksLikeLocalAbsolutePath(objectKeyOrPath) ? null : objectKeyOrPath)
-                .proxyPath(proxyPath)
+                .proxyPath(proxy)
                 .build();
     }
 
     public boolean preferPresign() {
         ServeMode mode = ServeMode.from(storageProperties.getServeMode());
         return mode == ServeMode.PRESIGN || mode == ServeMode.HYBRID;
+    }
+
+    /** 代理另存为时带 download=true，让后端写 Content-Disposition: attachment。 */
+    static String withDownloadQuery(String proxyPath, boolean attachment) {
+        if (!attachment || proxyPath == null || proxyPath.isBlank()) {
+            return proxyPath;
+        }
+        if (proxyPath.contains("download=")) {
+            return proxyPath;
+        }
+        return proxyPath.contains("?") ? proxyPath + "&download=true" : proxyPath + "?download=true";
     }
 }

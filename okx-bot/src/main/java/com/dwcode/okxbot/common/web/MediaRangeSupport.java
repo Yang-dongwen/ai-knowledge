@@ -9,6 +9,8 @@ import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 
 import java.io.InputStream;
+import java.net.URLEncoder;
+import java.nio.charset.StandardCharsets;
 import java.util.Optional;
 import java.util.function.BiFunction;
 
@@ -87,19 +89,33 @@ public final class MediaRangeSupport {
             String contentType,
             String filename,
             BiFunction<Long, Long, InputStream> openRange) {
+        return build(rangeHeader, totalSize, contentType, filename, openRange, false);
+    }
+
+    /**
+     * @param attachment true 时 Content-Disposition=attachment（另存为），否则 inline（播放/预览）
+     */
+    public static ResponseEntity<Resource> build(
+            String rangeHeader,
+            long totalSize,
+            String contentType,
+            String filename,
+            BiFunction<Long, Long, InputStream> openRange,
+            boolean attachment) {
 
         String ct = contentType != null && !contentType.isBlank() ? contentType : "application/octet-stream";
         String safeName = filename != null && !filename.isBlank() ? filename : "media.bin";
+        String disposition = contentDisposition(attachment, safeName);
 
         Optional<ByteRange> range = parse(rangeHeader, totalSize);
         if (range.isEmpty()) {
             long end = totalSize > 0 ? totalSize - 1 : Long.MAX_VALUE - 1;
             InputStream in = openRange.apply(0L, end);
-            Resource body = resource(in, totalSize, safeName);
+            Resource body = streamingResource(in, totalSize, safeName);
             ResponseEntity.BodyBuilder bb = ResponseEntity.ok()
                     .contentType(MediaType.parseMediaType(ct))
                     .header(HttpHeaders.ACCEPT_RANGES, "bytes")
-                    .header(HttpHeaders.CONTENT_DISPOSITION, "inline; filename=\"" + safeName + "\"")
+                    .header(HttpHeaders.CONTENT_DISPOSITION, disposition)
                     .header(HttpHeaders.CACHE_CONTROL, "private, max-age=60");
             if (totalSize > 0) {
                 bb = bb.header(HttpHeaders.CONTENT_LENGTH, String.valueOf(totalSize));
@@ -109,21 +125,31 @@ public final class MediaRangeSupport {
 
         ByteRange r = range.get();
         InputStream in = openRange.apply(r.start(), r.endInclusive());
-        Resource body = resource(in, r.length(), safeName);
+        Resource body = streamingResource(in, r.length(), safeName);
         return ResponseEntity.status(HttpStatus.PARTIAL_CONTENT)
                 .contentType(MediaType.parseMediaType(ct))
                 .header(HttpHeaders.ACCEPT_RANGES, "bytes")
                 .header(HttpHeaders.CONTENT_RANGE,
                         "bytes " + r.start() + "-" + r.endInclusive() + "/" + r.total())
                 .header(HttpHeaders.CONTENT_LENGTH, String.valueOf(r.length()))
-                .header(HttpHeaders.CONTENT_DISPOSITION, "inline; filename=\"" + safeName + "\"")
+                .header(HttpHeaders.CONTENT_DISPOSITION, disposition)
                 .header(HttpHeaders.CACHE_CONTROL, "private, max-age=60")
                 .body(body);
     }
 
-    private static Resource resource(InputStream in, long contentLength, String filename) {
+    public static String contentDisposition(boolean attachment, String filename) {
+        String safe = filename != null && !filename.isBlank() ? filename.replace("\"", "") : "file";
+        String encoded = URLEncoder.encode(safe, StandardCharsets.UTF_8).replace("+", "%20");
+        return (attachment ? "attachment" : "inline")
+                + "; filename=\"" + safe + "\"; filename*=UTF-8''" + encoded;
+    }
+
+    /**
+     * 匿名 InputStreamResource 必须覆盖 contentLength，否则 Spring 会把整段流读进内存。
+     */
+    public static Resource streamingResource(InputStream in, long contentLength, String filename) {
         final long len = contentLength;
-        final String name = filename;
+        final String name = filename != null && !filename.isBlank() ? filename : "file";
         return new InputStreamResource(in) {
             @Override
             public long contentLength() {

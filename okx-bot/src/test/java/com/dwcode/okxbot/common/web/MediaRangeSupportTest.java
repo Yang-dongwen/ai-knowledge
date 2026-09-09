@@ -51,5 +51,24 @@ class MediaRangeSupportTest {
         try (InputStream in = resp.getBody().getInputStream()) {
             assertEquals(10, in.readAllBytes().length);
         }
+        assertTrue(resp.getHeaders().getFirst("Content-Disposition").startsWith("inline;"));
+    }
+
+    @Test
+    void buildAttachmentDisposition() {
+        byte[] data = new byte[8];
+        ResponseEntity<Resource> resp = MediaRangeSupport.build(
+                null,
+                data.length,
+                "video/mp4",
+                "成片.mp4",
+                (start, end) -> new ByteArrayInputStream(data),
+                true);
+        assertEquals(HttpStatus.OK, resp.getStatusCode());
+        String cd = resp.getHeaders().getFirst("Content-Disposition");
+        assertNotNull(cd);
+        assertTrue(cd.startsWith("attachment;"));
+        assertTrue(cd.contains("filename*=UTF-8''"));
+        assertEquals("bytes", resp.getHeaders().getFirst("Accept-Ranges"));
     }
 }

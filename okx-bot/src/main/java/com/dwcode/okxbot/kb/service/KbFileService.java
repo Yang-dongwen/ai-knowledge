@@ -9,11 +9,12 @@ import com.dwcode.okxbot.kb.entity.KbFileEntity;
 import com.dwcode.okxbot.kb.entity.KbNoteEntity;
 import com.dwcode.okxbot.kb.mapper.KbFileMapper;
 import com.dwcode.okxbot.kb.mapper.KbNoteMapper;
+import com.dwcode.okxbot.common.web.MediaRangeSupport;
 import com.dwcode.okxbot.storage.ObjectKeyBuilder;
 import com.dwcode.okxbot.storage.ObjectStoragePort;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.core.io.InputStreamResource;
+import org.springframework.core.io.Resource;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
@@ -24,8 +25,6 @@ import org.springframework.web.multipart.MultipartFile;
 
 import java.io.IOException;
 import java.io.InputStream;
-import java.net.URLEncoder;
-import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.Objects;
 
@@ -225,7 +224,7 @@ public class KbFileService {
         fileMapper.deleteById(id);
     }
 
-    public ResponseEntity<InputStreamResource> streamContent(Long id, boolean download) {
+    public ResponseEntity<Resource> streamContent(Long id, boolean download, String rangeHeader) {
         Long userId = SecurityUtils.requireCurrentUserId();
         KbFileEntity e = requireOwned(id, userId);
         if (!objectStorage.exists(e.getObjectKey())) {
@@ -247,17 +246,33 @@ public class KbFileService {
         boolean inline = !download && KbMediaTypes.isSafeInline(resolved);
         MediaType mediaType = KbMediaTypes.responseMediaType(resolved);
         String safeName = e.getOriginalName() == null ? "file" : e.getOriginalName().replace("\"", "");
-        String encoded = URLEncoder.encode(safeName, StandardCharsets.UTF_8).replace("+", "%20");
-        String disposition = (inline ? "inline" : "attachment")
-                + "; filename=\"" + safeName + "\"; filename*=UTF-8''" + encoded;
+        long len = e.getSizeBytes() != null ? e.getSizeBytes() : -1;
 
-        return ResponseEntity.ok()
-                .header(HttpHeaders.CONTENT_DISPOSITION, disposition)
+        if (resolved != null && "video".equalsIgnoreCase(resolved.getType()) && len > 0) {
+            try {
+                in.close();
+            } catch (Exception ignored) {
+                // reopen ranged stream below
+            }
+            final String key = e.getObjectKey();
+            return MediaRangeSupport.build(
+                    rangeHeader,
+                    len,
+                    mediaType.toString(),
+                    safeName,
+                    (start, end) -> objectStorage.openStream(key, start, end),
+                    !inline);
+        }
+
+        ResponseEntity.BodyBuilder bb = ResponseEntity.ok()
+                .header(HttpHeaders.CONTENT_DISPOSITION, MediaRangeSupport.contentDisposition(!inline, safeName))
                 .header(HttpHeaders.CACHE_CONTROL, "private, max-age=120")
                 .header("X-Content-Type-Options", "nosniff")
-                .contentType(mediaType)
-                .contentLength(e.getSizeBytes() != null ? e.getSizeBytes() : -1)
-                .body(new InputStreamResource(in));
+                .contentType(mediaType);
+        if (len >= 0) {
+            bb = bb.contentLength(len);
+        }
+        return bb.body(MediaRangeSupport.streamingResource(in, len, safeName));
     }
 
     /** @deprecated 使用 {@link KbMediaTypes#resolve(KbFileEntity)} */

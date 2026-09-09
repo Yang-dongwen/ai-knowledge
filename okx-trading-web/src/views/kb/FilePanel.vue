@@ -105,7 +105,7 @@
       <div v-else class="preview-box">
         <img v-if="previewMode === 'image'" :src="previewSrc" class="pv-img" alt="" />
         <video v-else-if="previewMode === 'video'" :src="previewSrc" controls class="pv-video" />
-        <!-- PDF：用 blob: URL，避免 iframe 直接打 API 被拒 / 鉴权失败 -->
+        <!-- PDF：同源 + access_token，浏览器边下边显 -->
         <iframe
           v-else-if="previewMode === 'pdf'"
           :src="previewSrc"
@@ -145,6 +145,7 @@ import {
   takeKbUploadFile,
   type KbFileItem
 } from '@/api/kb.api'
+import { triggerNativeDownload } from '@/utils/download'
 
 type InflightStatus = 'uploading' | 'completing' | 'paused' | 'error'
 
@@ -502,7 +503,7 @@ async function flushUploads() {
 function download(f: KbFileItem) {
   const base = kbMediaUrl(f.contentPath)
   const sep = base.includes('?') ? '&' : '?'
-  window.open(`${base}${sep}download=true`, '_blank')
+  triggerNativeDownload(`${base}${sep}download=true`, f.originalName || 'file')
 }
 
 async function fetchArrayBuffer(url: string): Promise<ArrayBuffer> {
@@ -536,29 +537,18 @@ async function preview(f: KbFileItem) {
 
   try {
     if (f.kind === 'image' || /\.(png|jpe?g|gif|webp|bmp)$/i.test(name)) {
-      // 图片也走 blob，避免 token 链接偶发问题
-      const buf = await fetchArrayBuffer(url)
-      const blob = new Blob([buf], { type: f.contentType || 'image/png' })
-      objectUrl = URL.createObjectURL(blob)
       previewMode.value = 'image'
-      previewSrc.value = objectUrl
+      previewSrc.value = url
       return
     }
     if (f.kind === 'video' || /\.(mp4|webm|mov)$/i.test(name)) {
-      const buf = await fetchArrayBuffer(url)
-      const blob = new Blob([buf], { type: f.contentType || 'video/mp4' })
-      objectUrl = URL.createObjectURL(blob)
       previewMode.value = 'video'
-      previewSrc.value = objectUrl
+      previewSrc.value = url
       return
     }
     if (f.kind === 'pdf' || name.endsWith('.pdf')) {
-      const buf = await fetchArrayBuffer(url)
-      const blob = new Blob([buf], { type: 'application/pdf' })
-      objectUrl = URL.createObjectURL(blob)
-      // Chrome PDF 查看器
       previewMode.value = 'pdf'
-      previewSrc.value = objectUrl
+      previewSrc.value = url
       return
     }
     if (name.endsWith('.docx')) {

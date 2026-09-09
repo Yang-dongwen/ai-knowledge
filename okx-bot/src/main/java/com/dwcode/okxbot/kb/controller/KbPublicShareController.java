@@ -4,10 +4,12 @@ import com.dwcode.okxbot.common.response.ApiResult;
 import com.dwcode.okxbot.kb.dto.PublicNoteResponse;
 import com.dwcode.okxbot.kb.service.KbShareService;
 import lombok.RequiredArgsConstructor;
-import org.springframework.core.io.InputStreamResource;
+import org.springframework.core.io.Resource;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
@@ -27,9 +29,10 @@ public class KbPublicShareController {
     }
 
     @GetMapping("/{token}/files/{fileId}/content")
-    public ResponseEntity<InputStreamResource> file(
+    public ResponseEntity<Resource> file(
             @PathVariable String token,
-            @PathVariable Long fileId) {
-        return shareService.streamPublicFile(token, fileId);
+            @PathVariable Long fileId,
+            @RequestHeader(value = HttpHeaders.RANGE, required = false) String range) {
+        return shareService.streamPublicFile(token, fileId, range);
     }
 }

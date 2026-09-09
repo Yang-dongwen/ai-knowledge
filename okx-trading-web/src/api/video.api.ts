@@ -135,42 +135,16 @@ export const videoApi = {
   },
 
   /**
-   * 整文件拉取。优先 R2 直链；失败回退代理。
+   * 浏览器原生流式下载（不进 JS 堆）。失败回退同源代理 + download=true。
    */
-  async fetchVideoBlob(taskId: string): Promise<Blob> {
+  async resolveVideoDownload(taskId: string): Promise<{ url: string; mode: string }> {
     try {
-      const { url } = await this.resolveDownloadUrl(taskId)
-      const token = localStorage.getItem('okx_auth_token') || ''
-      const headers: Record<string, string> = { Accept: 'video/mp4,video/*,*/*' }
-      // 同源 proxy 才需要 Bearer；R2 直链靠签名
-      if (!url.startsWith('http') || url.startsWith(window.location.origin)) {
-        if (token) headers.Authorization = `Bearer ${token}`
-      }
-      const res = await fetch(url, { headers })
-      if (!res.ok) throw new Error(`HTTP ${res.status}`)
-      const buf = await res.arrayBuffer()
-      return new Blob([buf], { type: 'video/mp4' })
+      return await this.resolveDownloadUrl(taskId)
     } catch {
-      const token = localStorage.getItem('okx_auth_token') || ''
-      const res = await fetch(`/api/v1/video/tasks/${taskId}/video`, {
-        headers: {
-          ...(token ? { Authorization: `Bearer ${token}` } : {}),
-          Accept: 'video/mp4,video/*,*/*'
-        }
+      return attachAccessTokenIfProxy({
+        url: `/api/v1/video/tasks/${taskId}/video?download=true`,
+        mode: 'proxy'
       })
-      if (!res.ok) {
-        const text = await res.text().catch(() => '')
-        let msg = `视频加载失败 HTTP ${res.status}`
-        try {
-          const j = JSON.parse(text)
-          if (j?.message) msg = j.message
-        } catch {
-          if (text) msg = text.slice(0, 200)
-        }
-        throw new Error(msg)
-      }
-      const buf = await res.arrayBuffer()
-      return new Blob([buf], { type: 'video/mp4' })
     }
   },
 

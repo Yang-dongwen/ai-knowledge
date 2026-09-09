@@ -7,13 +7,15 @@ import com.dwcode.okxbot.kb.service.KbFileService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.core.io.InputStreamResource;
+import org.springframework.core.io.Resource;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
@@ -50,10 +52,11 @@ public class KbFileController {
     }
 
     @GetMapping("/{id}/content")
-    public ResponseEntity<InputStreamResource> content(
+    public ResponseEntity<Resource> content(
             @PathVariable Long id,
-            @RequestParam(defaultValue = "false") boolean download) {
-        return fileService.streamContent(id, download);
+            @RequestParam(defaultValue = "false") boolean download,
+            @RequestHeader(value = HttpHeaders.RANGE, required = false) String range) {
+        return fileService.streamContent(id, download, range);
     }
 
     @PostMapping("/{id}/bind")

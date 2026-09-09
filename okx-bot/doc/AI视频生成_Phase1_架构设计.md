@@ -550,16 +550,17 @@ aigen/
 
 | 改动 | 说明 |
 |------|------|
-| 播放器 | SUCCESS 且 `outputAvailable` 时 `<video :src="mediaUrl">` |
-| mediaUrl | `/api/v1/aigen/tasks/{id}/media/output` + 带 Token 的 blob 方案 **或** 短期 query token |
-| 下载 | 同 URL `download` |
+| 播放器 | SUCCESS 且 `outputAvailable` 时 `<video :src>` 赋 media-url（预签名或代理） |
+| mediaUrl | 优先 `GET .../media-url?disposition=inline`；回退 `/api/v1/aigen/tasks/{id}/media/output?access_token=` |
+| 下载 | `disposition=attachment` 的 media-url + 浏览器原生 `<a download>`（不整包 blob） |
 | 文案 | 去掉「Phase 0 无成片」；失败展示 errorMessage |
 | 步骤条 | 保持；真实进度仍靠后端 progress |
 
-**播放鉴权推荐（安全）**：
+**播放 / 下载鉴权（已落地，取代当初的 fetch+blob）**：
 
-1. **优先**：`fetch` + `Authorization` → `blob:` URL 赋给 video（与 SSE 一致，不把 JWT 塞进 query）。  
-2. 备选：一次性 `playToken` 短 TTL（实现成本高，P1.1）。
+1. **优先**：`GET .../media-url`，R2 预签名直链（JWT 不进媒体 URL）。  
+2. **回退**：同源代理 + 仅媒体 GET 允许的 `?access_token=`（`<video src>` / `<a href>` 无法带 Authorization）。  
+3. 另存为禁止 `arrayBuffer` 整包；见 [媒体下载_流式另存为方案.md](./媒体下载_流式另存为方案.md)。
 
 禁止：静态目录不经鉴权直接暴露 `data/aigen`。
 
@@ -663,7 +664,7 @@ data/aigen/{taskId}/
 
 ### Slice E — 前端播放
 
-1. blob 播放 / 下载  
+1. media-url 直链播放 / 原生流式下载（历史草案曾写 blob，已废弃）  
 2. 成功态 UI  
 3. Phase0 文案清理  
 
@@ -696,7 +697,7 @@ data/aigen/{taskId}/
 | LLM 框架 | LangChain4j + 防腐 Port | 结构化输出；可替换 |
 | TTS | **Phase 1 仅 Mock**（语音后补）；接口预留 Edge | 先出片；后续换 TtsPort 实现 |
 | 渲染 | 独立 Node 服务 | 与 Vue 解耦；可扩缩 |
-| 播放鉴权 | fetch+blob | 不把 JWT 放 URL |
+| 播放鉴权 | media-url 预签名；proxy 仅媒体 GET 带 `access_token` | `<video>` 不能带 Authorization；另存为不能整包进堆 |
 | 时长上限 P1 | 90s | 控渲染成本 |
 | 用户 retry | 全量重跑 | 实现简单、状态清晰 |
 

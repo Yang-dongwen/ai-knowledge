@@ -21,7 +21,6 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.core.io.InputStreamResource;
 import org.springframework.core.io.Resource;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
@@ -505,7 +504,7 @@ public class ImgGenTaskService {
         return mediaUrlService.resolve(keyOrPath, proxy, attachment, fileName);
     }
 
-    public ResponseEntity<Resource> openMedia(Long taskId, String fileName) {
+    public ResponseEntity<Resource> openMedia(Long taskId, String fileName, boolean download) {
         ImgGenTaskEntity entity = requireOwnedTask(taskId);
         if (fileName == null || fileName.isBlank()
                 || fileName.contains("..") || fileName.contains("/") || fileName.contains("\\")) {
@@ -522,24 +521,13 @@ public class ImgGenTaskService {
         long len = storageService.headOutputImage(entity, fileName)
                 .map(m -> m.getSizeBytes())
                 .orElse(-1L);
-        final long contentLen = len;
-        final String outName = fileName;
-        Resource resource = new InputStreamResource(in) {
-            @Override
-            public long contentLength() {
-                return contentLen > 0 ? contentLen : -1;
-            }
-
-            @Override
-            public String getFilename() {
-                return outName;
-            }
-        };
+        Resource resource = com.dwcode.okxbot.common.web.MediaRangeSupport.streamingResource(in, len, fileName);
         ResponseEntity.BodyBuilder bb = ResponseEntity.ok()
                 .contentType(mediaType)
-                .header(HttpHeaders.CONTENT_DISPOSITION, "inline; filename=\"" + fileName + "\"");
-        if (contentLen > 0) {
-            bb = bb.header(HttpHeaders.CONTENT_LENGTH, String.valueOf(contentLen));
+                .header(HttpHeaders.CONTENT_DISPOSITION,
+                        com.dwcode.okxbot.common.web.MediaRangeSupport.contentDisposition(download, fileName));
+        if (len > 0) {
+            bb = bb.header(HttpHeaders.CONTENT_LENGTH, String.valueOf(len));
         }
         return bb.body(resource);
     }

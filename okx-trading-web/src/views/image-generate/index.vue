@@ -523,6 +523,7 @@ import {
 import { imggenApi } from '@/api/imggen.api'
 import { connectImgGenTaskEvents } from '@/api/imggen.events'
 import { videoApi } from '@/api/video.api'
+import { triggerNativeDownload } from '@/utils/download'
 import { useAuthStore } from '@/stores/auth.store'
 import ModelManageModal from '@/views/video-extract/ModelManageModal.vue'
 import EmptyState from '@/components/EmptyState.vue'
@@ -1038,13 +1039,26 @@ function previewImage(img: ImgGenImageFile) {
   previewOpen.value = true
 }
 
-function downloadImage(img: ImgGenImageFile) {
-  const url = imageUrls.value[img.index]
-  if (!url) return
-  const a = document.createElement('a')
-  a.href = url
-  a.download = fileNameFromImage(img)
-  a.click()
+async function downloadImage(img: ImgGenImageFile) {
+  const s = selected.value
+  const name = fileNameFromImage(img)
+  try {
+    if (s?.id) {
+      const { url } = await imggenApi.resolveImageDownloadUrl(s.id, name)
+      triggerNativeDownload(url, name)
+      return
+    }
+    const url = imageUrls.value[img.index]
+    if (!url) return
+    triggerNativeDownload(url, name)
+  } catch (e: any) {
+    const url = imageUrls.value[img.index]
+    if (url) {
+      triggerNativeDownload(url, name)
+      return
+    }
+    message.error(e?.message || '下载图片失败')
+  }
 }
 
 function startSse() {

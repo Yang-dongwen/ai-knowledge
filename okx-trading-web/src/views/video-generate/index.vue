@@ -823,6 +823,7 @@ import {
 import { aigenApi, type AigenShotSummary } from '@/api/aigen.api'
 import { imggenApi } from '@/api/imggen.api'
 import { videoApi } from '@/api/video.api'
+import { safeDownloadName, triggerNativeDownload } from '@/utils/download'
 import { connectAigenTaskEvents } from '@/api/aigen.events'
 import { useAuthStore } from '@/stores/auth.store'
 import ModelManageModal from '@/views/video-extract/ModelManageModal.vue'
@@ -1678,13 +1679,9 @@ async function maybeAutoLoadVideo() {
 async function downloadVideo() {
   if (!selected.value) return
   try {
-    const blob = await aigenApi.fetchOutputBlob(selected.value.id)
-    const url = URL.createObjectURL(blob)
-    const a = document.createElement('a')
-    a.href = url
-    a.download = `${selected.value.title || 'aigen'}.mp4`
-    a.click()
-    window.setTimeout(() => URL.revokeObjectURL(url), 60_000)
+    const { url } = await aigenApi.resolveOutputDownloadUrl(selected.value.id)
+    triggerNativeDownload(url, safeDownloadName(selected.value.title, 'aigen', '.mp4'))
+    message.success('已开始下载成片')
   } catch (e: any) {
     message.error(e?.message || '下载成片失败')
   }

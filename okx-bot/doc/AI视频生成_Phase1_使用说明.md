@@ -107,7 +107,7 @@ edge-tts --version
 4. 成功且有成片：点 **加载播放** / **下载 MP4**
 5. 可查看 mock 分镜 JSON
 
-播放使用 `fetch + Authorization → blob`，JWT 不进 URL。
+播放 / 下载优先 `GET /api/v1/aigen/tasks/{id}/media-url`（R2 预签名；proxy 时 query `access_token`）。下载走浏览器原生流，不把成片 `arrayBuffer` 进 JS 堆。详见 [媒体下载_流式另存为方案.md](./媒体下载_流式另存为方案.md)。
 
 ---
 

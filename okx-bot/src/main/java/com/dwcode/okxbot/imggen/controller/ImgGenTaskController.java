@@ -68,7 +68,7 @@ public class ImgGenTaskController {
     }
 
     /**
-     * PR5：单图直链（R2 预签名）。
+     * PR5：单图直链（R2 预签名）。核心逻辑见 {@code okx-bot/doc/媒体直链_media-url.md}。
      *
      * @param fileName    outputs 下文件名
      * @param disposition inline | attachment
@@ -85,8 +85,9 @@ public class ImgGenTaskController {
     @GetMapping("/tasks/{taskId}/media/{fileName}")
     public ResponseEntity<Resource> media(
             @PathVariable Long taskId,
-            @PathVariable String fileName) {
-        return taskService.openMedia(taskId, fileName);
+            @PathVariable String fileName,
+            @RequestParam(defaultValue = "false") boolean download) {
+        return taskService.openMedia(taskId, fileName, download);
     }
 
     @PostMapping("/tasks/{taskId}/cancel")

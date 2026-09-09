@@ -4,9 +4,11 @@
 **代码包**：`com.dwcode.okxbot.video`  
 **Controller**：`VideoProcessController`（`/api/v1/video/*`）  
 **文档目标**：按**核心接口**串起「HTTP → Service → 调度/流水线 → 下游 Client」的真实调用链，并说明为何这样分层。  
-**对齐代码日期**：2026-07-16  
+**对齐代码日期**：2026-09-09（补 media-url / 流式另存为）  
 
 > 更完整的状态机 / 配置 / 表结构见：`VideoCoreExtractor_核心逻辑与后端实现文档.md`。  
+> 另存为与 Range 见 [媒体下载_流式另存为方案.md](./媒体下载_流式另存为方案.md)。  
+> `GET .../media-url` 签发逻辑见 [媒体直链_media-url.md](./媒体直链_media-url.md)。  
 > 本文只保留**读代码最有用的主路径**，附带可对照的示例代码片段。
 
 ---
@@ -73,7 +75,8 @@
 | **重试** | `POST` | `/api/v1/video/tasks/{taskId}/retry` | `retryTask` | 是（重新入队） |
 | **转录** | `GET` | `/api/v1/video/tasks/{taskId}/transcription` | `getTranscription` | 否 |
 | **摘要** | `GET` | `/api/v1/video/tasks/{taskId}/summary` | `getSummary` | 否 |
-| **视频流** | `GET` | `/api/v1/video/tasks/{taskId}/video` | `downloadVideo` | 否 |
+| **视频直链** | `GET` | `/api/v1/video/tasks/{taskId}/media-url` | `resolveVideoMediaUrl` | 否（R2 预签名优先） |
+| **视频流代理** | `GET` | `/api/v1/video/tasks/{taskId}/video` | `downloadVideo` | 否（Range；`?download=true` 另存为） |
 | **删除** | `DELETE` | `/api/v1/video/tasks/{taskId}` | `deleteTask` | 否 |
 | **可用模型** | `GET` | `/api/v1/video/models` | `AiModelConfigService` | 否 |
 | **测模型** | `POST` | `/api/v1/video/models/test` | `testLlmModel` → `LlmChatClient` | 否 |

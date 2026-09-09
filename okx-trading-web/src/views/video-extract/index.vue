@@ -973,6 +973,7 @@ import { createVNode } from 'vue'
 import MarkdownIt from 'markdown-it'
 import { videoApi, type VideoCookieStatus } from '@/api/video.api'
 import { connectVideoTaskEvents, type VideoTaskSseEvent } from '@/api/video.events'
+import { safeDownloadName, triggerNativeDownload } from '@/utils/download'
 import type { VideoTaskItem, TranscriptionSegment, AiProvider } from '@/types/api'
 import ModelManageModal from './ModelManageModal.vue'
 import EmptyState from '@/components/EmptyState.vue'
@@ -1865,7 +1866,7 @@ async function playVideo() {
 }
 
 /**
- * 下载任务视频到本地（带 JWT；优先复用已加载的 blob URL）。
+ * 原生流式下载：只请求直链/代理 URL，由浏览器写盘，不进 JS 堆。
  */
 async function downloadTaskVideo(task?: VideoTaskItem | null) {
   const t = task || detail.value
@@ -1876,22 +1877,9 @@ async function downloadTaskVideo(task?: VideoTaskItem | null) {
   if (videoDownloading.value) return
   videoDownloading.value = true
   try {
-    // 播放用流地址；另存为需整文件拉取（带 JWT）
-    const blob = await videoApi.fetchVideoBlob(t.taskId)
-    const objectUrl = URL.createObjectURL(blob)
-    const safeTitle = (t.title || `video-${t.taskId}`)
-      .replace(/[\\/:*?"<>|]+/g, '_')
-      .replace(/\s+/g, ' ')
-      .trim()
-      .slice(0, 80)
-    const a = document.createElement('a')
-    a.href = objectUrl
-    a.download = `${safeTitle || t.taskId}.mp4`
-    a.rel = 'noopener'
-    document.body.appendChild(a)
-    a.click()
-    a.remove()
-    window.setTimeout(() => URL.revokeObjectURL(objectUrl), 60_000)
+    const { url } = await videoApi.resolveVideoDownload(t.taskId)
+    const name = safeDownloadName(t.title, `video-${t.taskId}`, '.mp4')
+    triggerNativeDownload(url, name)
     message.success('已开始下载视频')
   } catch (e: any) {
     message.error(e?.message || '下载视频失败')

@@ -122,38 +122,16 @@ export const aigenApi = {
   },
 
   async resolveOutputDownloadUrl(taskId: string): Promise<{ url: string; mode: string }> {
-    const res = await request.get(`/v1/aigen/tasks/${taskId}/media-url`, {
-      params: { disposition: 'attachment' }
-    })
-    return attachAccessTokenIfProxy(res.data)
-  },
-
-  /** 整文件拉取（另存为）；优先 R2。 */
-  async fetchOutputBlob(taskId: string): Promise<Blob> {
     try {
-      const { url } = await this.resolveOutputDownloadUrl(taskId)
-      const token = localStorage.getItem('okx_auth_token') || ''
-      const headers: Record<string, string> = {}
-      if (!url.startsWith('http') || url.startsWith(window.location.origin)) {
-        if (token) headers.Authorization = `Bearer ${token}`
-      }
-      const res = await fetch(url, { headers })
-      if (!res.ok) throw new Error(`HTTP ${res.status}`)
-      const buf = await res.arrayBuffer()
-      return new Blob([buf], { type: 'video/mp4' })
-    } catch {
-      const token = localStorage.getItem('okx_auth_token') || ''
-      const res = await fetch(`/api/v1/aigen/tasks/${taskId}/media/output`, {
-        headers: {
-          ...(token ? { Authorization: `Bearer ${token}` } : {})
-        }
+      const res = await request.get(`/v1/aigen/tasks/${taskId}/media-url`, {
+        params: { disposition: 'attachment' }
       })
-      if (!res.ok) {
-        const text = await res.text()
-        throw new Error(text || `下载失败 HTTP ${res.status}`)
-      }
-      const buf = await res.arrayBuffer()
-      return new Blob([buf], { type: 'video/mp4' })
+      return attachAccessTokenIfProxy(res.data)
+    } catch {
+      return attachAccessTokenIfProxy({
+        url: `/api/v1/aigen/tasks/${taskId}/media/output?download=true`,
+        mode: 'proxy'
+      })
     }
   },
 
