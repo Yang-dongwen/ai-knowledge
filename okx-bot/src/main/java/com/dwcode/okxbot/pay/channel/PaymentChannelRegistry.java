@@ -33,6 +33,9 @@ public class PaymentChannelRegistry {
         if (PayChannel.WECHAT.equals(id) && !payProperties.getWechat().isEnabled()) {
             throw new BusinessException(400, "微信支付通道未开启");
         }
+        if (PayChannel.STRIPE.equals(id) && !payProperties.getStripe().isEnabled()) {
+            throw new BusinessException(400, "Stripe 通道未开启");
+        }
         PaymentChannel ch = channels.get(id);
         if (ch == null) {
             throw new BusinessException(400, "支付渠道未实现: " + id);

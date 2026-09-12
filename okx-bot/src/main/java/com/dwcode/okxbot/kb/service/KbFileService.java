@@ -38,6 +38,7 @@ public class KbFileService {
     private final ObjectStoragePort objectStorage;
     private final ObjectKeyBuilder objectKeyBuilder;
     private final KbProperties kbProperties;
+    private final com.dwcode.okxbot.rag.index.KbIndexOutboxService indexOutbox;
 
     /**
      * 整包 multipart 上传（小文件 / 小程序兼容）。大文件走 {@link KbFileUploadService} 分片。
@@ -85,6 +86,7 @@ public class KbFileService {
         }
         entity.setObjectKey(key);
         fileMapper.updateById(entity);
+        indexOutbox.enqueueFileUpsert(userId, entity.getId());
         log.info("kb file uploaded userId={} fileId={} kind={} size={}", userId, entity.getId(), kind, size);
         return toResponse(entity);
     }
@@ -146,6 +148,7 @@ public class KbFileService {
         requireNoteOwned(noteId, userId);
         e.setNoteId(noteId);
         fileMapper.updateById(e);
+        indexOutbox.enqueueFileUpsert(userId, e.getId());
         return toResponse(e);
     }
 
@@ -222,6 +225,7 @@ public class KbFileService {
             log.warn("删除对象前缀失败 fileId={}: {}", id, ex.getMessage());
         }
         fileMapper.deleteById(id);
+        indexOutbox.enqueueFileDelete(userId, id);
     }
 
     public ResponseEntity<Resource> streamContent(Long id, boolean download, String rangeHeader) {

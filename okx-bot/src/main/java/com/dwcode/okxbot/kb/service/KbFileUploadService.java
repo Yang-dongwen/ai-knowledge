@@ -48,6 +48,7 @@ public class KbFileUploadService {
     private final ScratchWorkspace scratchWorkspace;
     private final KbProperties kbProperties;
     private final KbUploadLimiter limiter;
+    private final com.dwcode.okxbot.rag.index.KbIndexOutboxService indexOutbox;
 
     public FileUploadSessionResponse init(FileUploadInitRequest request) {
         Long userId = SecurityUtils.requireCurrentUserId();
@@ -240,6 +241,7 @@ public class KbFileUploadService {
                 uploadMapper.updateById(e);
                 scratchWorkspace.cleanupScratch(SCRATCH_MODULE, scratchTaskId(e.getId()));
                 limiter.releaseSession(userId);
+                indexOutbox.enqueueFileUpsert(userId, file.getId());
                 log.info("kb upload complete userId={} uploadId={} fileId={} size={}",
                         userId, e.getId(), file.getId(), e.getTotalBytes());
                 return toFileResponse(file);

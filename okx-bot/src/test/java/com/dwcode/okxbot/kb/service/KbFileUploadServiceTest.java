@@ -133,7 +133,8 @@ class KbFileUploadServiceTest {
         }).when(fileMapper).deleteById(any(java.io.Serializable.class));
 
         service = new KbFileUploadService(
-                uploadMapper, fileMapper, noteMapper, storage, keys, scratch, kb, new KbUploadLimiter(kb));
+                uploadMapper, fileMapper, noteMapper, storage, keys, scratch, kb, new KbUploadLimiter(kb),
+                org.mockito.Mockito.mock(com.dwcode.okxbot.rag.index.KbIndexOutboxService.class));
     }
 
     @AfterEach

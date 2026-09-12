@@ -62,6 +62,16 @@
             <div class="ch-title">支付宝</div>
             <div class="ch-desc">直连已接入 · 需服务端 pay.alipay.enabled=true 与密钥</div>
           </button>
+          <button
+            type="button"
+            class="channel-option"
+            :class="{ active: channel === 'stripe' }"
+            :disabled="paying || polling"
+            @click="channel = 'stripe'"
+          >
+            <div class="ch-title">Stripe</div>
+            <div class="ch-desc">托管 Checkout · 沙箱 pk_test_ / sk_test_ · 需 yml 中 pay.stripe.enabled=true</div>
+          </button>
           <!-- 微信支付渠道未就绪：不展示入口，避免误导 -->
         </div>
         <a-alert
@@ -71,6 +81,14 @@
           class="mt-12"
           message="支付宝需服务端开启并配置密钥"
           description="未进件或未配置密钥时，创建订单会失败。生产环境已默认关闭 Mock 模拟支付。"
+        />
+        <a-alert
+          v-if="channel === 'stripe'"
+          type="info"
+          show-icon
+          class="mt-12"
+          message="Stripe 沙箱：使用测试卡 4242 4242 4242 4242"
+          description="在 yml 打开 pay.stripe.enabled，密钥用 STRIPE_PUBLISHABLE_KEY / STRIPE_SECRET_KEY（pk_test_ / sk_test_）。Webhook 可用 stripe listen 转发到 /api/pay/notify/stripe。"
         />
 
         <a-button
@@ -456,6 +474,9 @@ onMounted(async () => {
   await auth.fetchMe().catch(() => undefined)
   if (auth.isSuperAdmin) return
   await loadPlans()
+  if (route.query.canceled === '1') {
+    message.info('已从 Stripe 支付页返回，订单仍待支付')
+  }
   const orderNo = route.query.orderNo as string | undefined
   if (orderNo) {
     await loadExistingOrder(orderNo)

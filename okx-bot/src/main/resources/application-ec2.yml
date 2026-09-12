@@ -1,7 +1,6 @@
-# EC2 / Docker 生产配置 — 提交到 Git
-# 密钥不写死，由服务器 deploy/env/app.env 注入环境变量
-# profile: ec2
-# R2 路径前缀 env-prefix=ec2（本地用 local）
+# EC2 / Docker 生产覆盖（profile: ec2）
+# 默认值在 application.yml + config/{auth,pay,ai,platform}.yml
+# 本文件只写和生产不同的项；密钥由 deploy/env/app.env 注入
 
 server:
   port: 8080
@@ -17,22 +16,19 @@ auth:
   jwt:
     secret: ${AUTH_JWT_SECRET}
   mail:
-    # 生产默认关 console，避免验证码进日志；需显式配真实 provider
-    provider: ${AUTH_MAIL_PROVIDER:agentmail}
-    console-mode: ${AUTH_MAIL_CONSOLE_MODE:false}
-    from: ${AUTH_MAIL_FROM:noreply@example.com}
+    provider: agentmail
+    console-mode: false
+    from: dwcode@agentmail.to
     agentmail:
       api-key: ${AGENTMAIL_API_KEY:}
       inbox-id: ${AGENTMAIL_INBOX_ID:}
-      base-url: ${AGENTMAIL_BASE_URL:https://api.agentmail.to}
-      # 生产一般直连；仅当出网需代理时再设
-      proxy-host: ${AGENTMAIL_PROXY_HOST:}
-      proxy-port: ${AGENTMAIL_PROXY_PORT:0}
-      proxy-type: ${AGENTMAIL_PROXY_TYPE:HTTP}
+      base-url: https://api.agentmail.to
+      proxy-host: ""
+      proxy-port: 0
+      proxy-type: HTTP
   admin:
-    # 完成首次 bootstrap 后应保持 false
-    seed-enabled: ${AUTH_ADMIN_SEED_ENABLED:false}
-    email: ${AUTH_ADMIN_EMAIL:admin@okx-bot.local}
+    seed-enabled: false
+    email: admin@okx-bot.local
     password: ${AUTH_ADMIN_PASSWORD}
   cors:
     allowed-origins:
@@ -40,33 +36,35 @@ auth:
       - https://www.dwcode.cloud
   wechat:
     mini:
-      # 生产默认开启真实微信登录；无密钥时可设 WX_MINI_ENABLED=false
-      enabled: ${WX_MINI_ENABLED:true}
+      enabled: true
       mock: false
       app-id: ${WX_MINI_APP_ID:}
       app-secret: ${WX_MINI_APP_SECRET:}
   oauth:
-    mock: ${AUTH_OAUTH_MOCK:false}
+    mock: false
     auto-link-by-email: false
-    frontend-base-url: ${AUTH_OAUTH_FRONTEND_BASE_URL:https://dwcode.cloud}
-    callback-base-url: ${AUTH_OAUTH_CALLBACK_BASE_URL:https://dwcode.cloud}
-    ticket-ttl-seconds: ${AUTH_OAUTH_TICKET_TTL_SECONDS:60}
+    frontend-base-url: https://dwcode.cloud
+    callback-base-url: https://dwcode.cloud
+    ticket-ttl-seconds: 60
     google:
-      enabled: ${AUTH_OAUTH_GOOGLE_ENABLED:false}
+      enabled: false
       client-id: ${AUTH_OAUTH_GOOGLE_CLIENT_ID:}
       client-secret: ${AUTH_OAUTH_GOOGLE_CLIENT_SECRET:}
     github:
-      enabled: ${AUTH_OAUTH_GITHUB_ENABLED:false}
+      enabled: true
       client-id: ${AUTH_OAUTH_GITHUB_CLIENT_ID:}
       client-secret: ${AUTH_OAUTH_GITHUB_CLIENT_SECRET:}
 
 pay:
-  public-base-url: ${PAY_PUBLIC_BASE_URL}
+  public-base-url: https://dwcode.cloud
   trust-x-forwarded-for: true
-  mock-enabled: ${PAY_MOCK_ENABLED:false}
+  mock-enabled: false
+  # 生产未配 Live 密钥前先关；沙箱开关在 config/pay.yml
+  stripe:
+    enabled: false
 
 ai:
-  default-provider: ${AI_DEFAULT_PROVIDER:nvidia}
+  default-provider: nvidia
   providers:
     openai:
       api-key: ${AI_OPENAI_API_KEY:}
@@ -74,6 +72,11 @@ ai:
       api-key: ${AI_DEEPSEEK_API_KEY:}
     nvidia:
       api-key: ${AI_NVIDIA_API_KEY:}
+  embedding:
+    api-key: ${GOOGLE_AI_STUDIO_API_KEY:}
+  vector-store:
+    host: ${QDRANT_HOST:}
+    api-key: ${QDRANT_API_KEY:}
 
 storage:
   provider: r2
@@ -99,7 +102,7 @@ video:
   ffmpeg-path: ffmpeg
   whisper:
     base-url: http://whisper:8000
-    model: ${WHISPER_MODEL:small}
+    model: small
     managed:
       enabled: false
   download:
@@ -116,16 +119,16 @@ aigen:
   tts:
     provider: edge
     edge-command: edge-tts
-    fail-open-to-mock: ${AIGEN_TTS_FAIL_OPEN_TO_MOCK:false}
+    fail-open-to-mock: false
 
 imggen:
   work-dir: /app/data/imggen
 
 halo:
-  enabled: ${HALO_ENABLED:false}
-  base-url: ${HALO_BASE_URL:http://halo:8090}
+  enabled: true
+  base-url: http://halo:8090
   token: ${HALO_PAT:}
-  public-base-url: ${HALO_PUBLIC_BASE_URL:https://blog.dwcode.cloud}
+  public-base-url: https://blog.dwcode.cloud
 
 horizon:
   refresh-enabled: true

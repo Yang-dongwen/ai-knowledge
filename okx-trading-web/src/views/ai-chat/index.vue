@@ -509,8 +509,10 @@
                         class="agent-task-row"
                       >
                         <div class="agent-task-left">
-                          <a-tag color="green">笔记</a-tag>
-                          <span class="agent-task-name">{{ item.title || item.id }}</span>
+                          <a-tag :color="item.sourceType === 'file' ? 'blue' : 'green'">
+                            {{ item.sourceType === 'file' ? '附件' : '笔记' }}
+                          </a-tag>
+                          <span class="agent-task-name">{{ item.fileName || item.title || item.id }}</span>
                         </div>
                         <div class="agent-task-right">
                           <a
@@ -951,6 +953,8 @@ function toolNoteItems(msg: UiChatMessage): Array<{
   title?: string
   snippet?: string
   openPath?: string
+  sourceType?: string
+  fileName?: string
 }> {
   const ui = msg.toolResult?.ui
   // note_created 由 isCreatedCard 展示，这里只渲染搜索列表

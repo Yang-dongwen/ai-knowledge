@@ -11,6 +11,7 @@ class PayChannelTest {
     void normalize() {
         assertEquals("mock", PayChannel.normalize("MOCK"));
         assertEquals("alipay", PayChannel.normalize(" alipay "));
+        assertEquals("stripe", PayChannel.normalize("Stripe"));
         assertThrows(BusinessException.class, () -> PayChannel.normalize("paypal"));
         assertThrows(BusinessException.class, () -> PayChannel.normalize(""));
     }

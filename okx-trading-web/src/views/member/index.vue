@@ -6,7 +6,7 @@
           <div class="kicker">会员中心</div>
           <h1 class="title">解锁会员权益</h1>
           <p class="sub">
-            开通会员后可享受后续配额与优先能力（权益差异持续开放）。当前支持 Mock 支付联调，真收款通道待商户资质就绪。
+            开通会员后可享受后续配额与优先能力（权益差异持续开放）。当前支持 Mock / 支付宝 / Stripe 沙箱充值，微信通道待接入。
           </p>
         </div>
         <div class="status-chip" :class="statusClass">
@@ -191,6 +191,7 @@ function goRecharge(planId?: string, orderNo?: string) {
 }
 
 async function refresh() {
+  await loadOrders()
   await auth.fetchMe()
   message.success('已刷新会员状态')
 }
@@ -221,7 +222,9 @@ async function loadOrders() {
 
 onMounted(async () => {
   await auth.fetchMe().catch(() => undefined)
-  await Promise.all([loadPlans(), loadOrders()])
+  await loadPlans()
+  await loadOrders()
+  await auth.fetchMe().catch(() => undefined)
 })
 </script>
 

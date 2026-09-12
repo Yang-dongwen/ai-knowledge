@@ -1,0 +1,40 @@
+# 会员支付。开关写 yml；密钥走环境变量。
+# 开 Stripe 沙箱：stripe.enabled=true，并配 STRIPE_* 密钥。
+# 付完自动开通会员：Webhook（STRIPE_WEBHOOK_SECRET）为主；回跳轮询 / 每分钟查单为补偿。
+
+pay:
+  enabled: true
+  order-expire-minutes: 30
+  max-open-orders-per-user: 3
+  reconcile-cron: "0 */1 * * * ?"
+  close-cron: "0 */1 * * * ?"
+  fulfill-pending-cron: "0 */1 * * * ?"
+  fulfill-pending-grace-seconds: 30
+  member-expire-cron: "0 5 * * * ?"
+  # mock 仅本机打开（application-local.yml）；enabled/sandbox 以本文件为准
+  mock-enabled: false
+  trust-x-forwarded-for: false
+  alipay:
+    enabled: false
+    app-id: ${ALIPAY_APP_ID:}
+    private-key: ${ALIPAY_PRIVATE_KEY:}
+    alipay-public-key: ${ALIPAY_PUBLIC_KEY:}
+    sign-type: RSA2
+    charset: UTF-8
+    format: json
+    server-url: https://openapi.alipay.com/gateway.do
+    notify-path: /api/pay/notify/alipay
+    return-path: /api/pay/return/alipay
+    subject-prefix: 会员充值-
+  wechat:
+    enabled: false
+  stripe:
+    enabled: true
+    sandbox: true
+    publishable-key: ${STRIPE_PUBLISHABLE_KEY:}
+    secret-key: ${STRIPE_SECRET_KEY:}
+    webhook-secret: ${STRIPE_WEBHOOK_SECRET:}
+    notify-path: /api/pay/notify/stripe
+    return-path: /api/pay/return/stripe
+    subject-prefix: 会员充值-
+    frontend-return-path: /member/recharge

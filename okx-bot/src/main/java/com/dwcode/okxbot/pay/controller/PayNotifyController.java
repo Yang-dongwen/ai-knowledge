@@ -68,6 +68,43 @@ public class PayNotifyController {
     }
 
     /**
+     * Stripe Webhook：必须使用原始 JSON body 验签（Stripe-Signature）。
+     * 成功返回 2xx，失败返回 400 促重试。见 https://docs.stripe.com/webhooks
+     */
+    @PostMapping(value = "/notify/stripe", produces = MediaType.TEXT_PLAIN_VALUE)
+    public ResponseEntity<String> stripeNotify(HttpServletRequest request,
+                                               @RequestHeader HttpHeaders headers) {
+        try {
+            String raw = readRawBody(request);
+            boolean ok = payNotifyService.handle("stripe", headers, raw);
+            if (ok) {
+                return ResponseEntity.ok("ok");
+            }
+            return ResponseEntity.badRequest().body("fail");
+        } catch (Throwable t) {
+            log.error("stripe notify uncaught", t);
+            return ResponseEntity.badRequest().body("fail");
+        }
+    }
+
+    /**
+     * Stripe Checkout success/cancel 回跳：仅引导，不履约（履约以 Webhook / 查单为准）。
+     */
+    @GetMapping(value = "/return/stripe", produces = MediaType.TEXT_HTML_VALUE)
+    public ResponseEntity<String> stripeReturn() {
+        String html = """
+                <!DOCTYPE html>
+                <html><head><meta charset="utf-8"><title>支付结果</title></head>
+                <body style="font-family:sans-serif;padding:40px;text-align:center">
+                <h2>支付结果处理中</h2>
+                <p>请返回网站「会员中心」查看开通状态。Stripe 以 Webhook 履约为准，本页不是成功凭证。</p>
+                <p><a href="/member">返回会员中心</a></p>
+                </body></html>
+                """;
+        return ResponseEntity.ok().contentType(MediaType.TEXT_HTML).body(html);
+    }
+
+    /**
      * 微信回调占位（PR6）；当前返回 FAIL，避免误配。
      */
     @PostMapping(value = "/notify/wechat", produces = MediaType.APPLICATION_JSON_VALUE)

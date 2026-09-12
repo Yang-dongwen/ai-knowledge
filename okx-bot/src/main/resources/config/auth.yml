@@ -1,0 +1,76 @@
+# 认证：JWT / 邮件 / 验证码 / 超管 / 登录限流 / 微信 / OAuth
+# 密钥走环境变量；开关写本文件或 application-local.yml / application-ec2.yml
+
+auth:
+  # 仅在反向代理已剥离客户端伪造头时开启；默认 false 防 IP 伪造绕过限流
+  trust-x-forwarded-for: false
+  jwt:
+    expire-seconds: 7200
+    issuer: okx-bot
+  mail:
+    # console | agentmail | smtp；console-mode=true 时强制 console
+    provider: console
+    console-mode: true
+    from: noreply@example.com
+    agentmail:
+      api-key: ""
+      inbox-id: ""
+      base-url: https://api.agentmail.to
+      proxy-host: ""
+      proxy-port: 0
+      proxy-type: HTTP
+  code:
+    length: 6
+    expire-minutes: 10
+    send-interval-seconds: 60
+    max-verify-fails: 10
+    verify-fail-window-minutes: 15
+    send-quota-enabled: true
+    max-sends-per-ip-per-window: 20
+    ip-window-seconds: 3600
+    max-sends-global-per-window: 200
+    global-window-seconds: 3600
+  admin:
+    seed-enabled: true
+    nickname: 超级管理员
+  login-limit:
+    enabled: true
+    window-seconds: 900
+    max-fails: 8
+    lock-seconds: 600
+  cors:
+    # 生产在 application-ec2.yml 覆盖；空则用 SecurityConfig 内置本地 + dwcode.cloud
+    allowed-origins: []
+  wechat:
+    mini:
+      # enabled=false 且 mock=true 时才本地 mock openid
+      enabled: false
+      mock: true
+      app-id: ${WX_MINI_APP_ID:}
+      app-secret: ${WX_MINI_APP_SECRET:}
+  oauth:
+    mock: false
+    auto-link-by-email: false
+    frontend-base-url: http://localhost:3000
+    callback-base-url: http://localhost:8080
+    ticket-ttl-seconds: 60
+    proxy-host: ""
+    proxy-port: 0
+    proxy-type: HTTP
+    allowed-redirect-paths:
+      - /home
+      - /member
+      - /kb
+      - /video-extract
+      - /video-generate
+      - /image-generate
+      - /article-extract
+      - /ai-chat
+    google:
+      enabled: false
+      client-id: ${AUTH_OAUTH_GOOGLE_CLIENT_ID:}
+      client-secret: ${AUTH_OAUTH_GOOGLE_CLIENT_SECRET:}
+    github:
+      enabled: false
+      client-id: ${AUTH_OAUTH_GITHUB_CLIENT_ID:}
+      client-secret: ${AUTH_OAUTH_GITHUB_CLIENT_SECRET:}

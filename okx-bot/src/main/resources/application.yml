@@ -1,21 +1,31 @@
-# 公共业务配置（可提交）。环境相关 / 隐私项见：
-#   application-local.yml  — 本地真实值（不提交）
-#   application-ec2.yml    — 远程变量占位（提交）+ 服务器 app.env 注入
+# 核心启动配置。业务开关按模块拆在 config/ 下，本文件只 import。
+# 密钥走环境变量（deploy/env/app.env）。
+#   application-local.yml  — 本地覆盖（不提交）
+#   application-ec2.yml    — 生产覆盖（提交）
+#
+# 模块：
+#   config/auth.yml      认证 / 邮件 / OAuth
+#   config/pay.yml       会员支付
+#   config/ai.yml        对话 / 视频 / 文生图 / 文章提取
+#   config/platform.yml  知识库 / 存储 / Halo / Horizon
 
 server:
   port: 8080
-  # 大笔记 JSON 压缩，显著减小详情接口传输体积
   compression:
     enabled: true
     mime-types: application/json,application/xml,text/html,text/xml,text/plain,text/css,application/javascript
     min-response-size: 1024
 
 spring:
+  config:
+    import:
+      - classpath:config/auth.yml
+      - classpath:config/pay.yml
+      - classpath:config/ai.yml
+      - classpath:config/platform.yml
   datasource:
     driver-class-name: com.mysql.cj.jdbc.Driver
     # url / username / password → local 或 ec2 profile
-  # Flyway：classpath:db/migration 版本化迁移；已有库自动 baseline 到 V1（不重跑建表）
-  # 需要 MySQL 8+（Community 9.x 不再支持 5.7）
   flyway:
     enabled: true
     locations: classpath:db/migration
@@ -34,122 +44,10 @@ spring:
       max-file-size: 110MB
       max-request-size: 120MB
 
-# 认证：密钥与管理员账号在 local / ec2
-auth:
-  # 仅在反向代理已剥离客户端伪造头时开启；默认 false 防 IP 伪造绕过限流
-  trust-x-forwarded-for: false
-  jwt:
-    expire-seconds: 7200
-    issuer: okx-bot
-  mail:
-    # console | agentmail | smtp；console-mode=true 时强制 console
-    provider: console
-    console-mode: true
-    from: noreply@example.com
-    agentmail:
-      api-key: ""
-      inbox-id: ""
-      base-url: https://api.agentmail.to
-      proxy-host: ""
-      proxy-port: 0
-      proxy-type: HTTP
-  code:
-    length: 6
-    expire-minutes: 10
-    send-interval-seconds: 60
-    max-verify-fails: 10
-    verify-fail-window-minutes: 15
-    # 发送配额（内存滑动窗口，不依赖 Redis；多实例尽力而为）
-    send-quota-enabled: true
-    max-sends-per-ip-per-window: 20
-    ip-window-seconds: 3600
-    max-sends-global-per-window: 200
-    global-window-seconds: 3600
-
-  admin:
-    seed-enabled: true
-    nickname: 超级管理员
-  login-limit:
-    enabled: true
-    window-seconds: 900
-    max-fails: 8
-    lock-seconds: 600
-  cors:
-    # 生产请用环境变量覆盖；空则用 SecurityConfig 内置本地 + dwcode.cloud
-    allowed-origins: []
-  wechat:
-    mini:
-      # true + 填写 app-id/secret 后走真实 jscode2session
-      # 密钥放环境变量，勿写进仓库
-      # enabled=false 且 mock=true 时才本地 mock openid（禁止 enabled 时静默 mock）
-      enabled: ${WX_MINI_ENABLED:false}
-      mock: ${WX_MINI_MOCK:true}
-      app-id: ${WX_MINI_APP_ID:}
-      app-secret: ${WX_MINI_APP_SECRET:}
-  # PC Google / GitHub OAuth（JustAuth）；密钥见环境变量
-  oauth:
-    mock: ${AUTH_OAUTH_MOCK:false}
-    # 禁止按邮箱自动绑定已有账号（防账号接管）
-    auto-link-by-email: ${AUTH_OAUTH_AUTO_LINK_BY_EMAIL:false}
-    frontend-base-url: ${AUTH_OAUTH_FRONTEND_BASE_URL:http://localhost:3000}
-    callback-base-url: ${AUTH_OAUTH_CALLBACK_BASE_URL:http://localhost:8080}
-    ticket-ttl-seconds: ${AUTH_OAUTH_TICKET_TTL_SECONDS:60}
-    # 本机访问 GitHub/Google 可设代理（Clash 混合端口常见 7897）
-    proxy-host: ${AUTH_OAUTH_PROXY_HOST:}
-    proxy-port: ${AUTH_OAUTH_PROXY_PORT:0}
-    proxy-type: ${AUTH_OAUTH_PROXY_TYPE:HTTP}
-    allowed-redirect-paths:
-      - /home
-      - /member
-      - /kb
-      - /video-extract
-      - /video-generate
-      - /image-generate
-      - /article-extract
-      - /ai-chat
-    google:
-      enabled: ${AUTH_OAUTH_GOOGLE_ENABLED:false}
-      client-id: ${AUTH_OAUTH_GOOGLE_CLIENT_ID:}
-      client-secret: ${AUTH_OAUTH_GOOGLE_CLIENT_SECRET:}
-    github:
-      # 密钥务必用环境变量，勿写进 yml 提交仓库
-      enabled: ${AUTH_OAUTH_GITHUB_ENABLED:false}
-      client-id: ${AUTH_OAUTH_GITHUB_CLIENT_ID:}
-      client-secret: ${AUTH_OAUTH_GITHUB_CLIENT_SECRET:}
-
-# 会员支付
-pay:
-  enabled: true
-  order-expire-minutes: 30
-  max-open-orders-per-user: 3
-  reconcile-cron: "0 */1 * * * ?"
-  close-cron: "0 */1 * * * ?"
-  fulfill-pending-cron: "0 */1 * * * ?"
-  fulfill-pending-grace-seconds: 30
-  member-expire-cron: "0 5 * * * ?"
-  # 本地 profile（application-local.yml）可显式打开；生产/ec2 默认关闭
-  mock-enabled: false
-  trust-x-forwarded-for: false
-  alipay:
-    enabled: ${PAY_ALIPAY_ENABLED:${ALIPAY_ENABLED:false}}
-    app-id: ${PAY_ALIPAY_APP_ID:${ALIPAY_APP_ID:}}
-    private-key: ${PAY_ALIPAY_PRIVATE_KEY:${ALIPAY_PRIVATE_KEY:}}
-    alipay-public-key: ${PAY_ALIPAY_PUBLIC_KEY:${ALIPAY_PUBLIC_KEY:}}
-    sign-type: RSA2
-    charset: UTF-8
-    format: json
-    server-url: ${PAY_ALIPAY_SERVER_URL:${ALIPAY_SERVER_URL:https://openapi.alipay.com/gateway.do}}
-    notify-path: /api/pay/notify/alipay
-    return-path: /api/pay/return/alipay
-    subject-prefix: 会员充值-
-  wechat:
-    enabled: false
-
 mybatis-plus:
   configuration:
     map-underscore-to-camel-case: true
     # 勿用 stdout 打全量 SQL：知识库 LONGTEXT 会把接口拖到秒级
-    # 需要排查 SQL 时在 local profile 临时打开 StdOutImpl
     # log-impl: org.apache.ibatis.logging.stdout.StdOutImpl
   global-config:
     db-config:
@@ -157,279 +55,6 @@ mybatis-plus:
       logic-delete-field: deleted
       logic-delete-value: 1
       logic-not-delete-value: 0
-
-# AI：api-key 在 local / ec2
-ai:
-  default-provider: nvidia
-  max-context-messages: 20
-  response-timeout-seconds: 20
-  chat-engine: langchain4j
-  agent:
-    enabled: true
-    decision-max-tokens: 512
-    summary-max-tokens: 1200
-    decision-temperature: 0.2
-    confirm-ttl-seconds: 900
-    max-tool-rounds: 2
-  providers:
-    openai:
-      name: OpenAI
-      base-url: https://api.openai.com/v1
-      models: []
-    deepseek:
-      name: DeepSeek
-      base-url: https://api.deepseek.com/v1
-      models: []
-    nvidia:
-      name: NVIDIA NIM
-      base-url: https://integrate.api.nvidia.com/v1
-      models: []
-
-# 个人知识库
-kb:
-  note:
-    max-content-chars: 2097152
-    snippet-chars: 160
-    default-title: 未命名笔记
-    default-format: html
-    revision-min-interval-minutes: 5
-  category:
-    max-depth: 3
-  search:
-    mode: like
-  file:
-    max-bytes: 2147483648
-    max-direct-bytes: 104857600
-    chunk-size-bytes: 8388608
-    max-parts: 512
-    session-ttl-hours: 24
-    max-sessions-per-user: 3
-    max-concurrent-parts-per-user: 6
-    max-concurrent-parts-global: 16
-    max-concurrent-complete-global: 2
-  pdf:
-    chrome-path: ${KB_PDF_CHROME_PATH:}
-    timeout-seconds: 60
-    no-sandbox: true
-
-# 存储：provider/r2 凭证/env-prefix 在 local / ec2
-storage:
-  serve-mode: presign
-  cleanup:
-    scratch-on-success: true
-    scratch-on-failure: true
-    r2-on-failure: true
-  r2:
-    region: auto
-    path-style: true
-    presign-ttl-seconds: 900
-    multipart-threshold-bytes: 8388608
-    multipart-part-size-bytes: 8388608
-
-# 视频提取（路径、cookie、whisper 启停在 local / ec2）
-video:
-  cleanup-media: false
-  whisper:
-    model: small
-    timeout-seconds: 600
-    language: zh
-    managed:
-      host: 0.0.0.0
-      device: cpu
-      compute: int8
-      preload: true
-      startup-timeout-seconds: 300
-      stop-timeout-seconds: 15
-      fail-if-unavailable: false
-  llm:
-    provider: nvidia
-    model:
-    temperature: 0.3
-    max-tokens: 8192
-    max-retries: 5
-    retry-backoff-ms: 3000
-    retry-max-backoff-ms: 60000
-    test-timeout-seconds: 10
-  download:
-    max-duration-seconds: 7200
-    audio-format: mp3
-    timeout-seconds: 600
-    max-height: 720
-    concurrent-fragments: 8
-    prefer-merged: true
-  understanding:
-    mode: audio_only
-    mock: false
-    provider: nvidia
-    model: ""
-    protocol: auto
-    timeout-seconds: 600
-    write-timeout-seconds: 120
-    max-retries: 4
-    max-request-video-seconds: 120
-    short-max-seconds: 90
-    medium-max-seconds: 600
-    chunk-seconds: 90
-    sample-stride-seconds: 60
-    sample-window-seconds: 20
-    target-height: 480
-    target-fps: 2
-    max-chunks-per-task: 20
-    max-upload-bytes: 20971520
-    fallback-to-audio: true
-    fallback-frame-vlm: true
-    cleanup-chunks: true
-    enable-thinking: false
-    thinking-token-budget: 1024
-    hybrid-max-duration-seconds: 1800
-    omni-max-duration-seconds: 1800
-    on-omni-too-long: reject
-    strip-audio-on-visual-chunks: true
-
-# AI 视频生成
-aigen:
-  max-concurrent-tasks: 1
-  mock-pipeline: false
-  mock-step-delay-ms: 800
-  cleanup-on-delete: true
-  min-duration-sec: 5
-  max-duration-sec: 90
-  default-pipeline-mode: visual
-  visual:
-    min-shots: 4
-    max-shots: 12
-    image-concurrency: 1
-    fail-on-shot-error: true
-    max-placeholder-ratio: 0.5
-    require-bgm-when-requested: true
-    default-audio-mode: bgm_only
-    default-style-preset: cinematic-dark
-    motion-default: auto
-    composition-id: VisualTimeline
-    image-steps: 28
-    image-provider-key: nvidia
-    default-image-model: black-forest-labs/flux.1-dev
-    default-enhance-image-prompt: true
-    image-prompt-language: auto
-    enforce-topic-keywords: true
-    kinetic-clips: true
-    i2v-mode: kinetic
-    i2v-fail-open-to-kinetic: true
-    svd-invoke-url: https://ai.api.nvidia.com/v1/genai/stabilityai/stable-video-diffusion
-    svd-timeout-seconds: 300
-    svd-motion-bucket-id: 127
-    svd-fps: 6
-    kinetic-fps: 24
-    kinetic-preset: veryfast
-    kinetic-crf: 20
-  steps:
-    plan: real
-    asset: real
-    render: real
-  llm:
-    provider: nvidia
-    model:
-    temperature: 0.72
-    max-tokens: 8192
-    max-retries: 3
-    timeout-seconds: 120
-    structured-mode: auto
-    max-repair-attempts: 1
-    log-prompts: false
-  tts:
-    provider: auto
-    default-voice: zh-CN-XiaoxiaoNeural
-    timeout-seconds: 120
-    edge-command: edge-tts
-    edge-mode: auto
-    python-path: python
-    fail-open-to-mock: false
-    tail-padding-frames: 6
-  remotion:
-    timeout-seconds: 600
-    codec: h264
-    crf: 18
-    render-token: ""
-    node-path: node
-    startup-timeout-seconds: 180
-
-# Halo 旁挂博客（PAT 为空则发文接口返回 503）
-halo:
-  enabled: ${HALO_ENABLED:false}
-  base-url: ${HALO_BASE_URL:http://127.0.0.1:8090}
-  token: ${HALO_PAT:}
-  public-base-url: ${HALO_PUBLIC_BASE_URL:https://blog.dwcode.cloud}
-  publish-on-create: ${HALO_PUBLISH_ON_CREATE:true}
-  token-secret: ${HALO_TOKEN_SECRET:}
-
-# Horizon：文件夹/标签/路径/cron 都写死。只留环境差。
-horizon:
-  refresh-enabled: ${HORIZON_REFRESH_ENABLED:false}
-  auto-publish: false
-  news-public-url: ${HORIZON_NEWS_PUBLIC_URL:https://dwcode.cloud/news}
-
-# 文章/新闻提取
-article:
-  enabled: true
-  max-concurrent-tasks: 2
-  max-concurrent-tasks-per-user: 2
-  mock-pipeline: false
-  mock-step-delay-ms: 200
-  cleanup-on-delete: true
-  async:
-    core-pool-size: 2
-    max-pool-size: 4
-    queue-capacity: 50
-  fetch:
-    connect-timeout-ms: 10000
-    read-timeout-ms: 20000
-    max-bytes: 2000000
-    max-redirects: 5
-    user-agent: "okx-bot-article-bot/1.0 (+internal; research)"
-    enabled-adapters: generic,toutiao
-  extract:
-    max-main-text-chars: 80000
-    min-quality-score: 0.35
-  llm:
-    default-provider:
-    default-model: ""
-    core-temperature: 0.3
-    rewrite-temperature: 0.8
-    digest-window-chars: 8000
-    digest-single-window-chars: 12000
-    json-object-enabled: true
-  rewrite:
-    default-variants: short_video_script,wechat_article,x_thread
-    required: false
-  safety:
-    block-private-ip: true
-    block-metadata-ip: true
-    allow-loopback: false
-    allowed-schemes: http,https
-    host-allowlist: []
-
-# AI 文生图
-imggen:
-  enabled: true
-  max-concurrent-tasks: 2
-  mock-pipeline: false
-  mock-step-delay-ms: 400
-  cleanup-on-delete: true
-  max-n: 4
-  steps:
-    enhance: real
-    generate: real
-  prompt-enhance:
-    fallback-on-error: true
-    provider:
-    model: ""
-  flux:
-    provider-key: nvidia
-    invoke-url: https://ai.api.nvidia.com/v1/genai/black-forest-labs/flux.1-dev
-    model-path: black-forest-labs/flux.1-dev
-    default-model: black-forest-labs/flux.1-dev
-    default-steps: 28
-    timeout-seconds: 300
 
 logging:
   level:

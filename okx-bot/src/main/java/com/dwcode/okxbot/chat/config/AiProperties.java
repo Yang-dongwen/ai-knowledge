@@ -58,6 +58,12 @@ public class AiProperties {
      */
     private String chatEngine = "langchain4j";
 
+    /** Google AI Studio 等 embedding（知识库向量） */
+    private EmbeddingConfig embedding = new EmbeddingConfig();
+
+    /** Qdrant 等向量库 */
+    private VectorStoreConfig vectorStore = new VectorStoreConfig();
+
     /** 是否 langchain4j 引擎（忽略大小写；其它值均视为 okhttp） */
     public boolean isLangChain4jChatEngine() {
         return chatEngine == null || chatEngine.isBlank()
@@ -106,6 +112,30 @@ public class AiProperties {
                 .filter(m -> m.getId().equals(modelId))
                 .findFirst()
                 .orElse(null);
+    }
+
+    @Data
+    public static class EmbeddingConfig {
+        private String provider = "google-ai-studio";
+        private String apiKey = "";
+        private String model = "gemini-embedding-001";
+        private int outputDimensionality = 768;
+        private String taskTypeDocument = "RETRIEVAL_DOCUMENT";
+        private String taskTypeQuery = "RETRIEVAL_QUERY";
+        private int timeoutSeconds = 30;
+        private int maxRetries = 2;
+        private String baseUrl = "https://generativelanguage.googleapis.com/v1beta";
+    }
+
+    @Data
+    public static class VectorStoreConfig {
+        private String type = "qdrant";
+        private String host = "";
+        private int port = 6334;
+        private boolean useTls = true;
+        private String apiKey = "";
+        private String collection = "kb_chunks";
+        private String distance = "cosine";
     }
 
     /**

@@ -31,6 +31,7 @@ public class PayProperties {
 
     private Alipay alipay = new Alipay();
     private Wechat wechat = new Wechat();
+    private Stripe stripe = new Stripe();
 
     @Data
     public static class Alipay {
@@ -74,5 +75,38 @@ public class PayProperties {
         private String merchantSerialNumber;
         private String privateKeyPath;
         private String notifyPath = "/api/pay/notify/wechat";
+    }
+
+    /**
+     * Stripe Checkout（托管支付页）。
+     * <p>沙箱（sandbox=true，默认）：仅接受 pk_test_ / sk_test_。
+     * 公钥 publishable-key、私钥 secret-key 用环境变量注入，勿提交仓库。
+     * 文档：https://docs.stripe.com/keys 、https://docs.stripe.com/checkout/quickstart
+     */
+    @Data
+    public static class Stripe {
+        private boolean enabled = false;
+        /**
+         * true：沙箱/测试模式，密钥必须为 *_test_；false：正式 live 密钥。
+         * Stripe 沙箱与 live 共用 https://api.stripe.com，靠密钥前缀区分。
+         */
+        private boolean sandbox = true;
+        /** 公钥 Publishable key（pk_test_... / pk_live_...），预留给前端 Stripe.js */
+        private String publishableKey = "";
+        /** 私钥 Secret key（sk_test_... / sk_live_...），服务端创建 Checkout Session */
+        private String secretKey = "";
+        /**
+         * Webhook 签名密钥（whsec_...）。Dashboard 或 {@code stripe listen} 获得。
+         * 未配置时异步通知拒收，仍可通过查单补偿。
+         */
+        private String webhookSecret = "";
+        private String notifyPath = "/api/pay/notify/stripe";
+        private String returnPath = "/api/pay/return/stripe";
+        private String subjectPrefix = "会员充值-";
+        /**
+         * Checkout 完成后跳回前端的路径（拼在 auth.oauth.frontend-base-url 后）。
+         * 空则使用 API return-path 的引导页。
+         */
+        private String frontendReturnPath = "/member/recharge";
     }
 }

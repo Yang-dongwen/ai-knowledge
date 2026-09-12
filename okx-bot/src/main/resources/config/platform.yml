@@ -1,0 +1,68 @@
+# 平台周边：知识库、对象存储、Halo 博客、Horizon 时讯
+
+kb:
+  note:
+    max-content-chars: 2097152
+    snippet-chars: 160
+    default-title: 未命名笔记
+    default-format: html
+    revision-min-interval-minutes: 5
+  category:
+    max-depth: 3
+  search:
+    mode: hybrid
+  rag:
+    enabled: true
+    chunk-size-chars: 800
+    chunk-overlap-chars: 120
+    top-k: 8
+    score-threshold: 0.22
+    rrf-k: 60
+    index-batch-size: 8
+    worker-cron: "*/20 * * * * ?"
+    max-attempts: 8
+    max-file-extract-bytes: 20971520
+    extract-kinds:
+      - pdf
+      - office
+      - other
+  file:
+    max-bytes: 2147483648
+    max-direct-bytes: 104857600
+    chunk-size-bytes: 8388608
+    max-parts: 512
+    session-ttl-hours: 24
+    max-sessions-per-user: 3
+    max-concurrent-parts-per-user: 6
+    max-concurrent-parts-global: 16
+    max-concurrent-complete-global: 2
+  pdf:
+    chrome-path: ""
+    timeout-seconds: 60
+    no-sandbox: true
+
+storage:
+  serve-mode: presign
+  cleanup:
+    scratch-on-success: true
+    scratch-on-failure: true
+    r2-on-failure: true
+  r2:
+    region: auto
+    path-style: true
+    presign-ttl-seconds: 900
+    multipart-threshold-bytes: 8388608
+    multipart-part-size-bytes: 8388608
+
+halo:
+  enabled: false
+  base-url: http://127.0.0.1:8090
+  token: ${HALO_PAT:}
+  public-base-url: https://blog.dwcode.cloud
+  publish-on-create: true
+  token-secret: ${HALO_TOKEN_SECRET:}
+
+horizon:
+  refresh-enabled: false
+  auto-publish: false
+  news-public-url: https://dwcode.cloud/news

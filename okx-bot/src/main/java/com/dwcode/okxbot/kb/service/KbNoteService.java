@@ -28,7 +28,9 @@ import org.springframework.util.StringUtils;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.HashSet;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -53,6 +55,8 @@ public class KbNoteService {
     private final KbCategoryService categoryService;
     private final KbFileService fileService;
     private final KbProperties kbProperties;
+    private final com.dwcode.okxbot.rag.index.KbIndexOutboxService indexOutbox;
+    private final com.dwcode.okxbot.rag.search.HybridSearchService hybridSearch;
 
     @Transactional
     public NoteResponse create(NoteCreateRequest req) {
@@ -77,6 +81,7 @@ public class KbNoteService {
         e.setIsDeleted(0);
         noteMapper.insert(e);
         tagService.replaceNoteTags(e.getId(), tagIds);
+        indexOutbox.enqueueNoteUpsert(userId, e.getId());
         // 不再 selectById 整篇重读
         return toResponse(e, true, null);
     }
@@ -165,6 +170,7 @@ public class KbNoteService {
             List<Long> tagIds = tagService.validateOwnedTagIds(userId, req.getTagIds());
             tagService.replaceNoteTags(id, tagIds);
         }
+        indexOutbox.enqueueNoteUpsert(userId, id);
         return toResponse(e, true, null);
     }
 
@@ -227,6 +233,16 @@ public class KbNoteService {
         int s = Math.min(100, Math.max(1, size));
         final boolean hasKeyword = StringUtils.hasText(keyword);
         final String searchKw = hasKeyword ? normalizeKeyword(keyword) : null;
+
+        if (hasKeyword && !onlyDeleted && hybridSearch.live()
+                && (kbProperties.getSearch().getMode() == null
+                || "hybrid".equalsIgnoreCase(kbProperties.getSearch().getMode().trim()))) {
+            try {
+                return listHybrid(userId, searchKw, p, s, categoryId, tagId, uncategorized, onlyPinned);
+            } catch (Exception ex) {
+                log.warn("混合检索失败，回退 LIKE: {}", ex.getMessage());
+            }
+        }
 
         LambdaQueryWrapper<KbNoteEntity> q = new LambdaQueryWrapper<KbNoteEntity>()
                 .eq(KbNoteEntity::getUserId, userId);
@@ -347,6 +363,83 @@ public class KbNoteService {
         return NotePageResponse.builder()
                 .items(items)
                 .total(pageResult.getTotal())
+                .page(p)
+                .size(s)
+                .build();
+    }
+
+    private NotePageResponse listHybrid(Long userId, String searchKw, int p, int s,
+                                        Long categoryId, Long tagId,
+                                        boolean uncategorized, boolean onlyPinned) {
+        List<com.dwcode.okxbot.rag.search.HybridHit> hits =
+                hybridSearch.search(userId, searchKw, Math.max(24, s * 3));
+        LinkedHashSet<Long> ordered = new LinkedHashSet<>();
+        Map<Long, String> snippetByNote = new HashMap<>();
+        for (com.dwcode.okxbot.rag.search.HybridHit h : hits) {
+            if (h.getNoteId() <= 0) {
+                continue;
+            }
+            ordered.add(h.getNoteId());
+            snippetByNote.putIfAbsent(h.getNoteId(), h.getSnippet());
+        }
+        if (ordered.isEmpty()) {
+            return NotePageResponse.builder().items(List.of()).total(0).page(p).size(s).build();
+        }
+        List<KbNoteEntity> notes = noteMapper.selectList(new LambdaQueryWrapper<KbNoteEntity>()
+                .eq(KbNoteEntity::getUserId, userId)
+                .eq(KbNoteEntity::getIsDeleted, 0)
+                .in(KbNoteEntity::getId, ordered)
+                .select(KbNoteEntity::getId, KbNoteEntity::getUserId, KbNoteEntity::getTitle,
+                        KbNoteEntity::getContentFormat, KbNoteEntity::getSnippet, KbNoteEntity::getContentText,
+                        KbNoteEntity::getCategoryId, KbNoteEntity::getIsPinned, KbNoteEntity::getIsDeleted,
+                        KbNoteEntity::getDeletedAt, KbNoteEntity::getCreatedAt, KbNoteEntity::getUpdatedAt));
+        Map<Long, KbNoteEntity> byId = notes.stream().collect(Collectors.toMap(KbNoteEntity::getId, n -> n, (a, b) -> a));
+        List<Long> tagFiltered = null;
+        if (tagId != null) {
+            tagFiltered = tagService.noteIdsByTag(userId, tagId);
+        }
+        List<KbNoteEntity> filtered = new ArrayList<>();
+        for (Long id : ordered) {
+            KbNoteEntity n = byId.get(id);
+            if (n == null) {
+                continue;
+            }
+            if (onlyPinned && !Objects.equals(n.getIsPinned(), 1)) {
+                continue;
+            }
+            if (uncategorized && n.getCategoryId() != null) {
+                continue;
+            }
+            if (!uncategorized && categoryId != null && !Objects.equals(n.getCategoryId(), categoryId)) {
+                continue;
+            }
+            if (tagFiltered != null && !tagFiltered.contains(id)) {
+                continue;
+            }
+            filtered.add(n);
+        }
+        int from = Math.min(filtered.size(), p * s);
+        int to = Math.min(filtered.size(), from + s);
+        List<KbNoteEntity> pageItems = filtered.subList(from, to);
+        if (pageItems.isEmpty()) {
+            return NotePageResponse.builder().items(List.of()).total(filtered.size()).page(p).size(s).build();
+        }
+        List<Long> ids = pageItems.stream().map(KbNoteEntity::getId).toList();
+        Map<Long, List<KbTagEntity>> tagsMap = tagService.tagsByNoteIds(userId, ids);
+        Map<Long, String> catNames = categoryService.nameMap(userId,
+                pageItems.stream().map(KbNoteEntity::getCategoryId).filter(Objects::nonNull).toList());
+        int radius = kbProperties.getSearch().getHighlightRadius();
+        List<NoteResponse> items = pageItems.stream().map(n -> {
+            String match = snippetByNote.get(n.getId());
+            if (!StringUtils.hasText(match)) {
+                match = buildMatchSnippet(n.getTitle(), n.getContentText(), n.getSnippet(), searchKw, radius);
+            }
+            return toResponse(n, false, tagsMap.getOrDefault(n.getId(), List.of()),
+                    catNames.get(n.getCategoryId()), match);
+        }).toList();
+        return NotePageResponse.builder()
+                .items(items)
+                .total(filtered.size())
                 .page(p)
                 .size(s)
                 .build();
@@ -493,6 +586,7 @@ public class KbNoteService {
         e.setSnippet(snippet);
         e.setContentText(plain);
         e.setUpdatedAt(now);
+        indexOutbox.enqueueNoteUpsert(userId, noteId);
         return toResponse(e, true, null);
     }
 
@@ -518,6 +612,7 @@ public class KbNoteService {
             }
         }
         log.info("kb note soft-deleted userId={} noteId={} rows={}", userId, id, rows);
+        indexOutbox.enqueueNoteDelete(userId, id);
     }
 
     @Transactional
@@ -537,6 +632,7 @@ public class KbNoteService {
             }
             throw new BusinessException(404, "笔记不存在");
         }
+        indexOutbox.enqueueNoteUpsert(userId, id);
         return toResponse(requireOwned(id, userId, true), true, null);
     }
 
@@ -551,6 +647,7 @@ public class KbNoteService {
             throw new BusinessException(400, "仅回收站中的笔记可永久删除，请先移入回收站");
         }
         purgeNoteFully(userId, e);
+        indexOutbox.enqueueNoteDelete(userId, id);
         log.info("kb note permanently deleted userId={} noteId={}", userId, id);
     }
 
@@ -568,6 +665,7 @@ public class KbNoteService {
                         .eq(KbNoteEntity::getIsDeleted, 1));
         for (KbNoteEntity e : trash) {
             purgeNoteFully(userId, e);
+            indexOutbox.enqueueNoteDelete(userId, e.getId());
         }
         log.info("kb trash emptied userId={} count={}", userId, trash.size());
         return trash.size();
@@ -876,7 +974,7 @@ public class KbNoteService {
         return plain.substring(0, max) + "…";
     }
 
-    static String buildMatchSnippet(String title, String contentText, String snippet,
+    public static String buildMatchSnippet(String title, String contentText, String snippet,
                                     String keyword, int radius) {
         if (!StringUtils.hasText(keyword)) {
             return null;

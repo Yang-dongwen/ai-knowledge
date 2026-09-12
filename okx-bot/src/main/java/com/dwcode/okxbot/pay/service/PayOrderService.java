@@ -165,6 +165,10 @@ public class PayOrderService {
 
     public PayOrderResponse getMyOrder(Long userId, String orderNo) {
         PayOrderEntity order = requireOwned(userId, orderNo);
+        if (PayOrderStatus.isOpen(order.getStatus()) && !PayChannel.MOCK.equals(order.getChannel())) {
+            trySyncPaid(order);
+            order = requireOwned(userId, orderNo);
+        }
         return toResponse(order, resolvePayMode(order), null);
     }
 
@@ -173,6 +177,15 @@ public class PayOrderService {
         int safeSize = Math.min(Math.max(size, 1), 50);
         Page<PayOrderEntity> mp = new Page<>(safePage + 1L, safeSize);
         Page<PayOrderEntity> result = payOrderMapper.selectPage(mp,
+                new LambdaQueryWrapper<PayOrderEntity>()
+                        .eq(PayOrderEntity::getUserId, userId)
+                        .orderByDesc(PayOrderEntity::getCreatedAt));
+        for (PayOrderEntity o : result.getRecords()) {
+            if (PayOrderStatus.isOpen(o.getStatus()) && !PayChannel.MOCK.equals(o.getChannel())) {
+                trySyncPaid(o);
+            }
+        }
+        result = payOrderMapper.selectPage(mp,
                 new LambdaQueryWrapper<PayOrderEntity>()
                         .eq(PayOrderEntity::getUserId, userId)
                         .orderByDesc(PayOrderEntity::getCreatedAt));
@@ -251,18 +264,34 @@ public class PayOrderService {
         );
         int fixed = 0;
         for (PayOrderEntity o : list) {
-            try {
-                PaymentChannel ch = channelRegistry.require(o.getChannel());
-                ChannelTradeQueryResult q = ch.queryPayment(o);
-                if (q != null && q.isPaid()) {
-                    payFulfillService.markSuccessAndFulfill(o.getOrderNo(), q.getTradeNo(), q.getAmountCents());
-                    fixed++;
-                }
-            } catch (Exception e) {
-                log.warn("reconcile failed orderNo={}: {}", o.getOrderNo(), e.getMessage());
+            if (trySyncPaid(o)) {
+                fixed++;
             }
         }
         return fixed;
+    }
+
+    /**
+     * 向渠道查单：已支付则履约开通会员。Webhook 是主路径；本方法覆盖回跳轮询与定时补偿。
+     *
+     * @return true 表示本次确认已付并履约
+     */
+    private boolean trySyncPaid(PayOrderEntity order) {
+        if (order == null || PayChannel.MOCK.equals(order.getChannel())) {
+            return false;
+        }
+        try {
+            PaymentChannel ch = channelRegistry.require(order.getChannel());
+            ChannelTradeQueryResult q = ch.queryPayment(order);
+            if (q == null || !q.isPaid()) {
+                return false;
+            }
+            payFulfillService.markSuccessAndFulfill(order.getOrderNo(), q.getTradeNo(), q.getAmountCents());
+            return true;
+        } catch (Exception e) {
+            log.warn("sync paid skipped orderNo={}: {}", order.getOrderNo(), e.getMessage());
+            return false;
+        }
     }
 
     /**
@@ -347,12 +376,18 @@ public class PayOrderService {
         if (PayChannel.WECHAT.equals(channel)) {
             return payProperties.getWechat().getNotifyPath();
         }
+        if (PayChannel.STRIPE.equals(channel)) {
+            return payProperties.getStripe().getNotifyPath();
+        }
         return "/api/pay/notify/" + channel;
     }
 
     private String returnPath(String channel) {
         if (PayChannel.ALIPAY.equals(channel)) {
             return payProperties.getAlipay().getReturnPath();
+        }
+        if (PayChannel.STRIPE.equals(channel)) {
+            return payProperties.getStripe().getReturnPath();
         }
         return "/api/pay/return/" + channel;
     }

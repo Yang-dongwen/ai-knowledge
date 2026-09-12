@@ -6,6 +6,7 @@ public final class PayChannel {
     public static final String MOCK = "mock";
     public static final String ALIPAY = "alipay";
     public static final String WECHAT = "wechat";
+    public static final String STRIPE = "stripe";
 
     private PayChannel() {
     }
@@ -15,7 +16,7 @@ public final class PayChannel {
             throw new BusinessException(400, "支付渠道不能为空");
         }
         String c = raw.trim().toLowerCase();
-        if (!MOCK.equals(c) && !ALIPAY.equals(c) && !WECHAT.equals(c)) {
+        if (!MOCK.equals(c) && !ALIPAY.equals(c) && !WECHAT.equals(c) && !STRIPE.equals(c)) {
             throw new BusinessException(400, "不支持的支付渠道: " + raw);
         }
         return c;

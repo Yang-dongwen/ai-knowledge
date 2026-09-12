@@ -15,6 +15,7 @@ public class KbProperties {
     private final Note note = new Note();
     private final Category category = new Category();
     private final Search search = new Search();
+    private final Rag rag = new Rag();
     private final File file = new File();
     private final Pdf pdf = new Pdf();
 
@@ -43,12 +44,28 @@ public class KbProperties {
     @Data
     public static class Search {
         /**
-         * like：title + content_text LIKE（默认，零运维）
-         * fulltext：预留；需 ngram 索引时再切
+         * like：title + content_text LIKE
+         * hybrid：向量 + LIKE（rag 不可用时自动降 like）
+         * fulltext：预留
          */
-        private String mode = "like";
+        private String mode = "hybrid";
         /** 命中片段左右各取字符数 */
         private int highlightRadius = 60;
+    }
+
+    @Data
+    public static class Rag {
+        private boolean enabled = true;
+        private int chunkSizeChars = 800;
+        private int chunkOverlapChars = 120;
+        private int topK = 8;
+        private double scoreThreshold = 0.22;
+        private int rrfK = 60;
+        private int indexBatchSize = 8;
+        private String workerCron = "*/20 * * * * ?";
+        private int maxAttempts = 8;
+        private long maxFileExtractBytes = 20L * 1024 * 1024;
+        private java.util.List<String> extractKinds = java.util.List.of("pdf", "office", "other");
     }
 
     @Data

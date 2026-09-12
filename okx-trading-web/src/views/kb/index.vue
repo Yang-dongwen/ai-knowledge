@@ -38,6 +38,11 @@
                 <PlusOutlined />
               </a-button>
             </a-tooltip>
+            <a-tooltip title="重建向量索引">
+              <a-button type="text" size="small" class="icon-action" :loading="reindexBusy" @click="rebuildIndex">
+                <ReloadOutlined />
+              </a-button>
+            </a-tooltip>
           </template>
           <a-tooltip title="隐藏目录">
             <a-button
@@ -57,7 +62,7 @@
           v-model:value="keyword"
           allow-clear
           size="small"
-          :placeholder="trashMode ? '搜索回收站…' : '搜索文档…'"
+          :placeholder="trashMode ? '搜索回收站…' : '搜索笔记和文档…'"
           @search="onSearch"
         />
       </div>
@@ -1103,7 +1108,8 @@ import {
   MenuUnfoldOutlined,
   MoreOutlined,
   PlusOutlined,
-  PushpinOutlined
+  PushpinOutlined,
+  ReloadOutlined
 } from '@ant-design/icons-vue'
 import dayjs from 'dayjs'
 import EmptyState from '@/components/EmptyState.vue'
@@ -2490,6 +2496,21 @@ function openCreateNote() {
   }
   searchMode.value = false
   createFormatOpen.value = true
+}
+
+const reindexBusy = ref(false)
+async function rebuildIndex() {
+  if (reindexBusy.value) return
+  reindexBusy.value = true
+  try {
+    const res = await kbApi.reindex()
+    const n = res?.data?.enqueued ?? 0
+    message.success(n > 0 ? `已排队重建 ${n} 条索引` : '没有需要重建的笔记或附件')
+  } catch (e: any) {
+    message.error(e?.response?.data?.message || e?.message || '重建索引失败')
+  } finally {
+    reindexBusy.value = false
+  }
 }
 
 function openCreateNoteInFolder(folderId: string) {

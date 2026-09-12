@@ -3,9 +3,12 @@ package com.dwcode.okxbot.pay.service;
 import com.dwcode.okxbot.pay.channel.NotifyParseResult;
 import com.dwcode.okxbot.pay.channel.PaymentChannel;
 import com.dwcode.okxbot.pay.channel.PaymentChannelRegistry;
+import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.dwcode.okxbot.pay.entity.PayNotifyLogEntity;
+import com.dwcode.okxbot.pay.entity.PayOrderEntity;
 import com.dwcode.okxbot.pay.enums.PayChannel;
 import com.dwcode.okxbot.pay.mapper.PayNotifyLogMapper;
+import com.dwcode.okxbot.pay.mapper.PayOrderMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpHeaders;
@@ -26,6 +29,7 @@ public class PayNotifyService {
     private final PaymentChannelRegistry channelRegistry;
     private final PayFulfillService payFulfillService;
     private final PayNotifyLogMapper payNotifyLogMapper;
+    private final PayOrderMapper payOrderMapper;
 
     /**
      * @return true 表示应向渠道 ACK success；false 表示 fail（促重试）
@@ -72,10 +76,23 @@ public class PayNotifyService {
         }
 
         try {
+            long amount = parsed.getAmountCents();
+            // Stripe Checkout：同一 session 已付则以订单金额履约，避免税费/币种最小单位差异卡住开通
+            if (PayChannel.STRIPE.equals(ch) && parsed.getAppIdOrMchIdHint() != null) {
+                PayOrderEntity order = payOrderMapper.selectOne(
+                        new LambdaQueryWrapper<PayOrderEntity>()
+                                .eq(PayOrderEntity::getOrderNo, parsed.getOrderNo().trim())
+                );
+                if (order != null
+                        && parsed.getAppIdOrMchIdHint().equals(order.getPrepayId())
+                        && order.getAmountCents() != null) {
+                    amount = order.getAmountCents();
+                }
+            }
             payFulfillService.markSuccessAndFulfill(
                     parsed.getOrderNo(),
                     parsed.getTradeNo(),
-                    parsed.getAmountCents()
+                    amount
             );
             saveLog(ch, parsed.getOrderNo(), rawBody, headers, true, "SUCCESS",
                     parsed.getRawTradeState());

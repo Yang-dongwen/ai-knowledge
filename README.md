@@ -65,7 +65,7 @@
 
 ### 知识库
 
-文件夹树、笔记（Markdown / 富文本）、标签、附件、回收站、分享链接。PC 用完整编辑器；微信小程序覆盖列表、快记、文件夹、标签、分享，和 PC 共用同一套账号与 `/api/v1/kb/*`。
+文件夹树、笔记（Markdown / 富文本）、标签、附件、回收站、分享链接。搜索默认混合检索（Google AI Studio 向量 + 关键词）；密钥在 `ai.embedding` / `ai.vector-store`，不填则退回 LIKE。PC 用完整编辑器；微信小程序覆盖列表、快记、文件夹、标签、分享，和 PC 共用同一套账号与 `/api/v1/kb/*`。Agent 对话可直接搜笔记/文档，下发文生图等任务仍要确认卡。
 
 笔记可以「发布到博客」：工具台只调博客的 HTTP API（个人令牌），**不**把博客源码或数据库并进本仓库。本机笔记仍在本机 MySQL；发出去的文章在云端博客。
 
@@ -116,7 +116,7 @@ copy okx-bot\src\main\resources\application-local.yml.example okx-bot\src\main\r
 - `ai.providers.*.api-key`：要用对话 / 提取 / 出图时再填
 - `auth.admin`：种子管理员，默认邮箱 `admin@okx-bot.local`、密码 `Admin@123456`
 
-IDE 启动时 Active profiles = **`local`**。`application.yml` 里默认也是 `local`。
+IDE 启动时 Active profiles = **`local`**。`application.yml` 里默认也是 `local`。业务配置拆在 `okx-bot/src/main/resources/config/`（auth / pay / ai / platform）。
 
 ### 3. 起后端
 

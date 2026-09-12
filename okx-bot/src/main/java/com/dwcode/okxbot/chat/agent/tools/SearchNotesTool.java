@@ -4,9 +4,8 @@ import com.dwcode.okxbot.chat.agent.AgentTool;
 import com.dwcode.okxbot.chat.agent.ToolContext;
 import com.dwcode.okxbot.chat.agent.ToolResult;
 import com.dwcode.okxbot.chat.agent.ToolRisk;
-import com.dwcode.okxbot.kb.dto.NotePageResponse;
-import com.dwcode.okxbot.kb.dto.NoteResponse;
-import com.dwcode.okxbot.kb.service.KbNoteService;
+import com.dwcode.okxbot.rag.search.HybridHit;
+import com.dwcode.okxbot.rag.search.HybridSearchService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 
@@ -16,13 +15,13 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * 在当前用户知识库中搜索笔记（READ）。
+ * 在当前用户知识库中搜索笔记与文档（READ，混合检索）。
  */
 @Component
 @RequiredArgsConstructor
 public class SearchNotesTool implements AgentTool {
 
-    private final KbNoteService noteService;
+    private final HybridSearchService hybridSearch;
 
     @Override
     public String name() {
@@ -31,8 +30,8 @@ public class SearchNotesTool implements AgentTool {
 
     @Override
     public String description() {
-        return "在当前用户的个人知识库中搜索笔记。"
-                + "参数 args.keyword 必填（标题/正文关键词）；"
+        return "在当前用户的个人知识库中搜索笔记和附件文档。"
+                + "参数 args.keyword 必填（语义或关键词均可）；"
                 + "args.limit 可选 1-20，默认 8。";
     }
 
@@ -53,27 +52,24 @@ public class SearchNotesTool implements AgentTool {
         int limit = intArg(args, "limit", 8);
         limit = Math.max(1, Math.min(20, limit));
 
-        NotePageResponse page = noteService.list(
-                0, limit, null, null, keyword, false, false, false, false);
+        List<HybridHit> hits = hybridSearch.search(ctx.getUserId(), keyword, limit);
         List<Map<String, Object>> items = new ArrayList<>();
-        if (page.getItems() != null) {
-            for (NoteResponse n : page.getItems()) {
-                Map<String, Object> row = new HashMap<>();
-                row.put("id", n.getId() != null ? String.valueOf(n.getId()) : null);
-                row.put("title", n.getTitle());
-                row.put("snippet", n.getMatchSnippet() != null ? n.getMatchSnippet() : n.getSnippet());
-                row.put("pinned", n.isPinned());
-                row.put("categoryName", n.getCategoryName());
-                row.put("updatedAt", n.getUpdatedAt() != null ? n.getUpdatedAt().toString() : null);
-                row.put("openPath", "/kb");
-                items.add(row);
-            }
+        for (HybridHit h : hits) {
+            Map<String, Object> row = new HashMap<>();
+            row.put("id", h.getNoteId() > 0 ? String.valueOf(h.getNoteId()) : null);
+            row.put("title", h.getTitle());
+            row.put("snippet", h.getSnippet());
+            row.put("sourceType", h.getSourceType());
+            row.put("fileName", h.getFileName());
+            row.put("kind", h.getKind());
+            row.put("openPath", "/kb");
+            items.add(row);
         }
 
         Map<String, Object> data = new HashMap<>();
         data.put("keyword", keyword);
         data.put("count", items.size());
-        data.put("total", page.getTotal());
+        data.put("total", items.size());
         data.put("items", items);
 
         Map<String, Object> ui = new HashMap<>();
@@ -81,8 +77,8 @@ public class SearchNotesTool implements AgentTool {
         ui.put("payload", data);
 
         String msg = items.isEmpty()
-                ? "知识库中未找到与「" + keyword + "」相关的笔记。"
-                : "找到 " + items.size() + " 条相关笔记（共 " + page.getTotal() + "）。";
+                ? "知识库中未找到与「" + keyword + "」相关的笔记或文档。"
+                : "找到 " + items.size() + " 条相关笔记/文档。";
         return ToolResult.success(msg, data, ui);
     }
 

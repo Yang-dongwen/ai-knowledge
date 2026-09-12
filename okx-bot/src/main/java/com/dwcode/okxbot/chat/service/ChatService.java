@@ -1286,6 +1286,7 @@ public class ChatService {
                 () -> streamHandle != null && streamHandle.isCancelled(),
                 phase -> {
                     String label = switch (phase != null ? phase : "") {
+                        case "retrieving" -> "正在检索知识库…";
                         case "deciding" -> "正在分析意图…";
                         case "tool_running" -> "正在调用工具…";
                         case "summarizing" -> "正在整理结果…";

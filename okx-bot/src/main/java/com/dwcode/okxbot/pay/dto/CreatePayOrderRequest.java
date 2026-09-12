@@ -9,7 +9,7 @@ public class CreatePayOrderRequest {
     @NotBlank(message = "planId 不能为空")
     private String planId;
 
-    /** alipay / wechat / mock */
+    /** alipay / wechat / stripe / mock */
     @NotBlank(message = "channel 不能为空")
     private String channel;
 

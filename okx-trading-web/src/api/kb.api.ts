@@ -608,6 +608,10 @@ async function uploadFileChunked(
  * 个人知识库 API（/api/v1/kb/*）
  */
 export const kbApi = {
+  reindex(): Promise<{ data: { enqueued: number } }> {
+    return request.post('/v1/kb/rag/reindex')
+  },
+
   listNotes(params: {
     page?: number
     size?: number

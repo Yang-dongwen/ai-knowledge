@@ -15,7 +15,8 @@
 | **OKX 交易助手** | 模拟盘/实盘配置、均线策略、持仓/订单、回测、系统启停 | `okx` / `strategy` / `trading` / `backtest` |
 | **认证与权限** | 邮箱注册登录、JWT、Google/GitHub OAuth（PC）、微信小程序；角色 USER / MEMBER / SUPER_ADMIN | `auth` |
 | **会员支付** | 套餐、Mock 支付开通 MEMBER、有效期叠加（支付宝/微信待进件） | `member` / `pay` |
-| **AI 聊天** | 多供应商 OpenAI 兼容对话（流式） | `chat` |
+| **AI 聊天** | 多供应商 OpenAI 兼容对话（流式）；Agent 模式走 LangGraph4j，写工具需确认 | `chat` / `chat.agent` |
+| **知识库 RAG** | Gemini Embedding + Qdrant 混合检索笔记/附件；密钥未配则降级 LIKE | `rag` / `kb` |
 | **视频核心提取** | 链接 → 下载 → 音频 → Whisper 转录 → LLM 总结（可选画面理解） | `video` |
 | **AI 视频生成** | 提示词 → 分镜/镜头 → TTS 或配图 → Remotion 成片 | `aigen` |
 | **AI 文生图** | 提示词（可选润色）→ NVIDIA FLUX 出图 | `imggen` |
@@ -62,6 +63,8 @@ okx-bot/
 | 持久化 | MySQL 8.x、MyBatis-Plus 3.5 |
 | HTTP 客户端 | OkHttp（OKX API 等） |
 | LLM 出站 | LangChain4j OpenAI 兼容（可回滚 OkHttp，见 `ai.chat-engine`） |
+| Agent 编排 | LangGraph4j core（白名单 Tool + 确认卡，不用 AgentExecutor） |
+| 向量检索 | Google AI Studio Embedding + Qdrant（`ai.embedding` / `ai.vector-store`） |
 | 构建 | Maven |
 | ASR | Python 3.10+、faster-whisper、FastAPI / uvicorn |
 | 视频渲染 | Node.js 18+、Remotion 4、Express |
@@ -476,10 +479,14 @@ Base URL：`http://127.0.0.1:8080`
 | POST | `/api/pay/mock/confirm` | Mock 确认支付 body:`{orderNo}`（需 `pay.mock-enabled=true`） |
 | POST | `/api/pay/notify/alipay` | 支付宝异步通知（匿名，协议 body `success`/`failure`） |
 | GET | `/api/pay/return/alipay` | 支付宝同步回跳（不履约） |
+| POST | `/api/pay/notify/stripe` | Stripe Webhook（匿名，验 `Stripe-Signature`，2xx ACK） |
+| GET | `/api/pay/return/stripe` | Stripe Checkout 回跳（不履约） |
 
 `GET /api/auth/me` 扩展字段：`memberExpireAt`、`memberActive`。
 
-**支付宝直连（默认关闭）**：`pay.alipay.enabled=false`。进件后配置 `ALIPAY_APP_ID` / `ALIPAY_PRIVATE_KEY` / `ALIPAY_PUBLIC_KEY`，设 `enabled=true`，`pay.public-base-url` 为公网 HTTPS。无资质时用 `channel=mock`。
+**支付宝直连（默认关闭）**：在 yml 把 `pay.alipay.enabled` 设为 `true`，密钥用环境变量 `ALIPAY_APP_ID` / `ALIPAY_PRIVATE_KEY` / `ALIPAY_PUBLIC_KEY`。无资质时用 `channel=mock`。
+
+**Stripe Checkout 沙箱（默认关闭）**：在 yml 把 `pay.stripe.enabled` 设为 `true`（`sandbox: true`）。密钥用 `STRIPE_PUBLISHABLE_KEY`（`pk_test_…`）、`STRIPE_SECRET_KEY`（`sk_test_…`）、`STRIPE_WEBHOOK_SECRET`（`whsec_…`）。本地可用 `stripe listen --forward-to localhost:8080/api/pay/notify/stripe`。下单 `channel=stripe`，测试卡 `4242 4242 4242 4242`。
 
 ### 9.1 认证 ` /api/auth`
 
@@ -681,8 +688,10 @@ Invoke-RestMethod -Uri "http://127.0.0.1:8080/api/v1/video/tasks?page=0&size=1" 
 | `会员充值与支付宝微信支付对接架构设计方案.md` | 会员支付架构 |
 | `LangChain4j_三工具切换架构设计.md` | Chat 出站引擎切换 |
 | `后端设计模式落地说明.md` | 已落地模式（Port/策略/工厂/SSE Hub 等）与选用原因 |
+| `后端多线程与异步调度.md` | 线程池、槽位、聊天 SSE、短命并行、定时 Job 与闸门（对照代码） |
 | `设计模式面试口述.md` | 每种模式：先理解模式，再讲项目里怎么用 |
 | [`Halo博客_知识库发文打通.md`](./doc/Halo博客_知识库发文打通.md) | 知识库发到旁挂 Halo（代码入口） |
+| [`Agent_LangGraph4j与知识库RAG.md`](./doc/Agent_LangGraph4j与知识库RAG.md) | Agent 图、Gemini/Qdrant、混合检索与降级 |
 | `sql/*.sql` | 历史增量归档；新 DDL 写 `resources/db/migration/` |
 
 渲染侧：`aigen-remotion/README.md`。
@@ -695,6 +704,7 @@ Invoke-RestMethod -Uri "http://127.0.0.1:8080/api/v1/video/tasks?page=0&size=1" 
 [ ] JDK 17 + Maven + MySQL 8
 [ ] 建库 okx_bot → 启动应用（Flyway 自动建表）+ 可选 ai_model_config 种子
 [ ] 修改 datasource / jwt.secret / ai.providers.api-key
+[ ] （知识库语义搜）GOOGLE_AI_STUDIO_API_KEY + QDRANT_HOST + QDRANT_API_KEY，不填则 LIKE
 [ ] （视频提取）yt-dlp + ffmpeg 绝对路径
 [ ] （视频提取）whisper venv 或 docker；确认 :8000
 [ ] （视频生成）aigen-remotion npm install；确认托管或 :3100
